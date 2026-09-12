@@ -1,0 +1,407 @@
+@page "/reports/job-worker-control-t-format"
+@attribute [Authorize(Policy = SecurityPolicies.ViewReports)]
+@inject OperationalReportingService Reporting
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject GlobalOperationState GlobalOperations
+
+<PageTitle>Job Worker Control</PageTitle>
+
+<div id="job-worker-control-root" class="page-card jwc-page tt-report-natural-flow" tabindex="0" data-keyboard-list-root="true"
+     @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="job-worker-control" RootElementId="job-worker-control-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="false" InitialFocusTarget="@(showReport ? "jwc-report-root" : "jwc-job-worker")" />
+
+    <header class="jwc-titlebar">
+        <div><p>PRODUCTION CONTROL</p><h1>Job Worker Control Report</h1><small>Material Management &amp; Processing Tracking</small></div>
+        @if (showReport)
+        { <button type="button" @onclick="OpenFilters">F4 Filters</button> }
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    { <p class="notice notice-error">@message</p> }
+
+    @if (!showReport)
+    {
+        <section class="jwc-filter-page" aria-label="Job Worker Control filters" data-enter-navigation="true">
+            <h2>Report Filters</h2>
+            <label><span>Search by Jobber</span>
+                <div class="lookup-field"><input id="jwc-job-worker" data-erp-lookup="true" data-tt-related-master="/masters/ledgers" data-tt-filter-input="true" autocomplete="off" value="@jobWorkerText" @onfocus='() => OpenLookup("job-worker")' @onblur="CloseLookup" @oninput="JobWorkerChanged" placeholder="Type to search Job Worker" />
+                    @if (activeLookupKey == "job-worker") { <div class="erp-lookup-panel">@foreach (var row in FilterLookup(lookups.JobWorkers, jobWorkerText)) { <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectJobWorker(row)"><strong>@row.Name</strong></button> } @if (!FilterLookup(lookups.JobWorkers, jobWorkerText).Any()) { <div class="erp-lookup-empty">No matching Job Worker</div> }</div> }
+                </div>
+            </label>
+            <label><span>Search by Item Name</span>
+                <div class="lookup-field"><input id="jwc-item" data-erp-lookup="true" data-tt-related-master="/masters/stock-items" data-tt-filter-input="true" autocomplete="off" value="@itemText" @onfocus='() => OpenLookup("item")' @onblur="CloseLookup" @oninput="ItemChanged" placeholder="Type to search finished good or raw material" />
+                    @if (activeLookupKey == "item") { <div class="erp-lookup-panel">@foreach (var row in FilterLookup(lookups.StockItems, itemText)) { <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectItem(row)"><strong>@row.Name</strong><span>@row.SecondaryText</span></button> } @if (!FilterLookup(lookups.StockItems, itemText).Any()) { <div class="erp-lookup-empty">No matching Stock Item</div> }</div> }
+                </div>
+            </label>
+            <label><span>Search by Stock Group</span>
+                <div class="lookup-field"><input id="jwc-stock-group" data-erp-lookup="true" data-tt-related-master="/masters/stock-groups" data-tt-filter-input="true" autocomplete="off" value="@stockGroupText" @onfocus='() => OpenLookup("stock-group")' @onblur="CloseLookup" @oninput="StockGroupChanged" placeholder="Type to search Stock Group" />
+                    @if (activeLookupKey == "stock-group") { <div class="erp-lookup-panel">@foreach (var row in FilterLookup(lookups.StockGroups, stockGroupText)) { <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectStockGroup(row)"><strong>@row.Name</strong></button> } @if (!FilterLookup(lookups.StockGroups, stockGroupText).Any()) { <div class="erp-lookup-empty">No matching Stock Group</div> }</div> }
+                </div>
+            </label>
+            <label><span>Search by Stock Category</span>
+                <div class="lookup-field"><input id="jwc-stock-category" data-erp-lookup="true" data-tt-related-master="/masters/stock-categories" data-tt-filter-input="true" autocomplete="off" value="@stockCategoryText" @onfocus='() => OpenLookup("stock-category")' @onblur="CloseLookup" @oninput="StockCategoryChanged" placeholder="Type to search Stock Category" />
+                    @if (activeLookupKey == "stock-category") { <div class="erp-lookup-panel">@foreach (var row in FilterLookup(lookups.StockCategories, stockCategoryText)) { <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectStockCategory(row)"><strong>@row.Name</strong></button> } @if (!FilterLookup(lookups.StockCategories, stockCategoryText).Any()) { <div class="erp-lookup-empty">No matching Stock Category</div> }</div> }
+                </div>
+            </label>
+            <label><span>Search by Batch / Order Number</span>
+                <input id="jwc-batch-order" data-tt-filter-input="true" @bind="filter.BatchOrOrder" @bind:event="oninput" placeholder="Batch number or JWO number" />
+            </label>
+            <label><span>Search by MJO Number</span>
+                <input id="jwc-master-job-order" data-tt-filter-input="true" @bind="filter.MasterJobOrderNumber" @bind:event="oninput" placeholder="Master Job Order number" />
+            </label>
+            <label><span>Process</span>
+                <div class="lookup-field"><input id="jwc-process" data-erp-lookup="true" data-tt-related-master="/masters/processes" data-tt-filter-input="true" autocomplete="off" value="@processText" @onfocus='() => OpenLookup("process")' @onblur="CloseLookup" @oninput="ProcessChanged" placeholder="Type to search Process" />
+                    @if (activeLookupKey == "process") { <div class="erp-lookup-panel">@foreach (var row in FilterLookup(lookups.Processes, processText)) { <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectProcess(row)"><strong>@row.Name</strong></button> } @if (!FilterLookup(lookups.Processes, processText).Any()) { <div class="erp-lookup-empty">No matching Process</div> }</div> }
+                </div>
+            </label>
+            <label><span>Status</span>
+                <div class="lookup-field"><input id="jwc-status" data-erp-lookup="true" data-tt-filter-input="true" autocomplete="off" value="@statusFilterText" @onfocus='() => OpenLookup("status")' @onblur="CloseLookup" @oninput="StatusChanged" placeholder="Type Pending, Completed or All" />
+                    @if (activeLookupKey == "status") { <div class="erp-lookup-panel">@foreach (var row in FilterStatuses()) { <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectStatus(row.Value)"><strong>@row.Text</strong></button> } @if (!FilterStatuses().Any()) { <div class="erp-lookup-empty">No matching Status</div> }</div> }
+                </div>
+            </label>
+            <div class="jwc-filter-actions">
+                <button type="button" @onclick="ClearFilters">Clear</button>
+                <button id="jwc-show-report" type="button" class="primary" @onclick="ApplyFilters" disabled="@loading"><span>Alt+S</span> Show Report</button>
+            </div>
+        </section>
+        <p class="jwc-help">Alt+S Show Report · Esc Back</p>
+    }
+    else
+    {
+        <div id="jwc-report-root" class="jwc-report-root" tabindex="-1">
+            <div class="jwc-filter-summary">
+                Job Worker: @LookupName(lookups.JobWorkers, filter.JobWorkerId) · Item: @Display(filter.Item) ·
+                Group: @LookupName(lookups.StockGroups, filter.StockGroupId) · Category: @LookupName(lookups.StockCategories, filter.StockCategoryId) ·
+                Batch/Order: @Display(filter.BatchOrOrder) · MJO: @Display(filter.MasterJobOrderNumber) · Process: @LookupName(lookups.Processes, filter.ProcessId) · Status: @StatusText
+            </div>
+
+            @if (loading) { <p class="muted">Loading Job Worker Control…</p> }
+            else if (report.Batches.Count == 0) { <p class="jwc-empty">No matching production batches.</p> }
+            else
+            {
+                <div class="jwc-batch-page">
+                    @foreach (var batch in VisibleBatches)
+                    {
+                        <section class="jwc-batch" @key="batch.RowKey">
+                            <header class="jwc-batch-header">
+                                <strong>BATCH @batch.Batch</strong>
+                                <span>JOB WORKER @batch.JobWorkerNames</span>
+                                <span>@BatchStatus(batch)</span>
+                            </header>
+
+                            @foreach (var order in batch.Orders)
+                            {
+                                <article class="jwc-order" @key="order.RowKey">
+                                    <header class="jwc-order-header">
+                                        <a href="@VoucherUrl("/vouchers/job-work-out-order", order.JwoVoucherId)">JWO @order.JwoNumber</a>
+                                        @if (order.MasterJobOrderId is not null)
+                                        {
+                                            <a href="@VoucherUrl("/vouchers/master-job-order", order.MasterJobOrderId.Value)">MJO @order.MasterJobOrderNumber</a>
+                                        }
+                                        <span>@order.JwoDate.ToString("dd-MM-yyyy")</span>
+                                        <span>PROCESS @Display(order.ProcessNames)</span>
+                                    </header>
+                                    <div class="jwc-t-format">
+                                        <section class="jwc-half">
+                                            <h2>Raw Materials Issued</h2>
+                                            <table class="data-grid" data-tt-filter-key="jwc-issues-@order.JwoVoucherId"><thead><tr><th>Date</th><th>Item Name</th><th title="Quantity Issued">Qty (I)</th><th title="Quantity Pending to Issue">Qty (P)</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
+                                            @if (order.Issues.Count == 0) { <tr><td colspan="6" class="empty-cell">No Material Out transaction.</td></tr> }
+                                            @foreach (var row in order.Issues)
+                                            { <tr><td>@row.Date.ToString("dd-MM-yyyy")</td><td><a href="@VoucherUrl("/vouchers/material-out", row.VoucherId)" title="@row.VoucherNumber">@row.ComponentName</a></td><td>@Quantity(row.Quantity, row.UqcName)</td><td>@Quantity(row.PendingQuantity, row.UqcName)</td><td>@Money(row.Rate)</td><td>@Money(row.Value)</td></tr> }
+                                            </tbody></table>
+                                        </section>
+                                        <section class="jwc-half">
+                                            <h2>Finished Goods Received</h2>
+                                            <table class="data-grid" data-tt-filter-key="jwc-receipts-@order.JwoVoucherId"><thead><tr><th>Date</th><th>Item Name</th><th title="Quantity Received">Qty (R)</th><th title="Quantity Pending to Receive">Qty (P)</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
+                                            @if (order.Receipts.Count == 0) { <tr><td colspan="6" class="empty-cell">No Material In transaction.</td></tr> }
+                                            @foreach (var row in order.Receipts)
+                                            { <tr><td>@row.Date.ToString("dd-MM-yyyy")</td><td><a href="@VoucherUrl("/vouchers/material-in", row.VoucherId)" title="@row.VoucherNumber">@ReceiptName(row)</a></td><td>@Quantity(row.Quantity, row.UqcName)</td><td>@Quantity(row.PendingQuantity, row.UqcName)</td><td>@Money(row.Rate)</td><td>@Money(row.Value)</td></tr> }
+                                            </tbody></table>
+                                        </section>
+                                    </div>
+                                    <div class="jwc-order-quantities">
+                                        <section>
+                                            <span>Issued <b>@IssuedTotals(order)</b></span>
+                                            <span>Consumed <b>@ConsumedTotals(order)</b></span>
+                                            <span>Pending <b>@MaterialPendingTotals(order)</b></span>
+                                        </section>
+                                        <section>
+                                            <span>To Receive <b>@FinishedOrderedTotals(order)</b></span>
+                                            <span>Received <b>@FinishedReceivedTotals(order)</b></span>
+                                            <span>Pending <b>@FinishedPendingTotals(order)</b></span>
+                                        </section>
+                                    </div>
+                                    <footer class="jwc-order-costs">
+                                        <span>Material Consumed Cost <b>@Money(order.MaterialCost)</b></span>
+                                        <span>Process Cost <b>@Money(order.ProcessCost)</b></span>
+                                        <span>Cost Per Unit <b>@Money(order.CostPerUnit)</b></span>
+                                        <span>Total Cost <b>@Money(order.TotalCost)</b></span>
+                                    </footer>
+                                </article>
+                            }
+
+                            <div class="jwc-batch-quantity-totals">
+                                <span>Issued <b>@IssuedTotals(batch.Orders)</b></span>
+                                <span>Material Pending <b>@MaterialPendingTotals(batch.Orders)</b></span>
+                                <span>Received <b>@FinishedReceivedTotals(batch.Orders)</b></span>
+                                <span>FG Pending <b>@FinishedPendingTotals(batch.Orders)</b></span>
+                            </div>
+                        </section>
+                    }
+                </div>
+                <footer class="jwc-report-totals">
+                    <span>Material Issued <b>@IssuedTotals(AllOrders)</b></span>
+                    <span>Material Pending <b>@MaterialPendingTotals(AllOrders)</b></span>
+                    <span>FG Received <b>@FinishedReceivedTotals(AllOrders)</b></span>
+                    <span>FG Pending <b>@FinishedPendingTotals(AllOrders)</b></span>
+                    <span>Total Cost <b>@Money(AllOrders.Sum(x => x.TotalCost))</b></span>
+                </footer>
+                @if (pages.Count > 1)
+                {
+                    <nav class="jwc-pagination" aria-label="Report pages">
+                        <button type="button" @onclick="() => GoToPage(0)" disabled="@(pageIndex == 0)">First</button>
+                        <button type="button" @onclick="PreviousPage" disabled="@(pageIndex == 0)">Previous</button>
+                        @foreach (var page in PageWindow)
+                        { <button type="button" class="@(pageIndex == page ? "selected" : null)" @onclick="() => GoToPage(page)">@(page + 1)</button> }
+                        <span>Page @(pageIndex + 1) of @pages.Count</span>
+                        <button type="button" @onclick="NextPage" disabled="@(pageIndex >= pages.Count - 1)">Next</button>
+                        <button type="button" @onclick="() => GoToPage(pages.Count - 1)" disabled="@(pageIndex >= pages.Count - 1)">Last</button>
+                    </nav>
+                }
+            }
+            <p class="jwc-help">PgUp/PgDn Page · Home/End First/Last · F4 Filters · Esc Back</p>
+        </div>
+    }
+</div>
+
+@code {
+    private const int PageWeightBudget = 24;
+    private JobWorkerControlFilter filter = new();
+    private OperationalReportLookups lookups = new();
+    private JobWorkerControlReport report = new();
+    private List<List<JobWorkerControlBatch>> pages = new();
+    private int pageIndex;
+    private bool showReport;
+    private bool loading;
+    private string message = string.Empty;
+    private string? activeLookupKey;
+    private string? pendingFocusId;
+    private string jobWorkerText = string.Empty;
+    private string itemText = string.Empty;
+    private string stockGroupText = string.Empty;
+    private string stockCategoryText = string.Empty;
+    private string processText = string.Empty;
+    private string statusFilterText = "Pending Only";
+    private static readonly (JobWorkerControlStatusFilter Value, string Text)[] StatusOptions =
+    {
+        (JobWorkerControlStatusFilter.Pending, "Pending Only"),
+        (JobWorkerControlStatusFilter.Completed, "Completed"),
+        (JobWorkerControlStatusFilter.All, "All")
+    };
+
+    [SupplyParameterFromQuery(Name = "view")] public string? InitialView { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? InitialPage { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public DateOnly? InitialFrom { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public DateOnly? InitialTo { get; set; }
+    [SupplyParameterFromQuery(Name = "jobWorkerId")] public long? InitialJobWorkerId { get; set; }
+    [SupplyParameterFromQuery(Name = "item")] public string? InitialItem { get; set; }
+    [SupplyParameterFromQuery(Name = "groupId")] public long? InitialStockGroupId { get; set; }
+    [SupplyParameterFromQuery(Name = "categoryId")] public long? InitialStockCategoryId { get; set; }
+    [SupplyParameterFromQuery(Name = "batchOrder")] public string? InitialBatchOrOrder { get; set; }
+    [SupplyParameterFromQuery(Name = "mjo")] public string? InitialMasterJobOrder { get; set; }
+    [SupplyParameterFromQuery(Name = "processId")] public long? InitialProcessId { get; set; }
+    [SupplyParameterFromQuery(Name = "status")] public string? InitialStatus { get; set; }
+
+    private IReadOnlyList<JobWorkerControlBatch> VisibleBatches => pages.Count == 0 ? Array.Empty<JobWorkerControlBatch>() : pages[Math.Clamp(pageIndex, 0, pages.Count - 1)];
+    private IReadOnlyList<JobWorkerControlOrder> VisibleOrders => VisibleBatches.SelectMany(x => x.Orders).ToList();
+    private IReadOnlyList<JobWorkerControlOrder> AllOrders => report.Batches.SelectMany(x => x.Orders).ToList();
+    private IReadOnlyList<int> PageWindow
+    {
+        get
+        {
+            const int visibleButtons = 7;
+            var start = Math.Max(0, pageIndex - visibleButtons / 2);
+            start = Math.Min(start, Math.Max(0, pages.Count - visibleButtons));
+            return Enumerable.Range(start, Math.Min(visibleButtons, pages.Count - start)).ToList();
+        }
+    }
+    private string StatusText => filter.Status switch { JobWorkerControlStatusFilter.Completed => "Completed", JobWorkerControlStatusFilter.All => "All", _ => "Pending Only" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var operation = GlobalOperations.Begin("Opening Job Worker Control report…");
+        lookups = await Reporting.GetLookupsAsync();
+        if (!string.Equals(InitialView, "report", StringComparison.OrdinalIgnoreCase)) return;
+
+        filter.DateFrom = InitialFrom;
+        filter.DateTo = InitialTo;
+        filter.JobWorkerId = InitialJobWorkerId;
+        filter.Item = InitialItem ?? string.Empty;
+        filter.StockGroupId = InitialStockGroupId;
+        filter.StockCategoryId = InitialStockCategoryId;
+        filter.BatchOrOrder = InitialBatchOrOrder ?? string.Empty;
+        filter.MasterJobOrderNumber = InitialMasterJobOrder ?? string.Empty;
+        filter.ProcessId = InitialProcessId;
+        if (Enum.TryParse<JobWorkerControlStatusFilter>(InitialStatus, true, out var status)) filter.Status = status;
+        SyncFilterTexts();
+        await ApplyFilters();
+        pageIndex = Math.Clamp(InitialPage ?? 0, 0, Math.Max(0, pages.Count - 1));
+    }
+
+    private async Task ApplyFilters()
+    {
+        using var operation = GlobalOperations.Begin("Opening Job Worker Control report…");
+        loading = true; message = string.Empty;
+        try
+        {
+            report = await Reporting.GetJobWorkerControlAsync(filter);
+            pages = PackCompleteBatches(report.Batches);
+            pageIndex = 0;
+            showReport = true;
+        }
+        catch (Exception ex) { message = ex.GetBaseException().Message; report = new(); pages.Clear(); }
+        finally { loading = false; }
+        await Focus("jwc-report-root");
+    }
+
+    private void ClearFilters()
+    {
+        filter = new JobWorkerControlFilter();
+        activeLookupKey = null;
+        SyncFilterTexts();
+        pendingFocusId = "jwc-job-worker";
+    }
+
+    private void OpenFilters()
+    {
+        showReport = false;
+        message = string.Empty;
+        activeLookupKey = null;
+        SyncFilterTexts();
+        pendingFocusId = "jwc-job-worker";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (pendingFocusId is null) return;
+        var id = pendingFocusId;
+        pendingFocusId = null;
+        await Focus(id);
+    }
+
+    private void OpenLookup(string key) => activeLookupKey = key;
+    private void CloseLookup(FocusEventArgs _) => activeLookupKey = null;
+    private static IEnumerable<LookupItem> FilterLookup(IEnumerable<LookupItem> rows, string text) => rows
+        .Where(x => string.IsNullOrWhiteSpace(text) || x.Name.Contains(text.Trim(), StringComparison.OrdinalIgnoreCase))
+        .Take(15);
+    private IEnumerable<(JobWorkerControlStatusFilter Value, string Text)> FilterStatuses() => StatusOptions
+        .Where(x => string.IsNullOrWhiteSpace(statusFilterText) || x.Text.Contains(statusFilterText.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private void JobWorkerChanged(ChangeEventArgs e) { jobWorkerText = Convert.ToString(e.Value) ?? string.Empty; filter.JobWorkerId = null; filter.JobWorker = jobWorkerText; activeLookupKey = "job-worker"; }
+    private void ItemChanged(ChangeEventArgs e) { itemText = Convert.ToString(e.Value) ?? string.Empty; filter.Item = itemText; activeLookupKey = "item"; }
+    private void StockGroupChanged(ChangeEventArgs e) { stockGroupText = Convert.ToString(e.Value) ?? string.Empty; filter.StockGroupId = null; activeLookupKey = "stock-group"; }
+    private void StockCategoryChanged(ChangeEventArgs e) { stockCategoryText = Convert.ToString(e.Value) ?? string.Empty; filter.StockCategoryId = null; activeLookupKey = "stock-category"; }
+    private void ProcessChanged(ChangeEventArgs e) { processText = Convert.ToString(e.Value) ?? string.Empty; filter.ProcessId = null; filter.Process = processText; activeLookupKey = "process"; }
+    private void StatusChanged(ChangeEventArgs e) { statusFilterText = Convert.ToString(e.Value) ?? string.Empty; activeLookupKey = "status"; }
+
+    private void SelectJobWorker(LookupItem row) { filter.JobWorkerId = row.Id; filter.JobWorker = string.Empty; jobWorkerText = row.Name; CloseLookupAndFocus("jwc-item"); }
+    private void SelectItem(LookupItem row) { filter.Item = row.Name; itemText = row.Name; CloseLookupAndFocus("jwc-stock-group"); }
+    private void SelectStockGroup(LookupItem row) { filter.StockGroupId = row.Id; stockGroupText = row.Name; CloseLookupAndFocus("jwc-stock-category"); }
+    private void SelectStockCategory(LookupItem row) { filter.StockCategoryId = row.Id; stockCategoryText = row.Name; CloseLookupAndFocus("jwc-batch-order"); }
+    private void SelectProcess(LookupItem row) { filter.ProcessId = row.Id; filter.Process = string.Empty; processText = row.Name; CloseLookupAndFocus("jwc-status"); }
+    private void SelectStatus(JobWorkerControlStatusFilter status) { filter.Status = status; statusFilterText = StatusOptions.First(x => x.Value == status).Text; CloseLookupAndFocus("jwc-show-report"); }
+    private void CloseLookupAndFocus(string id) { activeLookupKey = null; pendingFocusId = id; }
+
+    private void SyncFilterTexts()
+    {
+        jobWorkerText = filter.JobWorkerId is null ? filter.JobWorker : lookups.JobWorkers.FirstOrDefault(x => x.Id == filter.JobWorkerId)?.Name ?? string.Empty;
+        itemText = filter.Item;
+        stockGroupText = lookups.StockGroups.FirstOrDefault(x => x.Id == filter.StockGroupId)?.Name ?? string.Empty;
+        stockCategoryText = lookups.StockCategories.FirstOrDefault(x => x.Id == filter.StockCategoryId)?.Name ?? string.Empty;
+        processText = filter.ProcessId is null ? filter.Process : lookups.Processes.FirstOrDefault(x => x.Id == filter.ProcessId)?.Name ?? string.Empty;
+        statusFilterText = StatusOptions.First(x => x.Value == filter.Status).Text;
+    }
+    private void PreviousPage() => pageIndex = Math.Max(0, pageIndex - 1);
+    private void NextPage() => pageIndex = Math.Min(pages.Count - 1, pageIndex + 1);
+    private void GoToPage(int page) => pageIndex = Math.Clamp(page, 0, Math.Max(0, pages.Count - 1));
+
+    private static List<List<JobWorkerControlBatch>> PackCompleteBatches(IEnumerable<JobWorkerControlBatch> batches)
+    {
+        var result = new List<List<JobWorkerControlBatch>>();
+        var current = new List<JobWorkerControlBatch>();
+        var used = 0;
+        foreach (var batch in batches)
+        {
+            var weight = 4 + batch.Orders.Sum(x => 6 + Math.Max(x.Issues.Count, x.Receipts.Count));
+            if (current.Count > 0 && used + weight > PageWeightBudget)
+            { result.Add(current); current = new(); used = 0; }
+            current.Add(batch); used += weight;
+        }
+        if (current.Count > 0) result.Add(current);
+        return result;
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (!showReport)
+        {
+            if (e.Key == "Escape" && activeLookupKey is not null) { activeLookupKey = null; return; }
+            if (e.AltKey && string.Equals(e.Key, "s", StringComparison.OrdinalIgnoreCase)) await ApplyFilters();
+            else if (e.Key == "Escape") Navigation.NavigateTo("/");
+            return;
+        }
+        if (e.Key == "F4" || e.Key == "Escape") { OpenFilters(); await Focus("jwc-job-worker"); return; }
+        if (e.Key is "PageDown" && pages.Count > 0) NextPage();
+        else if (e.Key is "PageUp" && pages.Count > 0) PreviousPage();
+        else if (e.Key == "Home") GoToPage(0);
+        else if (e.Key == "End") GoToPage(Math.Max(0, pages.Count - 1));
+    }
+
+    private ValueTask Focus(string id) => JS.InvokeVoidAsync("texTrackFocusById", id);
+    private string VoucherUrl(string route, long voucherId) => $"{route}?voucherId={voucherId}&returnUrl={Uri.EscapeDataString(BuildReportReturnUrl())}";
+    private string BuildReportReturnUrl()
+    {
+        var values = new List<string> { "view=report", $"page={pageIndex}" };
+        Add("from", filter.DateFrom?.ToString("yyyy-MM-dd"));
+        Add("to", filter.DateTo?.ToString("yyyy-MM-dd"));
+        Add("jobWorkerId", filter.JobWorkerId?.ToString());
+        Add("item", filter.Item);
+        Add("groupId", filter.StockGroupId?.ToString());
+        Add("categoryId", filter.StockCategoryId?.ToString());
+        Add("batchOrder", filter.BatchOrOrder);
+        Add("mjo", filter.MasterJobOrderNumber);
+        Add("processId", filter.ProcessId?.ToString());
+        Add("status", filter.Status.ToString());
+        return $"/reports/job-worker-control?{string.Join("&", values)}";
+
+        void Add(string name, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value)) values.Add($"{name}={Uri.EscapeDataString(value)}");
+        }
+    }
+    private static string Display(string value) => string.IsNullOrWhiteSpace(value) ? "All" : value;
+    private static string Money(decimal value) => value.ToString("N2");
+    private static string Quantity(decimal value, string uqc) => $"{value:0.####} {uqc}".Trim();
+    private static string UqcTotals(IEnumerable<(string Uqc, decimal Quantity)> values)
+    {
+        var totals = values.GroupBy(x => x.Uqc, StringComparer.OrdinalIgnoreCase)
+            .Select(x => $"{x.Sum(y => y.Quantity):0.####} {x.Key}".Trim()).ToList();
+        return totals.Count == 0 ? "—" : string.Join(" · ", totals);
+    }
+    private static string IssuedTotals(JobWorkerControlOrder order) => UqcTotals(order.Issues.Select(x => (x.UqcName, x.Quantity)));
+    private static string ConsumedTotals(JobWorkerControlOrder order) => UqcTotals(order.MaterialPositions.Select(x => (x.UqcName, x.ConsumedQuantity)));
+    private static string MaterialPendingTotals(JobWorkerControlOrder order) => UqcTotals(order.MaterialPositions.Select(x => (x.UqcName, x.PendingToIssue)));
+    private static string FinishedOrderedTotals(JobWorkerControlOrder order) => UqcTotals(order.FinishedGoodPositions.Select(x => (x.UqcName, x.OrderedQuantity)));
+    private static string FinishedReceivedTotals(JobWorkerControlOrder order) => UqcTotals(order.FinishedGoodPositions.Select(x => (x.UqcName, x.ReceivedQuantity)));
+    private static string FinishedPendingTotals(JobWorkerControlOrder order) => UqcTotals(order.FinishedGoodPositions.Select(x => (x.UqcName, x.PendingQuantity)));
+    private static string IssuedTotals(IEnumerable<JobWorkerControlOrder> orders) => UqcTotals(orders.SelectMany(x => x.Issues).Select(x => (x.UqcName, x.Quantity)));
+    private static string MaterialPendingTotals(IEnumerable<JobWorkerControlOrder> orders) => UqcTotals(orders.SelectMany(x => x.MaterialPositions).Select(x => (x.UqcName, x.PendingToIssue)));
+    private static string FinishedReceivedTotals(IEnumerable<JobWorkerControlOrder> orders) => UqcTotals(orders.SelectMany(x => x.FinishedGoodPositions).Select(x => (x.UqcName, x.ReceivedQuantity)));
+    private static string FinishedPendingTotals(IEnumerable<JobWorkerControlOrder> orders) => UqcTotals(orders.SelectMany(x => x.FinishedGoodPositions).Select(x => (x.UqcName, x.PendingQuantity)));
+    private static string LookupName(IEnumerable<LookupItem> rows, long? id) => id is null ? "All" : rows.FirstOrDefault(x => x.Id == id)?.Name ?? "All";
+    private static string ReceiptName(JobWorkerReceiptRow row) => row.Variants.Count == 0 ? row.FinishedGoodName : $"{row.FinishedGoodName} · {string.Join(", ", row.Variants.Select(x => $"{x.ColourName}/{x.SizeName}"))}";
+    private static string BatchStatus(JobWorkerControlBatch batch) => batch.Orders.All(x => x.TotalFinishedGoodsPending <= 0) ? "COMPLETED" : "PENDING";
+}

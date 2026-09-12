@@ -1,0 +1,22 @@
+TexTrack ERP - v0.6 Build 3.1 Shared UI & Operations
+Release date: 2026-09-02
+
+Implemented:
+- Fixed Material Out StageAssignmentId PostgreSQL mapping.
+- Preserved page/list keyboard contexts while confirmation modals temporarily own focus.
+- Persistent visible-row multi-selection independent of keyboard focus.
+- Bulk voucher Delete/Cancel with per-voucher dependency validation and numbered results.
+- Protected application users and security roles during Clear Entire ERP Database.
+- Reattached preserved users to the recreated active company after a reset.
+- Added one-time server-console recovery code flow when no application user exists.
+- Replaced the Developer-only login page with a unified Gateway-style user login.
+- Replaced redundant Home Entries links with a compact exception-first operations dashboard.
+- Dashboard reuses the canonical Closing Stock, Job Worker Aging and Exception Board logic.
+
+Verification:
+- dotnet build: passed with zero warnings and zero errors.
+- integration/regression suite: 180 passed, 0 failed.
+- runtime GET /login: HTTP 200; Gateway design and general User ID form verified.
+
+Deferred intentionally:
+- Expanded Job Worker Aging remains the existing full report under Reports; the Home dashboard is its compact operational summary.

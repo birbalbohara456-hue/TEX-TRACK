@@ -1,0 +1,131 @@
+@page "/settings/inventory-policy"
+@attribute [Authorize(Policy = SecurityPolicies.AdminSettings)]
+@inject InventoryPolicySettingsService Policy
+
+<PageTitle>Inventory Policy</PageTitle>
+
+<div class="page-card inventory-policy">
+    <header>
+        <p>SETTINGS</p>
+        <h1>Inventory Policy</h1>
+        <small>Company-level stock integrity controls</small>
+    </header>
+
+    @if (loading)
+    {
+        <section><p>Loading inventory policy…</p></section>
+    }
+    else
+    {
+        <section>
+            <div class="policy-status @(allowNegativeStock ? "warning" : "safe")">
+                <strong>@(allowNegativeStock ? "Negative stock entries are allowed" : "Negative stock entries are blocked")</strong>
+                <span>@(allowNegativeStock
+                    ? "Outward vouchers may take an exact item/variant/UQC/godown position below zero."
+                    : "Every stock mutation is checked at its exact historical stock position before commit.")</span>
+            </div>
+
+            <label class="policy-switch">
+                <input type="checkbox" @bind="allowNegativeStock" disabled="@saving" />
+                <span>Allow negative stock entries</span>
+            </label>
+
+            @if (allowNegativeStock && !originalAllowNegativeStock)
+            {
+                <label class="acknowledgement">
+                    <input type="checkbox" @bind="riskAcknowledged" disabled="@saving" />
+                    <span>I understand that negative quantities can make stock availability and future FIFO valuation provisional.</span>
+                </label>
+            }
+
+            <div class="actions">
+                <button type="button" class="policy-button" @onclick="SaveAsync"
+                        disabled="@(saving || (allowNegativeStock && !originalAllowNegativeStock && !riskAcknowledged))">
+                    @(saving ? "Saving…" : "Save Policy")
+                </button>
+            </div>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <div class="form-message @(success ? "success" : "error")">@message</div>
+        }
+
+        <section class="reconciliation">
+            <h2>Historical reconciliation</h2>
+            @if (exceptions.Count == 0)
+            {
+                <p class="clean">No historical negative stock positions were found.</p>
+            }
+            else
+            {
+                <p class="warning-text">Blocking cannot be enabled until these positions are resolved. Showing up to 20.</p>
+                <div class="table-scroll">
+                    <table>
+                        <thead><tr><th>Item</th><th>Variant</th><th>Godown</th><th>First negative date</th><th>Shortage</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in exceptions)
+                            {
+                                <tr>
+                                    <td>@item.StockItemName</td>
+                                    <td>@item.VariantName</td>
+                                    <td>@item.GodownName</td>
+                                    <td>@item.FirstNegativeDate.ToString("dd-MMM-yyyy")</td>
+                                    <td>@item.ShortageQuantity.ToString("0.####") @item.UqcName</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private bool loading = true;
+    private bool saving;
+    private bool allowNegativeStock;
+    private bool originalAllowNegativeStock;
+    private bool riskAcknowledged;
+    private bool success;
+    private string message = string.Empty;
+    private IReadOnlyList<NegativeStockPosition> exceptions = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        loading = false;
+    }
+
+    private async Task ReloadAsync()
+    {
+        var view = await Policy.GetAsync();
+        allowNegativeStock = view.AllowNegativeStock;
+        originalAllowNegativeStock = view.AllowNegativeStock;
+        exceptions = view.ExistingNegativePositions;
+        riskAcknowledged = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        message = string.Empty;
+        try
+        {
+            var result = await Policy.UpdateAsync(allowNegativeStock);
+            success = result.Success;
+            message = result.Message;
+            await ReloadAsync();
+        }
+        catch (Exception exception)
+        {
+            success = false;
+            message = VoucherErrorMessages.For(exception);
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+}

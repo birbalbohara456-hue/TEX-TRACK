@@ -1,0 +1,52 @@
+@page "/settings/data-maintenance"
+@attribute [Authorize(Policy = SecurityPolicies.DeveloperOnly)]
+@inject DeveloperAccessService DeveloperAccess
+@inject DatabaseMaintenanceService Maintenance
+
+<PageTitle>Developer Data Maintenance</PageTitle>
+
+<div class="page-card data-maintenance">
+    <header><p>SETTINGS</p><h1>Developer Data Maintenance</h1></header>
+    @if (!DeveloperAccess.IsDeveloper)
+    {
+        <div class="form-message error">Developer authentication is required.</div>
+        <a class="maintenance-button" href="/login?returnUrl=/settings/data-maintenance">Login</a>
+    }
+    else
+    {
+        <form method="post" action="/developer-logout"><AntiforgeryToken /><button type="submit" class="maintenance-button">Developer Logout</button></form>
+        <section class="danger-panel">
+            <h2>Clear Entire ERP Database</h2>
+            <p>This permanently removes every company, business master, voucher, stock movement, report record and Tally XML history. Application users and security roles are preserved and reattached to the recreated company. The schema and migration history remain available.</p>
+            <label>Type <strong>@DatabaseMaintenanceService.ConfirmationPhrase</strong></label>
+            <input @bind="confirmation" autocomplete="off" disabled="@busy" />
+            <label>Re-enter Developer password</label>
+            <input type="password" @bind="password" autocomplete="current-password" disabled="@busy" />
+            <button type="button" class="maintenance-button danger" @onclick="ClearAsync" disabled="@busy">@(busy ? "Clearing…" : "Clear All Data")</button>
+        </section>
+    }
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="form-message @(success ? "success" : "error")">@message</div>
+    }
+</div>
+
+@code {
+    private string confirmation = string.Empty;
+    private string password = string.Empty;
+    private string message = string.Empty;
+    private bool success;
+    private bool busy;
+
+    private async Task ClearAsync()
+    {
+        busy = true; message = string.Empty;
+        try
+        {
+            var result = await Maintenance.ClearAllBusinessDataAsync(confirmation, password);
+            success = result.Success; message = result.Message;
+            if (result.Success) { confirmation = string.Empty; password = string.Empty; }
+        }
+        finally { busy = false; }
+    }
+}

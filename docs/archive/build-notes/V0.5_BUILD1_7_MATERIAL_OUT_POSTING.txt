@@ -1,0 +1,19 @@
+TexTrack ERP v0.5 Build 1.7 — Material Out Posting
+
+Implemented:
+- Transaction-safe Material Out save in PostgreSQL using SERIALIZABLE isolation.
+- Atomic per-voucher-type sequence reservation.
+- Auto/Auto Prefix-Suffix numbers are generated and locked; Manual remains mandatory/editable.
+- Permanent JWO, FG and component linkage on every Material Out line.
+- Server-side pending quantity revalidation before save.
+- Source negative and destination positive stock movement rows.
+- Material Out statutory/GST/e-Way detail persistence.
+- Voucher link and audit-log creation in the same transaction.
+- Alt+S universal voucher save hook using data-voucher-save-action.
+- Blank Narration + Enter advances to Save through the shared Enter-navigation layer.
+- Save from the GST/e-Way Bill modal with Alt+S.
+
+Important current boundary:
+- This build creates the stock movement ledger used by Material Out.
+- Negative-stock Allow/Lock enforcement is not activated until the company setting and opening/current stock engine are completed.
+- Material Out alteration, cancellation UI and Tally XML export are subsequent controlled builds.

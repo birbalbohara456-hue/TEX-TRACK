@@ -1,0 +1,11 @@
+TexTrack ERP v0.5 Build 2.6B1 — Material In Automatic Consumption Fix
+
+Changes:
+- Consume Now is calculated automatically for each JWO component.
+- Formula uses cumulative FG receipt proportion against the JWO component requirement.
+- Prior Material In consumption is deducted.
+- Result is capped at actual unconsumed Material Out availability.
+- Consume Now is review-only in the create screen.
+- Save errors now display the deepest database/provider message instead of only the generic EF wrapper.
+- No database migration change.
+- Alteration and deletion remain deferred.

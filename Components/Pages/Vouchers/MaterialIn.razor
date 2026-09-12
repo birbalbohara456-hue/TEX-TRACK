@@ -1,0 +1,1152 @@
+@page "/vouchers/material-in"
+@implements IAsyncDisposable
+@attribute [Authorize(Policy = SecurityPolicies.OperateVouchers)]
+@using Microsoft.AspNetCore.Components.Web
+@inject MaterialInRepository Repository
+@inject DatabaseStatus Database
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject DeveloperAccessService DeveloperAccess
+
+<PageTitle>Material In - TexTrack ERP</PageTitle>
+
+<div id="mi-page-root" class="page-card voucher-page mi-voucher-page" tabindex="0"
+     @onkeydown="HandlePageKeyDown" @onkeydown:stopPropagation="true">
+    @if (showEntry)
+    {
+        <KeyboardContextScope ContextId="material-in-entry" RootElementId="mi-form-root" ContextType="KeyboardContextType.Form" Mode="@(editingVoucherId is null ? KeyboardContextMode.Create : KeyboardContextMode.Alteration)"
+                              CanDelete="@(editingVoucherId is not null && !busy)" DeleteAsync="DeleteCurrentAsync"
+                              CanCancel="@(editingVoucherId is not null && !busy)" CancelAsync="OpenCancelModal"
+                              IsVoucherEntry="true" EscapeAsync="HandleVoucherEscapeAsync" AcceptAsync="SaveAsync" />
+    }
+
+    @if (!Database.IsConnected)
+    {
+        <div class="database-warning"><strong>PostgreSQL setup required</strong><p>@Database.Message</p></div>
+    }
+    else if (loading)
+    {
+        <div class="loading-state">Loading Material In…</div>
+    }
+    else if (!showEntry)
+    {
+        <!-- LIST VIEW -->
+        <div class="page-header">
+            <div>
+                <p class="eyebrow">INVENTORY VOUCHER · FINISHED GOODS RECEIPT</p>
+                <h1>Material In</h1>
+            </div>
+            <div class="header-actions">
+                <button type="button" class="compact-action action-secondary" @onclick="OpenCreate">Alt+C Create</button>
+                <button type="button" class="compact-action action-secondary" @onclick="OpenSelected">Enter Alter</button>
+            </div>
+        </div>
+
+        <KeyboardContextScope ContextId="material-in-list" RootElementId="mi-page-root" ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List" CanDelete="false" />
+        <TexTrack.Web.Components.Vouchers.MaterialIn.MaterialInVoucherList Rows="listRows" SelectedIndex="selectedIndex"
+            SearchText="searchText" SearchTextChanged="OnSearchTextChanged" SearchKeyDown="HandleSearchKeyDown"
+            CreateRequested="OpenCreate" SelectRequested="SelectListRow" OpenRequested="OpenSelected" />
+    }
+    else
+    {
+        <!-- Shared voucher frame; only the Material In transaction body is page-specific. -->
+        <VoucherEntryFrame Id="mi-form-root" Class="mi-entry-form" Profile="VoucherLayoutProfiles.MaterialIn"
+                           Title="Material In"
+                           DayText="@defaults.VoucherDate.ToString("dddd")">
+            <DateContent>
+                <VoucherDateInput Id="mi-date" Class="header-date" @bind-Value="defaults.VoucherDate" />
+            </DateContent>
+            <MessageContent>
+                @if (!string.IsNullOrWhiteSpace(message))
+                {
+                    <div class="form-message @(messageIsError ? "error" : "success")">@message</div>
+                }
+            </MessageContent>
+            <ChildContent>
+            <div class="voucher-paper-surface p-3 flex flex-col gap-3">
+
+                <!-- MASTER FIELDS PANEL -->
+                <section class="panel-light p-2.5 grid grid-cols-12 gap-4">
+                    <div class="col-span-9 grid grid-cols-2 gap-x-6 gap-y-1.5">
+                        <VoucherField FieldKey="party" For="mi-job-worker">
+                            <div class="lookup-field mi-lookup-field">
+                                <input id="mi-job-worker" data-erp-lookup="true" data-tt-related-master="/masters/ledgers" autocomplete="new-password" autofocus class="tally-input flex-1 font-medium"
+                                       placeholder="Type to search Job Worker" value="@jobWorkerText" readonly="@(editingVoucherId is not null)"
+                                       @onfocus="OpenJobWorkerLookup" @oninput="JobWorkerTextChanged" />
+                                @if (activeLookupKey == "job-worker" && editingVoucherId is null)
+                                {
+                                    var workers = FilterJobWorkers().Take(12).ToList();
+                                    <div class="erp-lookup-panel">
+                                        @foreach (var worker in workers)
+                                        {
+                                            <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectJobWorkerAsync(worker)"><strong>@worker.Name</strong><span>@worker.GroupName</span></button>
+                                        }
+                                        @if (workers.Count == 0) { <div class="erp-lookup-empty">No matching Job Worker</div> }
+                                    </div>
+                                }
+                            </div>
+                        </VoucherField>
+
+                        <VoucherField FieldKey="order" For="mi-order">
+                            <div class="lookup-field mi-lookup-field">
+                                <input id="mi-order" data-erp-lookup="true" autocomplete="new-password" class="tally-input flex-1 font-medium"
+                                       placeholder="@(loadingOrders ? "Loading pending orders…" : "Type to search pending JWO")" value="@orderText"
+                                       readonly="@(editingVoucherId is not null || selectedJobWorkerId == 0 || loadingOrders)" @onfocus="OpenOrderLookup" @oninput="OrderTextChanged" />
+                                @if (activeLookupKey == "order" && editingVoucherId is null)
+                                {
+                                    var pendingOrders = FilterOrders().Take(15).ToList();
+                                    <div class="erp-lookup-panel mi-order-lookup-panel">
+                                        @foreach (var order in pendingOrders)
+                                        {
+                                            <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectOrder(order)"><strong>@order.VoucherNumber</strong><span>Batch @order.Batch · @order.VoucherDate.ToString("dd-MM-yyyy")</span></button>
+                                        }
+                                        @if (pendingOrders.Count == 0) { <div class="erp-lookup-empty">No matching pending JWO</div> }
+                                    </div>
+                                }
+                            </div>
+                        </VoucherField>
+
+                        <VoucherField FieldKey="source-godown" For="mi-consumption-godown">
+                            <div class="lookup-field mi-lookup-field">
+                                <input id="mi-consumption-godown" data-erp-lookup="true" data-tt-related-master="/masters/godowns" autocomplete="new-password" class="tally-input flex-1 font-medium"
+                                       placeholder="Selected from linked Material Out" value="@consumptionGodownText" readonly="@(selectedOrder is not null)" @onfocus="OpenConsumptionGodownLookup" @oninput="ConsumptionGodownTextChanged" />
+                                @if (activeLookupKey == "consumption-godown")
+                                {
+                                    var godowns = FilterGodowns(consumptionGodownText).Take(12).ToList();
+                                    <div class="erp-lookup-panel">
+                                        @foreach (var godown in godowns) { <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectConsumptionGodown(godown)"><strong>@godown.Name</strong></button> }
+                                        @if (godowns.Count == 0) { <div class="erp-lookup-empty">No matching Godown</div> }
+                                    </div>
+                                }
+                            </div>
+                        </VoucherField>
+
+                        <VoucherField FieldKey="destination-godown" For="mi-receiving-godown">
+                            <div class="lookup-field mi-lookup-field">
+                                <input id="mi-receiving-godown" data-erp-lookup="true" data-tt-related-master="/masters/godowns" autocomplete="new-password" class="tally-input flex-1 font-medium"
+                                       placeholder="Select Finished Goods Godown" value="@receivingGodownText" @onfocus="OpenReceivingGodownLookup" @oninput="ReceivingGodownTextChanged" />
+                                @if (activeLookupKey == "receiving-godown")
+                                {
+                                    var godowns = FilterGodowns(receivingGodownText).Take(12).ToList();
+                                    <div class="erp-lookup-panel">
+                                        @foreach (var godown in godowns) { <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectReceivingGodown(godown)"><strong>@godown.Name</strong></button> }
+                                        @if (godowns.Count == 0) { <div class="erp-lookup-empty">No matching Godown</div> }
+                                    </div>
+                                }
+                            </div>
+                        </VoucherField>
+
+                        <VoucherField FieldKey="batch">
+                            <input value="@(selectedOrder?.Batch ?? string.Empty)" readonly tabindex="-1" class="tally-input flex-1 font-bold read-only-text" />
+                        </VoucherField>
+
+                        <VoucherField FieldKey="reference" For="mi-reference">
+                            <input id="mi-reference" @bind="referenceNumber" maxlength="100" class="tally-input flex-1" placeholder="E.g. DC-101" />
+                        </VoucherField>
+                    </div>
+
+                    <div class="mi-voucher-summary">
+                        <label class="mi-voucher-number-field">
+                            <span>Voucher No.</span>
+                            <input id="mi-voucher-number" @bind="defaults.VoucherNumber"
+                                   readonly="@(defaults.NumberingMode != "Manual")"
+                                   tabindex="@(defaults.NumberingMode == "Manual" ? 0 : -1)" />
+                        </label>
+                    </div>
+                </section>
+
+                <!-- WORKSPACE AREA -->
+                @if (selectedOrder is null)
+                {
+                    <div class="mi-empty-state">
+                        Select Party A/c Name and pending JWO / Order No. to load finished goods receipt and material consumption details.
+                    </div>
+                }
+                else
+                {
+                    <div class="mi-workspace flex flex-col gap-3">
+                        <!-- ITEM GRID TABLE -->
+                        <div>
+                            <div class="flex items-center gap-1.5 mb-1 pl-0.5">
+                                <span class="font-bold text-[#1D2835] uppercase text-[10px] tracking-wider">Stage Outputs Received</span>
+                            </div>
+                            <table class="erp-table">
+                                <thead>
+                                    <tr>
+                                        <th class="w-[35%] text-left">Item Name / Details</th>
+                                        <th class="w-[15%] text-right">Pending Qty</th>
+                                        <th class="w-[15%] text-right">Received Qty</th>
+                                        <th class="w-[10%] text-center">UQC</th>
+                                        <th class="w-[12%] text-right">P.Charge (/unit)</th>
+                                        <th class="w-[12%] text-right">Total Charges</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var fg in fgRows)
+                                    {
+                                        <tr class="fg-title-row" @key="(fg.BomStageId, fg.StageAssignmentId)">
+                                            <td colspan="6" class="p-0">
+                                                <div class="fg-title-wrap p-2 bg-[#F5F8FB]">
+                                                    <div>
+                                                        <strong class="text-[13px] text-[#1D2835]">@fg.StageName · @fg.StockItemName · Assignment v@(fg.AssignmentVersion)</strong>
+                                                        <span class="ml-2 text-[11px] text-[#657487]">(Ordered @FormatQty(fg.OrderedQuantity, fg.DecimalPlaces) · Prev Received @FormatQty(fg.PreviouslyReceived, fg.DecimalPlaces) · Pending @FormatQty(fg.PendingQuantity, fg.DecimalPlaces) @fg.UqcShortName)</span>
+                                                    </div>
+                                                    <div class="fg-process-wrap">
+                                                        <label class="field-label">Process Charge / Unit:</label>
+                                                        <input id="mi-process-charge-@fg.BomStageId-@fg.StageAssignmentId" type="number" min="0" step="0.0001"
+                                                               disabled="@(fg.ReceivedQuantity <= 0)"
+                                                               @bind="fg.ProcessCharge" @bind:event="oninput" @bind:after="() => SetChargeMode(fg, ProcessChargeMode.PerUnit)" title="Enter rate per unit; total is calculated" class="tally-input w-24 text-right font-bold" />
+                                                        <label class="field-label">Total Charges:</label>
+                                                        <input id="mi-total-charge-@fg.BomStageId-@fg.StageAssignmentId" type="number" min="0.01" step="0.01" required
+                                                               disabled="@(fg.ReceivedQuantity <= 0)"
+                                                               @bind="fg.TotalCharge" @bind:event="oninput" @bind:after="() => SetChargeMode(fg, ProcessChargeMode.Total)" title="Enter total; rate per unit is calculated" class="tally-input w-24 text-right font-bold" />
+                                                        <small>@(fg.ChargeMode == ProcessChargeMode.PerUnit ? "Rate entered · total calculated" : "Total entered · rate calculated")</small>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+
+                                        <!-- VARIANT ALLOCATION CELLS -->
+                                        <tr>
+                                            <td colspan="6" class="variant-matrix-cell p-2">
+                                                <div class="mi-variant-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 bg-[#F5F8FB] p-2 border border-[#C8D1DB] rounded-[2px]">
+                                                    @if (fg.Variants.Count == 0)
+                                                    {
+                                                        <label class="mi-variant-cell flex flex-col p-1.5 bg-white border border-[#9AA8B6] rounded-[2px]">
+                                                            <span class="variant-title font-bold text-[#1D2835] text-[11px]">Stage output quantity</span>
+                                                            <small class="variant-pending text-[10px] text-[#657487] mb-1">Pending @FormatQty(fg.PendingQuantity, fg.DecimalPlaces)</small>
+                                                             <input id="mi-stage-qty-@fg.BomStageId-@fg.StageAssignmentId" type="number" min="0" max="@fg.PendingQuantity" step="@StepFor(fg.DecimalPlaces)"
+                                                                    @bind="fg.DirectQuantity" @bind:event="oninput" @bind:after="RecalculateAutomaticConsumption"
+                                                                    @onkeydown="e => HandleReceiptQuantityKeyDown(e, fg, null)" @onkeydown:stopPropagation="true"
+                                                                    class="tally-input text-right font-mono font-bold text-[#2F6B4B]" />
+                                                        </label>
+                                                    }
+                                                    @foreach (var variant in fg.Variants)
+                                                    {
+                                                        <label class="mi-variant-cell flex flex-col p-1.5 bg-white border border-[#9AA8B6] rounded-[2px]" @key="variant.StockItemVariantId">
+                                                            <span class="variant-title font-bold text-[#1D2835] text-[11px]">@variant.ColourName / @variant.SizeName</span>
+                                                            <small class="variant-pending text-[10px] text-[#657487] mb-1">Pending @FormatQty(variant.PendingQuantity, fg.DecimalPlaces)</small>
+                                                             <input id="mi-fg-qty-@fg.StageAssignmentId-@variant.StockItemVariantId" type="number" min="0" max="@variant.PendingQuantity" step="@StepFor(fg.DecimalPlaces)"
+                                                                    @bind="variant.Quantity" @bind:event="oninput" @bind:after="RecalculateAutomaticConsumption"
+                                                                    @onkeydown="e => HandleReceiptQuantityKeyDown(e, fg, variant.StockItemVariantId)" @onkeydown:stopPropagation="true"
+                                                                    class="tally-input text-right font-mono font-bold text-[#2F6B4B]" />
+                                                        </label>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        @if (fg.ReceivedQuantity > fg.PendingQuantity)
+                                        {
+                                            <tr><td colspan="6" class="inline-warning">Receipt quantity exceeds pending quantity.</td></tr>
+                                        }
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td class="text-right uppercase text-[10px] font-bold" colspan="2">Voucher Totals</td>
+                                        <td class="text-right font-mono text-[11px] font-bold">@FinishedGoodsTotalQuantity</td>
+                                        <td class="text-center text-[10px] font-bold">@FinishedGoodsTotalUqc</td>
+                                        <td></td>
+                                        <td class="text-right font-mono text-[12px] font-black text-[#1D2835]">₹ @fgRows.Sum(x => x.TotalCharge).ToString("N2")</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        <!-- RAW MATERIAL CONSUMPTION SECTION -->
+                        <div>
+                            <div class="flex items-center gap-1.5 mb-1 pl-0.5">
+                                <span class="font-bold text-[#1D2835] uppercase text-[10px] tracking-wider">Auto-Deducted Raw Material Consumption</span>
+                                <span class="ml-auto text-[11px] font-bold text-[#2F6B4B]">Total Consumed: @TotalConsumed.ToString("0.####")</span>
+                            </div>
+                            <table class="erp-table">
+                                <thead>
+                                    <tr>
+                                        <th class="w-[35%] text-left">Component Item Name</th>
+                                        <th class="text-right">Jobber Stock (Issued)</th>
+                                        <th class="text-right">Prev. Consumed</th>
+                                        <th class="text-right">Available</th>
+                                        <th class="text-right">Consume Now</th>
+                                        <th class="text-center">UQC</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in consumptionRows)
+                                    {
+                                        <tr @key="(row.JwoComponentId, row.StageAssignmentId)">
+                                            <td class="font-semibold text-[#33465A]">@row.StockItemName</td>
+                                            <td class="text-right font-mono text-[11px]">@FormatQty(row.IssuedQuantity, row.DecimalPlaces)</td>
+                                            <td class="text-right font-mono text-[11px] text-[#657487]">@FormatQty(row.PreviouslyConsumed, row.DecimalPlaces)</td>
+                                            <td class="text-right font-mono text-[11px] font-bold text-[#2F6B4B]">@FormatQty(row.AvailableQuantity, row.DecimalPlaces)</td>
+                                            <td class="text-right font-mono font-bold text-[#1D2835] text-[11px]">
+                                                <input type="number" min="0" max="@row.AvailableQuantity" step="@StepFor(row.DecimalPlaces)"
+                                                       value="@row.Quantity.ToString($"F{row.DecimalPlaces}")" readonly tabindex="-1" class="tally-input w-full text-right font-mono font-bold read-only-qty" />
+                                            </td>
+                                            <td class="text-center font-medium">@row.UqcShortName</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="mi-gross-total" aria-label="Gross total charges">
+                            <span>Gross Total Charges</span>
+                            <strong>₹ @fgRows.Sum(x => x.TotalCharge).ToString("N2")</strong>
+                        </div>
+                    </div>
+                }
+
+                <section class="mi-narration-section">
+                    <label for="mi-narration">Narration <span>:</span></label>
+                    <textarea id="mi-narration" rows="2" maxlength="500" @bind="narration" class="tally-input" placeholder="Enter remarks…"></textarea>
+                </section>
+
+                @if (editingVoucherId is long auditVoucherId)
+                {
+                    <VoucherAuditStamp VoucherId="@auditVoucherId" />
+                }
+                <footer class="mi-save-actions">
+                    <div class="mi-footer-primary">
+                        <button type="button" class="mi-footer-command" @onclick="HandleVoucherEscapeAsync" disabled="@busy"><b>Esc</b> Quit</button>
+                        <button id="mi-save" type="button" class="mi-footer-command is-accept" data-enter-save="true" data-voucher-save-action="true" @onclick="SaveAsync" disabled="@busy"><b>Alt+A</b> @(editingVoucherId is null ? "Accept" : "Update")</button>
+                    </div>
+                    <span class="mi-footer-help">Enter: Next field · Backspace: Previous field · F2: Date</span>
+                    @if (editingVoucherId is not null)
+                    {
+                        <div class="mi-footer-secondary">
+                            <button type="button" class="mi-footer-command is-danger" @onclick="DeleteCurrentAsync" disabled="@busy"><b>Alt+D</b> Delete</button>
+                            <button type="button" class="mi-footer-command is-danger" @onclick="OpenCancelModal" disabled="@busy"><b>Alt+X</b> Cancel</button>
+                        </div>
+                    }
+                </footer>
+
+            </div>
+            </ChildContent>
+        </VoucherEntryFrame>
+    }
+
+    <!-- QUIT CONFIRMATION MODAL -->
+    @if (showQuitModal)
+    {
+        <div class="tt-dialog-overlay" role="presentation">
+            <section class="tt-dialog" role="dialog" aria-modal="true" aria-labelledby="mi-quit-title" tabindex="0"
+                     @onkeydown="HandleQuitModalKeyDown" @onkeydown:stopPropagation="true" @onkeydown:preventDefault="true">
+                <header class="tt-dialog-titlebar"><strong id="mi-quit-title">Quit?</strong></header>
+                <div class="tt-dialog-body"><p>Quit? Yes or No</p></div>
+                <footer class="tt-dialog-actions">
+                    <button id="mi-quit-yes" type="button" class="@(quitSelectYes ? "dialog-selected" : null)" @onclick="ConfirmQuitAsync">Yes</button>
+                    <button id="mi-quit-no" type="button" class="@(!quitSelectYes ? "dialog-selected" : null)" @onclick="CancelQuit">No</button>
+                </footer>
+            </section>
+        </div>
+    }
+
+    @if (showCancelModal)
+    {
+        <div class="tally-modal-overlay" role="presentation">
+            <section class="tally-modal-window" role="dialog" aria-modal="true" aria-labelledby="mi-cancel-title" tabindex="0"
+                     @onkeydown="HandleCancelModalKeyDown" @onkeydown:stopPropagation="true" style="width: 430px; min-height: auto;">
+                <header class="tally-modal-titlebar"><strong id="mi-cancel-title">Cancel Material In?</strong></header>
+                <div class="tt-dialog-body" style="padding: 15px;">
+                    <p>Cancel Material In <strong>@defaults.VoucherNumber</strong>? Stock postings will be reversed and the voucher will remain for audit.</p>
+                    <label class="tt-cancel-reason">Cancellation Reason <b>*</b>
+                        <textarea id="mi-cancel-reason" maxlength="500" @bind="cancellationReason" rows="3"></textarea>
+                    </label>
+                    @if (!string.IsNullOrWhiteSpace(cancelMessage)) { <div class="form-message error">@cancelMessage</div> }
+                </div>
+                <footer class="tt-dialog-actions">
+                    <button type="button" class="compact-action action-danger" @onclick="ConfirmCancelAsync" disabled="@busy">Cancel Voucher</button>
+                    <button type="button" class="compact-action action-secondary" @onclick="CloseCancelModal" disabled="@busy">Return</button>
+                </footer>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "voucherId")] public long? VoucherId { get; set; }
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+
+    private MaterialInVoucherDefaults defaults = new();
+    private MaterialInLookupData lookup = new();
+    private DotNetObjectReference<MaterialIn>? relatedMasterRefreshReference;
+    private List<MaterialInPendingOrder> orders = new();
+    private MaterialInPendingOrder? selectedOrder;
+    private List<FgEntryRow> fgRows = new();
+    private List<ConsumptionEntryRow> consumptionRows = new();
+    private long selectedJobWorkerId;
+    private long selectedOrderId;
+    private long consumptionGodownId;
+    private long receivingGodownId;
+    private string jobWorkerText = string.Empty;
+    private string orderText = string.Empty;
+    private string consumptionGodownText = string.Empty;
+    private string receivingGodownText = string.Empty;
+    private string? activeLookupKey;
+    private string referenceNumber = string.Empty;
+    private string narration = string.Empty;
+    private string message = string.Empty;
+    private bool messageIsError;
+    private List<MaterialInListItem> listRows = new();
+    private long? editingVoucherId;
+    private string editingConcurrencyToken = string.Empty;
+    private bool showEntry;
+    private int selectedIndex = -1;
+    private string searchText = string.Empty;
+    private string? pendingFocusId;
+    private void FocusMaterialInDate() => pendingFocusId = "mi-date";
+    private bool loading = true;
+    private bool showQuitModal;
+    private bool quitSelectYes = true;
+    private string? quitReturnFocusId;
+    private bool loadingOrders;
+    private bool busy;
+    private bool showCancelModal;
+    private string cancellationReason = string.Empty;
+    private string cancelMessage = string.Empty;
+
+    private decimal TotalReceived => fgRows.Sum(x => x.ReceivedQuantity);
+    private string FinishedGoodsTotalQuantity => UqcFinishedGoodsTotals.Count == 1
+        ? UqcFinishedGoodsTotals[0].Quantity.ToString("0.####")
+        : string.Join(" · ", UqcFinishedGoodsTotals.Select(x => $"{x.Quantity:0.####} {x.Uqc}"));
+    private string FinishedGoodsTotalUqc => UqcFinishedGoodsTotals.Count == 1 ? UqcFinishedGoodsTotals[0].Uqc : "MIXED";
+    private List<(string Uqc, decimal Quantity)> UqcFinishedGoodsTotals => fgRows
+        .GroupBy(x => x.UqcShortName, StringComparer.OrdinalIgnoreCase)
+        .Select(x => (Uqc: x.Key, Quantity: x.Sum(y => y.ReceivedQuantity)))
+        .Where(x => x.Quantity != 0)
+        .ToList();
+    private decimal TotalConsumed => consumptionRows.Sum(x => x.Quantity);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Database.IsConnected) { loading = false; return; }
+        try
+        {
+            defaults = await Repository.GetEntryDefaultsAsync();
+            lookup = await Repository.GetLookupDataAsync();
+            if (VoucherId is not null) await OpenVoucherAsync(VoucherId.Value);
+            else OpenCreate();
+        }
+        catch (Exception ex) { SetMessage(VoucherErrorMessages.For(ex), true); }
+        finally { loading = false; }
+    }
+
+    private async Task LoadListAsync(long? selectId = null)
+    {
+        listRows = (await Repository.GetListAsync(searchText)).ToList();
+        if (listRows.Count == 0) selectedIndex = -1;
+        else if (selectId is not null)
+        {
+            selectedIndex = listRows.FindIndex(x => x.VoucherId == selectId.Value);
+            if (selectedIndex < 0) selectedIndex = 0;
+        }
+        else selectedIndex = Math.Clamp(selectedIndex < 0 ? 0 : selectedIndex, 0, listRows.Count - 1);
+        pendingFocusId = selectedIndex >= 0 ? $"mi-row-{listRows[selectedIndex].VoucherId}" : "mi-page-root";
+    }
+
+    private void OpenCreate()
+    {
+        editingVoucherId = null;
+        editingConcurrencyToken = string.Empty;
+        ResetEntry();
+        showEntry = true;
+        message = string.Empty;
+        pendingFocusId = defaults.NumberingMode == "Manual" ? "mi-voucher-number" : "mi-job-worker";
+    }
+
+    private async Task OpenSelected()
+    {
+        if (selectedIndex < 0 || selectedIndex >= listRows.Count || busy) return;
+        await OpenVoucherAsync(listRows[selectedIndex].VoucherId);
+    }
+
+    private async Task OpenVoucherAsync(long voucherId)
+    {
+        var data = await Repository.GetForEditAsync(voucherId);
+        if (data is null)
+        {
+            SetMessage("The selected Material In voucher no longer exists.", true);
+            await LoadListAsync();
+            return;
+        }
+        if (string.Equals(data.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !DeveloperAccess.IsDeveloper)
+        {
+            SetMessage("A cancelled Material In voucher cannot be altered.", true);
+            await LoadListAsync(voucherId);
+            return;
+        }
+
+        editingVoucherId = data.VoucherId;
+        editingConcurrencyToken = data.ConcurrencyToken;
+        defaults = data.Defaults;
+        selectedJobWorkerId = data.JobWorkerLedgerId;
+        consumptionGodownId = data.ConsumptionGodownId;
+        receivingGodownId = data.ReceivingGodownId;
+        referenceNumber = data.ReferenceNumber;
+        narration = data.Narration;
+        orders = (await Repository.GetPendingOrdersAsync(selectedJobWorkerId, editingVoucherId)).ToList();
+        selectedOrderId = data.JwoVoucherId;
+        selectedOrder = orders.FirstOrDefault(x => x.JwoVoucherId == selectedOrderId);
+        if (selectedOrder is null)
+        {
+            SetMessage("The original JWO / Order Number is unavailable or cancelled.", true);
+            return;
+        }
+        jobWorkerText = JobWorkerFieldText(lookup.JobWorkers.FirstOrDefault(x => x.Id == selectedJobWorkerId));
+        orderText = OrderDisplay(selectedOrder);
+        consumptionGodownText = lookup.Godowns.FirstOrDefault(x => x.Id == consumptionGodownId)?.Name ?? string.Empty;
+        receivingGodownText = lookup.Godowns.FirstOrDefault(x => x.Id == receivingGodownId)?.Name ?? string.Empty;
+        PopulateOrderRows(selectedOrder);
+        foreach (var saved in data.FinishedGoods)
+        {
+            var row = fgRows.FirstOrDefault(x => x.JwoFinishedGoodId == saved.JwoFinishedGoodId && x.StageAssignmentId == saved.StageAssignmentId);
+            if (row is null) continue;
+            if (saved.BomStageId != 0) row = fgRows.FirstOrDefault(x => x.BomStageId == saved.BomStageId && x.StageAssignmentId == saved.StageAssignmentId) ?? row;
+            row.TotalCharge = saved.TotalCharge;
+            row.ChargeMode = saved.ChargeMode;
+            if (row.Variants.Count == 0) row.DirectQuantity = saved.ReceivedQuantity;
+            row.ProcessCharge = saved.ProcessCharge;
+            foreach (var allocation in saved.Variants)
+            {
+                var variant = row.Variants.FirstOrDefault(x => x.StockItemVariantId == allocation.StockItemVariantId);
+                if (variant is not null) variant.Quantity = allocation.Quantity;
+            }
+        }
+        foreach (var row in fgRows) RecalculateProcessCharge(row);
+        foreach (var saved in data.Consumptions)
+        {
+            var row = consumptionRows.FirstOrDefault(x => x.JwoComponentId == saved.JwoComponentId && x.StageAssignmentId == saved.StageAssignmentId);
+            if (row is not null) row.Quantity = saved.ConsumedQuantity;
+        }
+        showEntry = true;
+        message = $"Material In {defaults.VoucherNumber} opened in alteration mode.";
+        messageIsError = false;
+        pendingFocusId = "mi-date";
+    }
+
+    private async Task CloseEntry()
+    {
+        if (!string.IsNullOrWhiteSpace(ReturnUrl))
+        {
+            Navigation.NavigateTo(ReturnUrl);
+            return;
+        }
+        Navigation.NavigateTo("/");
+        await Task.CompletedTask;
+    }
+
+    private void SelectListRow(int index)
+    {
+        selectedIndex = index;
+        pendingFocusId = $"mi-row-{listRows[index].VoucherId}";
+    }
+
+    private void OnSearchTextChanged(string value) => searchText = value;
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadListAsync();
+        else if (e.Key == "Escape") pendingFocusId = "mi-page-root";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            relatedMasterRefreshReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("texTrackRegisterRelatedMasterRefresh", relatedMasterRefreshReference);
+        }
+        if (pendingFocusId is null)
+        {
+            if (firstRender) await JS.InvokeVoidAsync("texTrackFocusById", "mi-page-root");
+            return;
+        }
+        var target = pendingFocusId;
+        pendingFocusId = null;
+        await Task.Delay(40);
+        await JS.InvokeVoidAsync("texTrackFocusById", target);
+        if (target.StartsWith("mi-row-", StringComparison.Ordinal))
+            await JS.InvokeVoidAsync("texTrackScrollRowIntoView", target, "mi-grid");
+    }
+
+    [JSInvokable]
+    public async Task RefreshRelatedMasterLookupsAsync(string returnFocusId)
+    {
+        lookup = await Repository.GetLookupDataAsync();
+        pendingFocusId = string.IsNullOrWhiteSpace(returnFocusId) ? "mi-job-worker" : returnFocusId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Reuses the same registered reference as RefreshRelatedMasterLookupsAsync above -
+    // called by the shared closeLookupOnBlur JS whenever a data-erp-lookup field loses
+    // focus with its dropdown open, so activeLookupKey genuinely clears server-side
+    // instead of relying only on the client-side hide, which a later unrelated
+    // re-render would otherwise undo (see JobWorkOutOrder.razor's identical handler for
+    // the full explanation). Only clears when it still matches the exact field that
+    // blurred.
+    [JSInvokable]
+    public Task ClearLookupOnBlurAsync(string fieldId)
+    {
+        var key = fieldId switch
+        {
+            "mi-job-worker" => "job-worker",
+            "mi-order" => "order",
+            "mi-consumption-godown" => "consumption-godown",
+            "mi-receiving-godown" => "receiving-godown",
+            _ => null
+        };
+        if (key is not null && activeLookupKey == key)
+        {
+            activeLookupKey = null;
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (relatedMasterRefreshReference is not null)
+        {
+            try { await JS.InvokeVoidAsync("texTrackUnregisterRelatedMasterRefresh", relatedMasterRefreshReference); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+        relatedMasterRefreshReference?.Dispose();
+    }
+
+    private void OpenJobWorkerLookup() => activeLookupKey = editingVoucherId is null ? "job-worker" : null;
+    private void OpenOrderLookup() => activeLookupKey = editingVoucherId is null && selectedJobWorkerId != 0 && !loadingOrders ? "order" : null;
+    private void OpenConsumptionGodownLookup() => activeLookupKey = selectedOrder is null ? "consumption-godown" : null;
+    private void OpenReceivingGodownLookup() => activeLookupKey = "receiving-godown";
+
+    private void JobWorkerTextChanged(ChangeEventArgs e)
+    {
+        jobWorkerText = Convert.ToString(e.Value) ?? string.Empty;
+        if (selectedJobWorkerId != 0 && !string.Equals(jobWorkerText, JobWorkerFieldText(lookup.JobWorkers.FirstOrDefault(x => x.Id == selectedJobWorkerId)), StringComparison.OrdinalIgnoreCase))
+        {
+            selectedJobWorkerId = 0; selectedOrderId = 0; selectedOrder = null; orderText = string.Empty;
+            orders.Clear(); fgRows.Clear(); consumptionRows.Clear();
+        }
+        activeLookupKey = "job-worker";
+    }
+
+    private async Task SelectJobWorkerAsync(JobWorkerLookupItem worker)
+    {
+        selectedJobWorkerId = worker.Id;
+        jobWorkerText = JobWorkerFieldText(worker);
+        activeLookupKey = null;
+        await LoadOrdersForSelectedWorkerAsync();
+    }
+
+    private async Task LoadOrdersForSelectedWorkerAsync()
+    {
+        selectedOrderId = 0;
+        selectedOrder = null;
+        orderText = string.Empty;
+        orders.Clear(); fgRows.Clear(); consumptionRows.Clear();
+        consumptionGodownId = 0; receivingGodownId = 0;
+        consumptionGodownText = string.Empty; receivingGodownText = string.Empty;
+        message = string.Empty;
+        if (selectedJobWorkerId == 0) return;
+
+        var worker = lookup.JobWorkers.FirstOrDefault(x => x.Id == selectedJobWorkerId);
+        consumptionGodownId = worker?.DefaultMaterialInConsumptionGodownId ?? 0;
+        consumptionGodownText = lookup.Godowns.FirstOrDefault(x => x.Id == consumptionGodownId)?.Name ?? string.Empty;
+        pendingFocusId = "mi-order";
+        loadingOrders = true;
+        try
+        {
+            orders = (await Repository.GetPendingOrdersAsync(selectedJobWorkerId)).ToList();
+            if (orders.Count == 0) SetMessage("No pending JWO with both receivable finished goods and unconsumed Material Out quantity was found for this Job Worker.", true);
+        }
+        catch (Exception ex) { SetMessage(VoucherErrorMessages.For(ex), true); }
+        finally { loadingOrders = false; }
+    }
+
+    private void OrderTextChanged(ChangeEventArgs e)
+    {
+        orderText = Convert.ToString(e.Value) ?? string.Empty;
+        if (selectedOrder is not null && !string.Equals(orderText, OrderDisplay(selectedOrder), StringComparison.OrdinalIgnoreCase))
+        { selectedOrderId = 0; selectedOrder = null; fgRows.Clear(); consumptionRows.Clear(); }
+        activeLookupKey = "order";
+    }
+
+    private void SelectOrder(MaterialInPendingOrder order)
+    {
+        selectedOrderId = order.JwoVoucherId;
+        selectedOrder = order;
+        orderText = OrderDisplay(order);
+        activeLookupKey = null;
+        message = string.Empty;
+        PopulateOrderRows(order);
+        if (order.HasMultipleJobberDestinationGodowns)
+        {
+            consumptionGodownId = 0;
+            consumptionGodownText = string.Empty;
+            SetMessage("This JWO has material at multiple Jobber Destination Godowns. Receive each jobber-godown lot separately.", true);
+        }
+        else if (order.JobberDestinationGodownId > 0)
+        {
+            consumptionGodownId = order.JobberDestinationGodownId;
+            consumptionGodownText = order.JobberDestinationGodownName;
+        }
+        var outputGodowns = order.FinishedGoods.Where(x => x.OutputGodownId > 0)
+            .Select(x => new { x.OutputGodownId, x.OutputGodownName }).DistinctBy(x => x.OutputGodownId).ToList();
+        if (outputGodowns.Count == 1)
+        {
+            receivingGodownId = outputGodowns[0].OutputGodownId;
+            receivingGodownText = outputGodowns[0].OutputGodownName;
+        }
+
+        var firstFinishedGood = fgRows.FirstOrDefault();
+        pendingFocusId = firstFinishedGood is null ? "mi-narration" : ReceiptQuantityFocusId(firstFinishedGood);
+    }
+
+    private void ConsumptionGodownTextChanged(ChangeEventArgs e)
+    {
+        consumptionGodownText = Convert.ToString(e.Value) ?? string.Empty;
+        if (lookup.Godowns.FirstOrDefault(x => x.Id == consumptionGodownId) is { } selected && !string.Equals(selected.Name, consumptionGodownText, StringComparison.OrdinalIgnoreCase)) consumptionGodownId = 0;
+        activeLookupKey = "consumption-godown";
+    }
+
+    private void ReceivingGodownTextChanged(ChangeEventArgs e)
+    {
+        receivingGodownText = Convert.ToString(e.Value) ?? string.Empty;
+        if (lookup.Godowns.FirstOrDefault(x => x.Id == receivingGodownId) is { } selected && !string.Equals(selected.Name, receivingGodownText, StringComparison.OrdinalIgnoreCase)) receivingGodownId = 0;
+        activeLookupKey = "receiving-godown";
+    }
+
+    private void SelectConsumptionGodown(JobWorkGodownLookup godown) { consumptionGodownId = godown.Id; consumptionGodownText = godown.Name; activeLookupKey = null; pendingFocusId = "mi-receiving-godown"; }
+    private void SelectReceivingGodown(JobWorkGodownLookup godown) { receivingGodownId = godown.Id; receivingGodownText = godown.Name; activeLookupKey = null; pendingFocusId = "mi-reference"; }
+    private IEnumerable<JobWorkerLookupItem> FilterJobWorkers() => string.IsNullOrWhiteSpace(jobWorkerText) ? lookup.JobWorkers : lookup.JobWorkers.Where(x => JobWorkerDisplay(x).Contains(jobWorkerText.Trim(), StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<MaterialInPendingOrder> FilterOrders() => string.IsNullOrWhiteSpace(orderText) ? orders : orders.Where(x => OrderDisplay(x).Contains(orderText.Trim(), StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<JobWorkGodownLookup> FilterGodowns(string text) => string.IsNullOrWhiteSpace(text) ? lookup.Godowns : lookup.Godowns.Where(x => x.Name.Contains(text.Trim(), StringComparison.OrdinalIgnoreCase));
+    private static string JobWorkerDisplay(JobWorkerLookupItem? worker) => worker is null ? string.Empty : string.IsNullOrWhiteSpace(worker.GroupName) ? worker.Name : $"{worker.Name} · {worker.GroupName}";
+    private static string OrderDisplay(MaterialInPendingOrder? order) => order is null ? string.Empty : $"{order.VoucherNumber} · Batch {order.Batch} ({order.VoucherDate:dd-MM-yyyy})";
+
+    private static string JobWorkerFieldText(JobWorkerLookupItem? worker) => worker?.Name ?? string.Empty;
+
+    private void PopulateOrderRows(MaterialInPendingOrder order)
+    {
+        fgRows.Clear();
+        consumptionRows.Clear();
+
+        foreach (var fg in order.FinishedGoods)
+        {
+            fgRows.Add(new FgEntryRow
+            {
+                JwoFinishedGoodId = fg.JwoFinishedGoodId,
+                BomStageId = fg.BomStageId,
+                StageAssignmentId = fg.StageAssignmentId,
+                AssignmentVersion = fg.AssignmentVersion,
+                StageName = fg.StageName,
+                StockItemName = fg.StockItemName,
+                UqcShortName = fg.UqcShortName,
+                DecimalPlaces = fg.DecimalPlaces,
+                OrderedQuantity = fg.OrderedQuantity,
+                PreviouslyReceived = fg.ReceivedQuantity,
+                Variants = fg.Variants.Select(v => new VariantEntryRow
+                {
+                    StockItemVariantId = v.StockItemVariantId,
+                    ColourName = v.ColourName,
+                    SizeName = v.SizeName,
+                    PendingQuantity = v.PendingQuantity
+                }).ToList()
+            });
+        }
+        foreach (var row in order.Consumptions)
+        {
+            consumptionRows.Add(new ConsumptionEntryRow
+            {
+                JwoComponentId = row.JwoComponentId,
+                JwoFinishedGoodId = row.JwoFinishedGoodId,
+                BomStageId = row.BomStageId,
+                StageAssignmentId = row.StageAssignmentId,
+                AssignmentVersion = row.AssignmentVersion,
+                StockItemName = row.StockItemName,
+                UqcShortName = row.UqcShortName,
+                DecimalPlaces = row.DecimalPlaces,
+                RequiredQuantity = row.RequiredQuantity,
+                IssuedQuantity = row.IssuedQuantity,
+                PreviouslyConsumed = row.ConsumedQuantity,
+                AvailableQuantity = row.AvailableQuantity
+            });
+        }
+        RecalculateAutomaticConsumption();
+    }
+
+    private void RecalculateAutomaticConsumption()
+    {
+        foreach (var finishedGood in fgRows) RecalculateProcessCharge(finishedGood);
+        foreach (var row in consumptionRows)
+        {
+            var fg = fgRows.FirstOrDefault(x => x.BomStageId == row.BomStageId && x.StageAssignmentId == row.StageAssignmentId);
+            if (fg is null || fg.OrderedQuantity <= 0)
+            {
+                row.Quantity = 0;
+                continue;
+            }
+
+            var cumulativeReceived = fg.PreviouslyReceived + fg.ReceivedQuantity;
+            var plannedCumulativeConsumption = decimal.Round(
+                row.RequiredQuantity * cumulativeReceived / fg.OrderedQuantity,
+                row.DecimalPlaces,
+                MidpointRounding.AwayFromZero);
+            var currentReceiptConsumption = plannedCumulativeConsumption - row.PreviouslyConsumed;
+            row.Quantity = Math.Min(row.AvailableQuantity, Math.Max(0, currentReceiptConsumption));
+        }
+    }
+
+    private static void RecalculateProcessCharge(FgEntryRow row)
+    {
+        if (row.ReceivedQuantity < 0 || (row.ChargeMode == ProcessChargeMode.PerUnit ? row.ProcessCharge : row.TotalCharge) < 0) return;
+        (row.ProcessCharge, row.TotalCharge) = ProcessChargeCalculation.Calculate(row.ReceivedQuantity, row.ProcessCharge, row.TotalCharge, row.ChargeMode);
+    }
+
+    private static void SetChargeMode(FgEntryRow row, ProcessChargeMode mode)
+    {
+        row.ChargeMode = mode;
+        RecalculateProcessCharge(row);
+    }
+
+    private void HandleReceiptQuantityKeyDown(KeyboardEventArgs e, FgEntryRow row, long? variantId)
+    {
+        if (e.Key != "Enter") return;
+        if (variantId is long currentVariantId)
+        {
+            var currentIndex = row.Variants.FindIndex(x => x.StockItemVariantId == currentVariantId);
+            if (currentIndex >= 0 && currentIndex + 1 < row.Variants.Count)
+            {
+                pendingFocusId = $"mi-fg-qty-{row.StageAssignmentId}-{row.Variants[currentIndex + 1].StockItemVariantId}";
+                return;
+            }
+        }
+        pendingFocusId = row.ReceivedQuantity > 0
+            ? $"mi-process-charge-{row.BomStageId}-{row.StageAssignmentId}"
+            : ReceiptQuantityFocusId(row);
+    }
+
+    private static string ReceiptQuantityFocusId(FgEntryRow row) => row.Variants.Count == 0
+        ? $"mi-stage-qty-{row.BomStageId}-{row.StageAssignmentId}"
+        : $"mi-fg-qty-{row.StageAssignmentId}-{row.Variants[0].StockItemVariantId}";
+
+    private async Task SaveAsync()
+    {
+        if (busy) return;
+        message = string.Empty;
+        var validation = Validate();
+        if (validation is not null) { SetMessage(validation, true); pendingFocusId = GetValidationFocusId(validation); return; }
+
+        busy = true;
+        try
+        {
+            var request = new MaterialInSaveRequest
+            {
+                VoucherId = editingVoucherId ?? 0,
+                ConcurrencyToken = editingConcurrencyToken,
+                VoucherTypeId = defaults.VoucherTypeId,
+                VoucherNumber = defaults.VoucherNumber,
+                VoucherDate = defaults.VoucherDate,
+                ReferenceNumber = referenceNumber,
+                Batch = selectedOrder!.Batch,
+                JobWorkerLedgerId = selectedJobWorkerId,
+                JwoVoucherId = selectedOrder.JwoVoucherId,
+                ConsumptionGodownId = consumptionGodownId,
+                ReceivingGodownId = receivingGodownId,
+                Narration = narration,
+                FinishedGoods = fgRows.Where(x => x.ReceivedQuantity > 0).Select(x => new MaterialInFinishedGoodInput
+                {
+                    JwoFinishedGoodId = x.JwoFinishedGoodId,
+                    BomStageId = x.BomStageId,
+                    StageAssignmentId = x.StageAssignmentId,
+                    ReceivedQuantity = x.ReceivedQuantity,
+                    TotalCharge = x.TotalCharge,
+                    ProcessCharge = x.ProcessCharge,
+                    ChargeMode = x.ChargeMode,
+                    Variants = x.Variants.Where(v => v.Quantity > 0).Select(v => new MaterialInVariantInput { StockItemVariantId = v.StockItemVariantId, Quantity = v.Quantity }).ToList()
+                }).ToList(),
+                Consumptions = consumptionRows.Where(x => x.Quantity > 0).Select(x => new MaterialInConsumptionInput { JwoComponentId = x.JwoComponentId, BomStageId = x.BomStageId, StageAssignmentId = x.StageAssignmentId, ConsumedQuantity = x.Quantity }).ToList()
+            };
+            var result = await Repository.SaveAsync(request);
+            var savedNumber = result.VoucherNumber;
+            var wasAlteration = editingVoucherId is not null;
+            if (!string.IsNullOrWhiteSpace(ReturnUrl))
+            {
+                Navigation.NavigateTo(ReturnUrl);
+                return;
+            }
+            defaults = await Repository.GetEntryDefaultsAsync();
+            ResetEntry();
+            showEntry = true;
+            SetMessage($"Material In voucher {savedNumber} {(wasAlteration ? "altered" : "saved")} successfully.", false);
+            pendingFocusId = defaults.NumberingMode == "Manual" ? "mi-voucher-number" : "mi-job-worker";
+        }
+        catch (Exception ex) { SetMessage(GetErrorMessage(ex), true); }
+        finally { busy = false; }
+    }
+
+    private string? Validate()
+    {
+        if (selectedJobWorkerId == 0) return "Select a Job Worker.";
+        if (selectedOrder is null) return "Select a pending JWO / Order Number.";
+        if (consumptionGodownId == 0) return "Select the Consumption Godown.";
+        if (receivingGodownId == 0) return "Select the Finished Goods Godown.";
+        if (defaults.NumberingMode == "Manual" && string.IsNullOrWhiteSpace(defaults.VoucherNumber)) return "Voucher Number is required.";
+        if (!fgRows.Any(x => x.ReceivedQuantity > 0)) return "Enter at least one finished-goods receipt quantity.";
+        foreach (var fg in fgRows)
+        {
+            if (fg.Variants.Any(x => x.Quantity < 0 || x.Quantity > x.PendingQuantity)) return $"Invalid colour/size quantity for {fg.StockItemName}.";
+            if (fg.ReceivedQuantity > fg.PendingQuantity) return $"Receipt quantity for {fg.StockItemName} exceeds pending quantity.";
+            if (fg.ReceivedQuantity == 0 && fg.TotalCharge > 0) return $"Enter a received quantity for {fg.StockItemName} before applying total process charges.";
+            if (fg.ReceivedQuantity > 0 && fg.TotalCharge <= 0) return $"Total process charges for {fg.StockItemName} are required and must be greater than zero.";
+        }
+        if (!consumptionRows.Any(x => x.Quantity > 0)) return "Enter at least one raw-material consumption quantity.";
+        if (consumptionRows.Any(x => x.Quantity < 0 || x.Quantity > x.AvailableQuantity)) return "Raw-material consumption cannot exceed actual available Material Out quantity.";
+        return null;
+    }
+
+    private string GetValidationFocusId(string validationMessage)
+    {
+        if (validationMessage.Contains("Job Worker", StringComparison.OrdinalIgnoreCase)) return "mi-job-worker";
+        if (validationMessage.Contains("JWO", StringComparison.OrdinalIgnoreCase)) return "mi-order";
+        if (validationMessage.Contains("Consumption Godown", StringComparison.OrdinalIgnoreCase)) return "mi-consumption-godown";
+        if (validationMessage.Contains("Finished Goods Godown", StringComparison.OrdinalIgnoreCase)) return "mi-receiving-godown";
+        if (validationMessage.Contains("Voucher Number", StringComparison.OrdinalIgnoreCase)) return "mi-voucher-number";
+        if (validationMessage.Contains("process charges", StringComparison.OrdinalIgnoreCase))
+        {
+            var row = fgRows.FirstOrDefault(x => x.ReceivedQuantity > 0 && x.TotalCharge <= 0) ?? fgRows.FirstOrDefault();
+            if (row is not null) return row.ReceivedQuantity > 0
+                ? $"mi-total-charge-{row.BomStageId}-{row.StageAssignmentId}"
+                : ReceiptQuantityFocusId(row);
+        }
+        var firstVariant = fgRows.SelectMany(x => x.Variants).FirstOrDefault();
+        return firstVariant is null ? "mi-narration" : $"mi-fg-qty-{firstVariant.StockItemVariantId}";
+    }
+
+    private void ResetEntry()
+    {
+        editingVoucherId = null; editingConcurrencyToken = string.Empty;
+        selectedJobWorkerId = 0; selectedOrderId = 0; selectedOrder = null;
+        consumptionGodownId = 0; receivingGodownId = 0;
+        jobWorkerText = string.Empty; orderText = string.Empty;
+        consumptionGodownText = string.Empty; receivingGodownText = string.Empty; activeLookupKey = null;
+        referenceNumber = string.Empty; narration = string.Empty;
+        orders.Clear(); fgRows.Clear(); consumptionRows.Clear();
+    }
+
+    private void OpenCancelModal()
+    {
+        if (editingVoucherId is null || busy) return;
+        cancellationReason = string.Empty;
+        cancelMessage = string.Empty;
+        showCancelModal = true;
+        pendingFocusId = "mi-cancel-reason";
+    }
+
+    private async Task DeleteCurrentAsync()
+    {
+        if (editingVoucherId is null || busy) return;
+        var voucherId = editingVoucherId.Value;
+        var voucherNumber = defaults.VoucherNumber;
+        var confirmed = await JS.InvokeAsync<bool>("texTrackConfirmDelete", "Delete Material In?",
+            $"Delete Material In voucher {voucherNumber}? Its stock postings will be removed.", "mi-narration");
+        if (!confirmed) return;
+
+        busy = true;
+        try
+        {
+            var result = await Repository.DeleteAsync(voucherId);
+            if (!result.Success)
+            {
+                SetMessage(result.Message, true);
+                pendingFocusId = "mi-narration";
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(ReturnUrl))
+            {
+                Navigation.NavigateTo(ReturnUrl);
+                return;
+            }
+
+            defaults = await Repository.GetEntryDefaultsAsync();
+            ResetEntry();
+            showEntry = true;
+            SetMessage(result.Message, false);
+            pendingFocusId = defaults.NumberingMode == "Manual" ? "mi-voucher-number" : "mi-job-worker";
+        }
+        finally { busy = false; }
+    }
+
+    private void HandleCancelModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseCancelModal();
+        else if (e.AltKey && string.Equals(e.Key, "x", StringComparison.OrdinalIgnoreCase)) _ = ConfirmCancelAsync();
+    }
+
+    private async Task ConfirmCancelAsync()
+    {
+        if (editingVoucherId is null || busy) return;
+        if (string.IsNullOrWhiteSpace(cancellationReason))
+        {
+            cancelMessage = "Cancellation reason is required.";
+            pendingFocusId = "mi-cancel-reason";
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var voucherId = editingVoucherId.Value;
+            var voucherNumber = defaults.VoucherNumber;
+            var result = await Repository.CancelAsync(voucherId, cancellationReason);
+            if (!result.Success)
+            {
+                cancelMessage = result.Message;
+                return;
+            }
+            showCancelModal = false;
+            ResetEntry();
+            defaults = await Repository.GetEntryDefaultsAsync();
+            if (!string.IsNullOrWhiteSpace(ReturnUrl)) { Navigation.NavigateTo(ReturnUrl); return; }
+            showEntry = true;
+            SetMessage($"Material In {voucherNumber} cancelled successfully.", false);
+            pendingFocusId = defaults.NumberingMode == "Manual" ? "mi-voucher-number" : "mi-job-worker";
+        }
+        finally { busy = false; }
+    }
+
+    private void CloseCancelModal()
+    {
+        showCancelModal = false;
+        cancelMessage = string.Empty;
+        cancellationReason = string.Empty;
+        pendingFocusId = "mi-narration";
+    }
+
+    private async Task HandlePageKeyDown(KeyboardEventArgs e)
+    {
+        if (showEntry)
+        {
+            if (e.AltKey && string.Equals(e.Key, "a", StringComparison.OrdinalIgnoreCase)) await SaveAsync();
+            else if (e.AltKey && string.Equals(e.Key, "x", StringComparison.OrdinalIgnoreCase) && editingVoucherId is not null) OpenCancelModal();
+            else if (e.Key == "Escape" && !busy) await HandleVoucherEscapeAsync();
+            return;
+        }
+        if (e.AltKey && string.Equals(e.Key, "c", StringComparison.OrdinalIgnoreCase)) OpenCreate();
+        else if (e.Key == "F4") pendingFocusId = "mi-search";
+        else if (e.Key == "Enter") await OpenSelected();
+        else if (e.Key is "ArrowDown" or "Down" && listRows.Count > 0) SelectListRow(Math.Min(selectedIndex + 1, listRows.Count - 1));
+        else if (e.Key is "ArrowUp" or "Up" && listRows.Count > 0) SelectListRow(Math.Max(selectedIndex - 1, 0));
+        else if (e.Key == "Escape") await GoBack();
+    }
+
+    private async Task HandleVoucherEscapeAsync()
+    {
+        if (busy) return;
+
+        quitReturnFocusId = await JS.InvokeAsync<string?>("texTrackKeyboardContexts.getActiveElementId");
+        var isDirty = await JS.InvokeAsync<bool>("texTrackKeyboardContexts.isVoucherDirty", "material-in-entry");
+        if (!isDirty)
+        {
+            await CloseEntry();
+            return;
+        }
+
+        showQuitModal = true;
+        quitSelectYes = true;
+        pendingFocusId = "mi-quit-yes";
+    }
+
+    private async Task HandleQuitModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "ArrowLeft" or "Left" or "ArrowRight" or "Right" or "Tab")
+        {
+            quitSelectYes = !quitSelectYes;
+            pendingFocusId = quitSelectYes ? "mi-quit-yes" : "mi-quit-no";
+            return;
+        }
+        if (e.Key == "Enter")
+        {
+            if (quitSelectYes) await ConfirmQuitAsync(); else CancelQuit();
+            return;
+        }
+        if (string.Equals(e.Key, "y", StringComparison.OrdinalIgnoreCase))
+        {
+            await ConfirmQuitAsync();
+            return;
+        }
+        if (string.Equals(e.Key, "n", StringComparison.OrdinalIgnoreCase) || e.Key == "Escape") CancelQuit();
+    }
+
+    private async Task ConfirmQuitAsync()
+    {
+        showQuitModal = false;
+        quitReturnFocusId = null;
+        await CloseEntry();
+    }
+
+    private void CancelQuit()
+    {
+        showQuitModal = false;
+        pendingFocusId = quitReturnFocusId ?? "mi-page-root";
+        quitReturnFocusId = null;
+    }
+
+    private async Task GoBack() => await JS.InvokeVoidAsync("history.back");
+    private void SetMessage(string text, bool error) { message = text; messageIsError = error; }
+    private static string GetErrorMessage(Exception ex)
+    {
+        return VoucherErrorMessages.For(ex);
+    }
+    private static long ParseLong(object? value) => long.TryParse(Convert.ToString(value), out var parsed) ? parsed : 0;
+    private static string FormatQty(decimal value, int decimals) => value.ToString($"F{Math.Clamp(decimals, 0, 6)}");
+    private static string StepFor(int decimals) => decimals <= 0 ? "1" : $"0.{new string('0', Math.Max(0, decimals - 1))}1";
+
+    private sealed class FgEntryRow
+    {
+        public long JwoFinishedGoodId { get; set; }
+        public long BomStageId { get; set; }
+        public long StageAssignmentId { get; set; }
+        public int AssignmentVersion { get; set; }
+        public string StageName { get; set; } = string.Empty;
+        public string StockItemName { get; set; } = string.Empty;
+        public string UqcShortName { get; set; } = string.Empty;
+        public int DecimalPlaces { get; set; }
+        public decimal OrderedQuantity { get; set; }
+        public decimal PreviouslyReceived { get; set; }
+        public decimal PendingQuantity => OrderedQuantity - PreviouslyReceived;
+        public decimal TotalCharge { get; set; }
+        public ProcessChargeMode ChargeMode { get; set; }
+        public decimal ProcessCharge { get; set; }
+        public List<VariantEntryRow> Variants { get; set; } = new();
+        public decimal DirectQuantity { get; set; }
+        public decimal ReceivedQuantity => Variants.Count == 0 ? DirectQuantity : Variants.Sum(x => x.Quantity);
+    }
+
+    private sealed class VariantEntryRow
+    {
+        public long StockItemVariantId { get; set; }
+        public string ColourName { get; set; } = string.Empty;
+        public string SizeName { get; set; } = string.Empty;
+        public decimal PendingQuantity { get; set; }
+        public decimal Quantity { get; set; }
+    }
+
+    private sealed class ConsumptionEntryRow
+    {
+        public long JwoComponentId { get; set; }
+        public long JwoFinishedGoodId { get; set; }
+        public long BomStageId { get; set; }
+        public long StageAssignmentId { get; set; }
+        public int AssignmentVersion { get; set; }
+        public string StockItemName { get; set; } = string.Empty;
+        public string UqcShortName { get; set; } = string.Empty;
+        public int DecimalPlaces { get; set; }
+        public decimal RequiredQuantity { get; set; }
+        public decimal IssuedQuantity { get; set; }
+        public decimal PreviouslyConsumed { get; set; }
+        public decimal AvailableQuantity { get; set; }
+        public decimal Quantity { get; set; }
+    }
+}

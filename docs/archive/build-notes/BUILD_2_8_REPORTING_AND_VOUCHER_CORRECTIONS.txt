@@ -1,0 +1,78 @@
+TexTrack ERP v0.5 Build 2.8 - Reporting and Voucher Corrections
+================================================================
+
+Authoritative base
+------------------
+TexTrack_ERP_v0.5_Build2_7_PRODUCTION_REPORTING_FOUNDATION_FULL.zip
+SHA-256: 5DACDBDB702C47DEE8636FDE0CEE93F8B93AF3581C5316CA4504A58CD9EDC0EB
+
+Architecture audit and root causes
+----------------------------------
+1. The four Build 2.7 report routes shared one Razor component, but enhanced navigation between two routes did not re-run its route-state initialization. The report root also stopped key propagation, so Alt+R could not reach the frozen shell menu.
+2. Report dates were non-nullable and initialized to a 90-day range. A blank/all-history period was impossible and could surface minimum/1900-style values.
+3. Pending FG displayed one full JWO/FG row per size allocation, repeating parent data instead of showing a parent with variant children.
+4. T-format was two stacked tables. Its received side came from flattened pending rows and applied MI value/process totals only to the first variant. It did not use persisted MaterialInFinishedGood lines as authoritative FG parents.
+5. Material In had create-only UI/repository behavior. The schema contains posted MI header, FG, consumption, allocation, stock-movement, and link rows but no update/reversal engine.
+6. MI costing allocated all consumed material value across FGs only by total received-quantity share, even though every consumed component has a stable JWO FinishedGoodId.
+7. Material Out deletion checked VoucherLinks but did not precheck the authoritative MaterialInMaterialOutAllocation dependency or identify the blocking MI voucher.
+8. JWO voucher-type selection always focused Voucher Number. Under automatic numbering that field is read-only, so the next logical editable field was skipped incorrectly.
+9. Stock movements preserve optional StockItemVariantId, quantity, rate, value, item, Godown, date, and voucher status. Component movements commonly have no variant ID, so colour/size cannot be reconstructed safely.
+10. MaterialInFinishedGood stores one ProcessCharge total. There is no named-process child table, so a named process breakup cannot be reported without a future approved migration.
+
+Implemented corrections
+-----------------------
+- Report dates are nullable and blank by default. From/To predicates are applied independently only when populated. From > To is rejected before querying.
+- The report component now reacts to Navigation.LocationChanged, resets route state, loads the selected report, rekeys the shared context, and unsubscribes on disposal.
+- Alt+R bubbles to the existing shell report menu. The shell deliberately leaves report Escape ownership to the report component.
+- Drilldown Escape restores the selected report row and scroll position through the existing post-render focus path.
+- Pending FG renders one JWO/finished-good parent followed by its exact colour/size allocation children.
+- T-format is a true two-column report: Material Issued/Consumed on the left and actual persisted Material In finished-good parents on the right.
+- The received side shows actual FG names, MI voucher references, receiving Godowns, ordered/received/pending quantities, and variant children.
+- Per-FG material, process, final value, and per-unit material/process/overall costs are shown at the bottom. The single stored process total is labelled honestly.
+- Added Closing Stock by Colour / Size with server-side parent pagination, valid-voucher movement filtering, dynamic size columns, colour children, quantity/value totals, and weighted average = net value / net quantity.
+- Movements without StockItemVariantId appear as N/A; no variant is inferred from a display name.
+- Added a Material In list with server-side contains search and a persisted read-only voucher view showing original JWO, batch, both saved Godowns, actual FG names/variants, component consumption, and values.
+- Material In create, automatic consumption, stable IDs, stock posting, and numbering remain intact.
+- Per-FG MI material value now uses the value of components linked to that exact JWO FinishedGoodId.
+- Material Out delete transaction now checks active MI allocations first and reports the blocking MI voucher number.
+- JWO automatic-number create navigation now skips the read-only voucher-number field and focuses Date.
+- Visible build label updated to v0.5 Build 2.8.
+
+Protected behavior
+------------------
+No repositories outside the three affected report/voucher services were changed. No old migration, schema, stock-movement entity, UQC rule, negative-stock policy, numbering engine, cancellation engine, report history, global keyboard JavaScript, global CSS, or Backspace behavior was changed.
+
+Database and migration findings
+-------------------------------
+The verified migration chain remains 001 through 013. No migration was added or modified. The corrections use existing stable IDs and persisted snapshots. Migration SQL/checksum: not applicable.
+
+Known safe limitations / unresolved product decisions
+-----------------------------------------------------
+- Posted Material In alteration is intentionally read-only in this build. Implementing editable alteration would require an approved reversal/reallocation/reposting and audit policy that does not exist in the current architecture. Silently mutating posted MI was rejected as unsafe.
+- Named process costing cannot be displayed because the approved schema stores only one process-charge total per FG receipt. A future named-process child model requires product approval and a new migration.
+- Component stock movements without StockItemVariantId are reported as N/A. Colour/size is never guessed.
+- Closing Stock weighted valuation uses the only complete persisted valuation source: valid stock-movement ValueChange divided by QuantityChange.
+
+Exact changed files
+-------------------
+Components/Layout/MainLayout.razor
+Components/Pages/Reports/ProductionReports.razor
+Components/Pages/Reports/ProductionReports.razor.css (new, page-scoped)
+Components/Pages/Vouchers/JobWorkOutOrder.razor
+Components/Pages/Vouchers/MaterialIn.razor
+Models/MaterialInModels.cs
+Models/ProductionReportingModels.cs
+Services/MaterialInRepository.cs
+Services/MaterialOutRepository.cs
+Services/ProductionReportingService.cs
+Tests/JavaScript/production-reports.browser.cjs
+Tests/JavaScript/production-reports.test.cjs
+Tests/JavaScript/reporting-voucher-corrections.browser.cjs (new)
+Tests/TexTrack.Web.IntegrationTests/ProductionReportingTests.cs
+BUILD_2_8_REPORTING_AND_VOUCHER_CORRECTIONS.txt (new)
+BUILD_2_8_TEST_CHECKLIST.txt (new)
+
+Delivery package
+----------------
+TexTrack_ERP_v0.5_Build2_8_REPORTING_AND_VOUCHER_CORRECTIONS_FULL.zip
+The final ZIP size and SHA-256 are recorded in the adjacent BUILD_2_8_ZIP_SHA256.txt and in the delivery response after packaging.

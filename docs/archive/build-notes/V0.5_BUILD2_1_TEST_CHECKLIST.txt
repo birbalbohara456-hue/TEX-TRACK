@@ -1,0 +1,27 @@
+TexTrack ERP v0.5 Build 2.1 — Focused Test Checklist
+
+A. JWO component rate
+1. Open JWO and enter Component Allocation.
+2. Select a component previously used with a positive JWO rate. Confirm Rate defaults to the latest stored rate.
+3. Enter Required Quantity and press Enter. Confirm focus moves to Rate.
+4. Edit Rate and press Enter. Confirm Amount = Quantity x Rate and next blank component row opens.
+5. Save JWO, reopen it, and confirm Rate and Amount remain stored.
+6. Confirm blank Component Stock Item + Enter still closes Component Allocation.
+
+B. Material Out rate
+1. Select the newly saved JWO.
+2. Confirm Material Out Rate prefills from the linked JWO component rate.
+3. Edit Rate and confirm Amount recalculates.
+4. Save, reopen, and confirm Material Out retains its own Rate snapshot without changing JWO.
+
+C. Cancellation migration
+1. Restart TexTrack and confirm migration 011 applies.
+2. Open an unlinked active Material Out and press Alt+X.
+3. Enter a short reason and cancel.
+4. Confirm no PostgreSQL varchar(30) error appears.
+5. Confirm voucher remains in list as Cancelled and JWO pending quantity reopens.
+
+D. Layout regression
+1. Confirm Material Out uses compact JWO-like field proportions.
+2. Confirm no lookup extends outside the voucher.
+3. Re-test Enter, Esc, Alt+S, Alt+X and Alt+D.

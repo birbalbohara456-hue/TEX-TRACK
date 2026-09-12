@@ -1,0 +1,12 @@
+TexTrack ERP v0.3 Build 2.4 - Ledger Group Visibility + Palette Fix
+
+1. Confirm footer shows: v0.3 Build 2.4 Graphite Navy
+2. Confirm top bar is graphite/navy, not teal.
+3. Open Ledger Groups. Permanent system groups must NOT appear in the list.
+4. Press Alt+C. Parent Group must still include permanent accounting groups.
+5. Create a user Ledger Group under any permanent group. It must save and appear in the list.
+6. Edit and delete the unused user group.
+7. Open Ledgers. Ledger Group selection must still include permanent and user-created groups.
+8. Confirm Up/Down, Page Up/Down, Home/End and auto-scroll still work.
+9. Confirm Enter-to-next-field and final Enter-to-Save still work.
+10. Existing PostgreSQL data must remain unchanged. No database setup or migration is required.

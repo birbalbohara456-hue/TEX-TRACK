@@ -1,0 +1,52 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+
+# Local AI/editor state (never part of the product source)
+.claude/
+.codex/
+# .NET / Visual Studio generated output
+.vs/
+[Bb]in/
+[Oo]bj/
+TestResults/
+*.user
+*.suo
+
+# Local diagnostics and packaging output
+artifacts/
+Windows PowerShell.txt
+TexTrack.local.json
+*.local.json
+secrets.json
+
+# Test and verification output
+*.trx
+Tests/.a01-artifacts/
+Tests/**/.probe-bin/
+Tests/**/.probe-obj/
+Tests/**/[Bb]in_*/
+Tests/**/[Oo]bj_*/
+
+# Local design scratchpad; the compiled Razor application does not use it
+Components/Pages/Vouchers/ai_studio_code.html
+
+# Local backup and one-off diagnostic files
+*.bak
+[Oo]bj*/
+port link.txt
+
+# Local databases, certificates and private keys
+*.db
+*.sqlite
+*.sqlite3
+*.pfx
+*.p12
+*.key
+*.pem

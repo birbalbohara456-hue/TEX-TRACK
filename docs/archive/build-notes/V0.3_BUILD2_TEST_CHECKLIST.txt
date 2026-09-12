@@ -1,0 +1,84 @@
+TEXTRACK ERP v0.3 BUILD 2 — ACCEPTANCE TEST CHECKLIST
+=====================================================
+
+A. MIGRATION CORRECTIONS
+------------------------
+1. Open Units (UQC).
+2. Confirm Pieces, Metres and Kilograms are NOT automatically present.
+3. Create PCS manually: Name Pieces, Short Name PCS, Decimal Points 2.
+4. Close and reopen TexTrack. Confirm PCS persists.
+5. Open Godowns.
+6. Confirm there is no Parent Godown field and no Godown Type field.
+7. Confirm automatic Main Godown is absent.
+8. Create a user godown named MAIN GODOWN and confirm it saves normally.
+
+B. PERMANENT STOCK GROUP ROOTS
+------------------------------
+1. Open Stock Groups.
+2. Confirm Raw Material, Work In Progress and Finished Goods exist.
+3. Confirm they cannot be deleted.
+4. Create FABRIC under Raw Material.
+5. Create READY GARMENTS under Finished Goods.
+
+C. SUPPORTING MASTERS
+---------------------
+1. Create Stock Category: KURTI.
+2. Create Colours: BLACK and RED.
+3. Create Sizes with display order: M=10, L=20, XL=30.
+4. Create Inventory Tax Group named GST 5 and select Tax Mode Inventory Tax Group.
+
+D. STOCK ITEM CREATION
+----------------------
+1. Open Stock Items. It must show a real list, not a placeholder.
+2. Press Alt+C.
+3. Create:
+   Name: TEST KURTI
+   Stock Group: READY GARMENTS
+   UQC: PCS
+   Stock Category: KURTI
+   Tax Mode: Use Inventory Tax Group
+   Inventory Tax Group: GST 5
+   HSN: 6204
+   Colours: BLACK, RED
+   Sizes: M, L, XL
+4. Confirm the screen previews 6 hidden variants.
+5. Save with Alt+S.
+6. Confirm list shows Colours 2, Sizes 3, Variants 6.
+7. Close and reopen TexTrack. Confirm the item persists.
+
+E. VALIDATION
+-------------
+1. Try another Stock Item named TEST KURTI. Duplicate must be blocked.
+2. Try saving without Stock Group. It must be blocked.
+3. Try saving without UQC. It must be blocked.
+4. Try saving without HSN in Not Applicable mode. It must be blocked.
+5. Select Inventory Tax Group mode without a group. It must be blocked.
+6. Enter a GST rate over 100 in Direct Rates mode. It must be blocked.
+7. Validation failure must preserve entered form values.
+
+F. HIDDEN VARIANT RECONCILIATION
+--------------------------------
+1. Edit TEST KURTI.
+2. Remove RED and save. Variants must become 3.
+3. Add RED again and add size XL if removed. Variants must return to 6.
+4. Create an item with no Colour and no Size. It must create 1 base variant.
+5. Create an item with 2 Colours and no Sizes. It must create 2 variants.
+
+G. DEPENDENCY PROTECTION
+------------------------
+1. Try deleting PCS while TEST KURTI uses it. Deletion must be blocked.
+2. Try deleting READY GARMENTS while the item uses it. Deletion must be blocked.
+3. Try deleting BLACK, M, KURTI or GST 5 while linked. Each must be blocked.
+4. Delete TEST KURTI.
+5. The now-unused supporting masters may then be deleted, except permanent Stock Group roots.
+
+H. KEYBOARD WORKFLOW
+--------------------
+1. Create enough Stock Items for the list to scroll.
+2. Test Up/Down auto-scroll.
+3. Test Page Up/Page Down, Home and End.
+4. Press F4 and confirm search receives focus.
+5. Press Enter to edit selected item.
+6. Press Esc and confirm return to the same visible row.
+
+Do not approve the build until every applicable test passes.

@@ -1,0 +1,30 @@
+@namespace TexTrack.Web.Components.Pages.Vouchers
+
+<VoucherEntryFrame Class="voucher-placeholder-entry has-command-rail" Profile="profile" Title="@Title" DayText="@DateTime.Today.ToString("dddd")">
+    <VoucherNumberContent><label class="badge-voucher-no"><span>No.</span><input value="AUTO" readonly tabindex="-1" /></label></VoucherNumberContent>
+    <DateContent><VoucherDateInput Id="placeholder-date" Class="placeholder-date" Value="DateOnly.FromDateTime(DateTime.Today)" Disabled="true" /></DateContent>
+    <ChildContent>
+        <div class="voucher-workspace">
+            <div class="placeholder-grid"><div>Standard voucher fields</div><div>Voucher entry details</div><div>Allocations / totals</div></div>
+            <div class="build-note"><strong>Navigation reference screen.</strong> This route already inherits the shared voucher frame and theme; posting will be activated with its business module.</div>
+        </div>
+        <VoucherActionBar Note="Shared voucher keyboard contract: Alt+A Save · Alt+D Delete · Alt+X Cancel · Esc Back">
+            <button type="button" class="action-save" disabled>Alt+A Accept</button>
+            <button type="button" class="action-danger" disabled>Alt+X Cancel</button>
+        </VoucherActionBar>
+        <VoucherCommandRail Title="@Title">
+            <ChildContent>
+            <VoucherCommandButton Shortcut="F2" Label="Date" Disabled="true" />
+            <VoucherCommandButton Shortcut="Alt+A" Label="Accept" Disabled="true" Active="true" />
+            <VoucherCommandButton Shortcut="Alt+X" Label="Cancel" Disabled="true" Danger="true" />
+            <VoucherCommandButton Shortcut="Esc" Label="Quit" Disabled="true" />
+            </ChildContent>
+            <FooterContent><span>Reference</span></FooterContent>
+        </VoucherCommandRail>
+    </ChildContent>
+</VoucherEntryFrame>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "Voucher";
+    private VoucherLayoutProfile profile = VoucherLayoutProfiles.Placeholder("voucher-placeholder");
+}

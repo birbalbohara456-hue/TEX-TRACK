@@ -1,0 +1,42 @@
+TexTrack ERP v0.5 Build 1 Test Checklist
+
+A. DATABASE MIGRATION
+[ ] Start the application and confirm migration 007 applies successfully.
+[ ] Confirm existing JWO records remain visible.
+[ ] Confirm Voucher Types screen opens without errors.
+
+B. VOUCHER NUMBERING MASTER
+[ ] Open a permanent Voucher Type and edit only numbering settings.
+[ ] Confirm name and parent behavior remain protected.
+[ ] Test Auto mode, Starting Number and Number Width.
+[ ] Test Auto with Prefix/Suffix preview.
+[ ] Test Completely Manual mode.
+[ ] Test a custom Voucher Type with all three modes.
+
+C. JWO NUMBERING
+[ ] Auto: generated Voucher Number appears and remains editable.
+[ ] Auto Prefix/Suffix: correct formatted number appears and remains editable.
+[ ] Manual: Voucher Number starts blank and save is blocked until entered.
+[ ] Enter a duplicate Voucher Number and confirm save is blocked.
+[ ] Save a manually changed auto number and confirm JWO saves.
+[ ] Confirm Reference initially follows generated Voucher Number but remains independently editable.
+
+D. JWO REGRESSION
+[ ] Component allocation blank Enter closes correctly.
+[ ] Arrow-key drill-down + Enter selects highlighted values.
+[ ] Save a multi-FG JWO.
+[ ] Confirm all shortcuts and exit focus still work.
+
+E. MATERIAL OUT FOUNDATION
+[ ] Open Material Out.
+[ ] Select a Job Worker.
+[ ] Press Enter / Load Pending JWO.
+[ ] Confirm only that Job Worker's JWO records appear.
+[ ] Confirm each FG owns its own components.
+[ ] Confirm Required, Issued and Pending quantities are correct.
+[ ] Confirm fully issued components are excluded.
+[ ] Enter Issue Now quantities up to Pending quantity.
+[ ] Confirm Esc returns to Dashboard.
+
+NOTE
+Material Out does not save/post in this build. This is intentional.

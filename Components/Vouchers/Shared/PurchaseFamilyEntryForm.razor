@@ -1,0 +1,958 @@
+@namespace TexTrack.Web.Components.Vouchers.Shared
+@implements IAsyncDisposable
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using TexTrack.Web.Components.Keyboard
+@using TexTrack.Web.Models
+@using TexTrack.Web.Services
+@inject IJSRuntime JS
+
+<KeyboardContextScope ContextId="@($"{IdPrefix}-entry")" RootElementId="@FormRootId" ContextType="KeyboardContextType.Form"
+                      Mode="@(EditingVoucherId is null ? KeyboardContextMode.Create : KeyboardContextMode.Alteration)"
+                      CanDelete="@(EditingVoucherId is not null && !busy)" DeleteAsync="DeleteCurrentAsync"
+                      CanCancel="@(EditingVoucherId is not null && !busy)" CancelAsync="OpenCancelModal"
+                      IsVoucherEntry="true" EscapeAsync="HandleVoucherEscapeAsync" AcceptAsync="SaveCurrentAsync" />
+
+<VoucherEntryFrame Id="@FormRootId" Class="pf-entry-form-frame" Profile="LayoutProfile"
+                       Title="@Options.VoucherNoun" DayText="@Defaults.VoucherDate.ToString("dddd")">
+        <TitlebarActionsContent>
+            <div class="pf-titlebar-actions">
+                <button type="button" class="pf-titlebar-btn" tabindex="-1" @onclick="HandleVoucherEscapeAsync" disabled="@busy"><b>Esc</b> Quit</button>
+                <button id="@IdFor("save")" type="button" class="pf-titlebar-btn is-accept" tabindex="-1" data-enter-save="true" data-voucher-save-action="true" @onclick="SaveCurrentAsync" disabled="@busy"><b>Alt+A</b> @(EditingVoucherId is null ? "Accept" : "Update")</button>
+                @if (EditingVoucherId is not null)
+                {
+                    <button type="button" class="pf-titlebar-btn is-danger" tabindex="-1" @onclick="DeleteCurrentAsync" disabled="@busy"><b>Alt+D</b> Delete</button>
+                    <button type="button" class="pf-titlebar-btn is-danger" tabindex="-1" @onclick="OpenCancelModal" disabled="@busy"><b>Alt+X</b> Cancel</button>
+                }
+            </div>
+        </TitlebarActionsContent>
+        <DateContent>
+            <VoucherDateInput Id="@IdFor("date")" Class="header-date" @bind-Value="Defaults.VoucherDate" />
+        </DateContent>
+        <MessageContent>
+            @if (!string.IsNullOrWhiteSpace(message))
+            {
+                <div class="form-message @(messageIsError ? "error" : "success")">@message</div>
+            }
+        </MessageContent>
+        <ChildContent>
+        <div class="voucher-paper-surface pf-body">
+
+            <section class="panel-light pf-header-panel">
+                <div class="pf-header-fields">
+                    <VoucherField FieldKey="party" For="@IdFor("supplier")">
+                        <div class="lookup-field pf-lookup-field">
+                            <input id="@IdFor("supplier")" data-erp-lookup="true" data-tt-related-master="/masters/ledgers" autocomplete="new-password" autofocus class="tally-input flex-1 font-medium"
+                                   placeholder="Type to search Supplier" value="@State.SupplierText"
+                                   @onfocus="OpenSupplierLookup" @oninput="SupplierTextChanged" />
+                            @if (activeLookupKey == "supplier")
+                            {
+                                var suppliers = FilterSuppliers().Take(12).ToList();
+                                <div class="erp-lookup-panel">
+                                    @foreach (var supplier in suppliers)
+                                    {
+                                        <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectSupplier(supplier)"><strong>@supplier.Name</strong></button>
+                                    }
+                                    @if (suppliers.Count == 0) { <div class="erp-lookup-empty">No matching Supplier</div> }
+                                </div>
+                            }
+                        </div>
+                    </VoucherField>
+
+                    @if (Options.ShowUpstreamReference)
+                    {
+                        <VoucherField FieldKey="order" For="@IdFor("upstream")">
+                            <div class="lookup-field pf-lookup-field">
+                                <input id="@IdFor("upstream")" data-erp-lookup="true" autocomplete="new-password" class="tally-input flex-1 font-medium"
+                                       placeholder="@(State.SupplierLedgerId == 0 ? "Select a Supplier first" : "Optional - type to search")" value="@State.UpstreamReferenceText"
+                                       readonly="@(State.SupplierLedgerId == 0)"
+                                       @onfocus="OpenUpstreamLookup" @oninput="UpstreamTextChanged" />
+                                @if (activeLookupKey == "upstream")
+                                {
+                                    var docs = FilterUpstreamDocuments().Take(12).ToList();
+                                    <div class="erp-lookup-panel">
+                                        @foreach (var doc in docs)
+                                        {
+                                            <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectUpstreamDocumentAsync(doc)"><strong>@doc.VoucherNumber</strong><span>@doc.VoucherDate.ToString("dd-MM-yyyy") &middot; @doc.LineCount line(s)</span></button>
+                                        }
+                                        @if (docs.Count == 0)
+                                        {
+                                            <div class="erp-lookup-empty">
+                                                @(State.ReferencedUpstreamDocuments.Count > 0
+                                                    ? "All outstanding documents for this Supplier are already referenced below."
+                                                    : $"No outstanding {Options.UpstreamReferenceLabel.Replace(" (optional)", "")}")
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                @if (State.ReferencedUpstreamDocuments.Count > 0)
+                                {
+                                    <div class="pf-upstream-chips">
+                                        Referenced: @string.Join(", ", State.ReferencedUpstreamDocuments.Select(x => x.VoucherNumber))
+                                    </div>
+                                }
+                            </div>
+                        </VoucherField>
+                    }
+
+                    <div class="pf-attachments-row" style="order:60">
+                        <button type="button" id="@IdFor("attachments-btn")" class="pf-attachments-btn" tabindex="-1" @onclick="OpenAttachmentsModal">
+                            Attachments
+                            @if (attachments.Count > 0)
+                            {
+                                <span class="pf-attachments-count">@attachments.Count</span>
+                            }
+                        </button>
+                    </div>
+
+                    <div class="pf-header-row-pair" style="order:65">
+                        <VoucherField FieldKey="reference" For="@IdFor("reference")">
+                            <input id="@IdFor("reference")" @bind="State.ReferenceNumber" maxlength="100" class="tally-input flex-1" />
+                        </VoucherField>
+
+                        <VoucherField FieldKey="discount" For="@IdFor("header-discount")">
+                            <input id="@IdFor("header-discount")" type="number" min="0" max="100" step="0.01" class="tally-input flex-1"
+                                   value="@State.HeaderDiscountPercent"
+                                   @onchange="OnHeaderDiscountChanged" />
+                        </VoucherField>
+                    </div>
+                </div>
+
+                <div class="pf-voucher-summary">
+                    <label class="pf-voucher-number-field">
+                        <span>Voucher No.</span>
+                        <input id="@IdFor("voucher-number")" @bind="Defaults.VoucherNumber"
+                               readonly="@(Defaults.NumberingMode != "Manual")"
+                               tabindex="@(Defaults.NumberingMode == "Manual" ? 0 : -1)" />
+                    </label>
+                    <span class="pf-voucher-line-count">@State.Lines.Count(x => x.HasItem) line@(State.Lines.Count(x => x.HasItem) == 1 ? "" : "s")</span>
+                </div>
+            </section>
+
+            <div class="pf-workspace">
+              <div class="pf-table-scroll">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th class="pf-col-item text-left">Item</th>
+                            <th class="pf-col-godown text-left">Godown</th>
+                            <th class="pf-col-qty text-right">Total Qty</th>
+                            <th class="pf-col-uqc text-center">UQC</th>
+                            <th class="pf-col-rate text-right">Rate</th>
+                            <th class="pf-col-discount text-right">Disc %</th>
+                            <th class="pf-col-amount text-right">Amount</th>
+                            <th class="pf-col-remove"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (var i = 0; i < State.Lines.Count; i++)
+                        {
+                            var index = i;
+                            var row = State.Lines[index];
+                            <tr @key="row.ClientKey" class="@(allocationModalRowIndex == index && showAllocationModal ? "pf-row-active" : null)">
+                                <td class="p-0">
+                                    <div class="lookup-field pf-lookup-field">
+                                        <input id="@IdFor($"item-{row.ClientKey}")" data-erp-lookup="true" autocomplete="new-password" class="tally-input flex-1"
+                                               placeholder="Type to search item" value="@row.ItemText"
+                                               @onfocus="() => OpenItemLookup(index)" @oninput="e => ItemTextChanged(index, e)" />
+                                        @if (activeLookupKey == $"item-{index}")
+                                        {
+                                            var matches = FilterItems(row.ItemText).Take(15).ToList();
+                                            <div class="erp-lookup-panel">
+                                                @foreach (var match in matches)
+                                                {
+                                                    <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectItemAsync(index, match)"><strong>@match.StockItemName</strong></button>
+                                                }
+                                                @if (matches.Count == 0) { <div class="erp-lookup-empty">No matching Stock Item</div> }
+                                            </div>
+                                        }
+                                    </div>
+                                </td>
+                                <td class="p-0">
+                                    @if (row.HasItem)
+                                    {
+                                        <div class="lookup-field pf-lookup-field">
+                                            <input id="@IdFor($"godown-{row.ClientKey}")" data-erp-lookup="true" autocomplete="new-password" class="tally-input flex-1"
+                                                   placeholder="@(Options.GodownRequired ? "Type to search Godown" : "Optional")" value="@row.GodownText"
+                                                   @onfocus="() => OpenGodownLookup(index)" @oninput="e => GodownTextChanged(index, e)" />
+                                            @if (activeLookupKey == $"godown-{index}")
+                                            {
+                                                var matches = FilterGodowns(row.GodownText).Take(12).ToList();
+                                                <div class="erp-lookup-panel">
+                                                    @foreach (var match in matches)
+                                                    {
+                                                        <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectGodownAsync(index, match)"><strong>@match.Name</strong></button>
+                                                    }
+                                                    @if (matches.Count == 0) { <div class="erp-lookup-empty">No matching Godown</div> }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </td>
+                                <td class="text-right">
+                                    @if (row.HasAllocation)
+                                    {
+                                        <button type="button" class="pf-qty-reopen" @onclick="() => OpenAllocationModalAsync(index)">@row.TotalQuantity.ToString("0.####")</button>
+                                    }
+                                    else if (row.HasItem)
+                                    {
+                                        <span class="pf-qty-empty">&mdash;</span>
+                                    }
+                                </td>
+                                <td class="text-center">@row.UqcShortName</td>
+                                <td><input id="@IdFor($"rate-{row.ClientKey}")" type="number" min="0" step="0.0001" class="tally-input text-right" value="@row.Rate"
+                                           @onchange="e => RateChanged(index, e)" disabled="@(!row.HasAllocation)" /></td>
+                                <td><input id="@IdFor($"discount-{row.ClientKey}")" type="number" min="0" max="100" step="0.01" class="tally-input text-right" value="@row.DiscountPercent"
+                                           @onchange="e => LineDiscountChanged(index, e)" disabled="@(!row.HasAllocation)" /></td>
+                                <td class="text-right font-mono">@row.Amount.ToString("0.00")</td>
+                                <td>
+                                    @if (State.Lines.Count > 1)
+                                    {
+                                        <button type="button" class="compact-action action-danger" @onclick="() => RemoveRow(index)">&#10005;</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+              </div>
+                <table class="erp-table pf-table-footer">
+                    <colgroup>
+                        <col class="pf-col-item" /><col class="pf-col-godown" /><col class="pf-col-qty" /><col class="pf-col-uqc" />
+                        <col class="pf-col-rate" /><col class="pf-col-discount" /><col class="pf-col-amount" /><col class="pf-col-remove" />
+                    </colgroup>
+                    <tfoot>
+                        <tr>
+                            <td colspan="6" class="text-right uppercase text-[10px] font-bold">Total</td>
+                            <td class="text-right font-mono font-bold">@State.Lines.Sum(x => x.Amount).ToString("0.00")</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <section class="mi-narration-section">
+                <label for="@IdFor("narration")">Narration <span>:</span></label>
+                <textarea id="@IdFor("narration")" rows="2" maxlength="500" @bind="State.Narration" class="tally-input" placeholder="Enter remarks…"></textarea>
+                <!--
+                    Reserved for a future per-voucher-type ledger/tax panel (CGST/SGST/IGST,
+                    Freight, Round Off, etc.), driven by a not-yet-built Voucher Configuration
+                    setting - see CLAUDE_UI_OVERHAUL_CHANGELOG_2026-09-08.md §28. Structural
+                    placeholder only; deliberately not wired to any data yet.
+                -->
+                <div class="pf-ledger-panel-placeholder">
+                    <div class="pf-ledger-scroll">
+                        <div class="pf-ledger-grid">
+                            @for (var i = 0; i < 6; i++)
+                            {
+                                <div class="pf-ledger-grid-row">
+                                    <input type="text" class="pf-ledger-name-input" placeholder="@(i == 0 ? "e.g. CGST 9%" : "")" disabled tabindex="-1" />
+                                    <input type="text" class="pf-ledger-sign-input" value="+" readonly disabled tabindex="-1" />
+                                    <input type="text" class="pf-ledger-amount-input" placeholder="0.00" disabled tabindex="-1" />
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="pf-ledger-grid-row pf-ledger-total-row">
+                        <span class="pf-ledger-total-label">Grand Total</span>
+                        <span></span>
+                        <span class="pf-ledger-total-amount">0.00</span>
+                    </div>
+                </div>
+            </section>
+
+            @if (EditingVoucherId is long auditVoucherId)
+            {
+                <VoucherAuditStamp VoucherId="@auditVoucherId" />
+            }
+
+        </div>
+        </ChildContent>
+    </VoucherEntryFrame>
+
+    <VariantAllocationModal IsOpen="showAllocationModal" Item="@(allocationModalItemDetail ?? EmptyItemDetail)"
+                            ExistingAllocations="@(allocationModalRowIndex is int ri ? State.Lines[ri].Allocations : [])"
+                            InitialRate="@(allocationModalRowIndex is int ri2 ? State.Lines[ri2].Rate : 0)"
+                            InitialDiscountPercent="@(allocationModalRowIndex is int ri3 ? State.Lines[ri3].DiscountPercent : 0)"
+                            InitialPoRefNo="@(allocationModalRowIndex is int ri5 ? State.Lines[ri5].PoRefNo : "")"
+                            CapsApply="@(Options.UpstreamCapsApply && allocationModalRowIndex is int ri4 && State.Lines[ri4].Allocations.Any(a => a.PendingCap is not null))"
+                            PendingCapsByVariantId="@AllocationCapsForCurrentRow"
+                            Confirmed="HandleAllocationConfirmed" Cancelled="HandleAllocationCancelled" />
+
+    @if (showQuitModal)
+    {
+        <div class="tt-dialog-overlay" role="presentation">
+            <section class="tt-dialog" role="dialog" aria-modal="true" aria-labelledby="@IdFor("quit-title")" tabindex="0"
+                     @onkeydown="HandleQuitModalKeyDown" @onkeydown:stopPropagation="true" @onkeydown:preventDefault="true">
+                <header class="tt-dialog-titlebar"><strong id="@IdFor("quit-title")">Quit?</strong></header>
+                <div class="tt-dialog-body"><p>Quit? Yes or No</p></div>
+                <footer class="tt-dialog-actions">
+                    <button id="@IdFor("quit-yes")" type="button" class="@(quitSelectYes ? "dialog-selected" : null)" @onclick="ConfirmQuitAsync">Yes</button>
+                    <button id="@IdFor("quit-no")" type="button" class="@(!quitSelectYes ? "dialog-selected" : null)" @onclick="CancelQuit">No</button>
+                </footer>
+            </section>
+        </div>
+    }
+
+    @if (showAttachmentsModal)
+    {
+        <div class="tally-modal-overlay" role="presentation">
+            <section class="tally-modal-window pf-attachments-modal" role="dialog" aria-modal="true" aria-labelledby="@IdFor("attachments-title")" tabindex="0"
+                     @onkeydown="HandleAttachmentsModalKeyDown" @onkeydown:stopPropagation="true">
+                <header class="tally-modal-titlebar"><strong id="@IdFor("attachments-title")">Attachments</strong></header>
+                <div class="tt-dialog-body pf-attachments-body">
+                    @if (attachments.Count == 0)
+                    {
+                        <div class="pf-attachments-empty">No attachments yet.</div>
+                    }
+                    else
+                    {
+                        @for (var i = 0; i < attachments.Count; i++)
+                        {
+                            var index = i;
+                            var row = attachments[index];
+                            <div class="pf-attachment-row" @key="row.ClientKey">
+                                <input aria-label="Description" placeholder="Description / name" class="tally-input flex-1" @bind="row.Description" />
+                                <div class="pf-attachment-preview">
+                                    @if (row.PreviewDataUrl is not null)
+                                    {
+                                        <img src="@row.PreviewDataUrl" alt="" />
+                                    }
+                                    else
+                                    {
+                                        <span class="pf-attachment-file-icon">@row.Extension</span>
+                                    }
+                                    <span class="pf-attachment-filename">@row.FileName</span>
+                                </div>
+                                <button type="button" class="compact-action action-danger" @onclick="() => RemoveAttachmentRow(index)">&#10005;</button>
+                            </div>
+                        }
+                    }
+                    <label class="pf-attachment-add">
+                        <InputFile OnChange="AddAttachmentAsync" accept="image/jpeg,image/png,image/webp,application/pdf" />
+                        <span>+ Add Photo / Document</span>
+                    </label>
+                    @if (!string.IsNullOrWhiteSpace(attachmentsMessage)) { <div class="form-message error">@attachmentsMessage</div> }
+                </div>
+                <footer class="tt-dialog-actions">
+                    <button type="button" class="compact-action action-secondary" @onclick="CloseAttachmentsModal">Close</button>
+                </footer>
+            </section>
+        </div>
+    }
+
+    @if (showCancelModal)
+    {
+        <div class="tally-modal-overlay" role="presentation">
+            <section class="tally-modal-window" role="dialog" aria-modal="true" aria-labelledby="@IdFor("cancel-title")" tabindex="0"
+                     @onkeydown="HandleCancelModalKeyDown" @onkeydown:stopPropagation="true" style="width: 430px; min-height: auto;">
+                <header class="tally-modal-titlebar"><strong id="@IdFor("cancel-title")">Cancel @Options.VoucherNoun?</strong></header>
+                <div class="tt-dialog-body" style="padding: 15px;">
+                    <p>
+                        Cancel @Options.VoucherNoun <strong>@Defaults.VoucherNumber</strong>?
+                        @(Options.ReversesStockOnCancel ? "Stock postings will be reversed and the voucher will remain for audit." : "This has no stock or financial effect to reverse; it will remain for audit.")
+                    </p>
+                    <label class="tt-cancel-reason">Cancellation Reason <b>*</b>
+                        <textarea id="@IdFor("cancel-reason")" maxlength="500" @bind="cancellationReason" rows="3"></textarea>
+                    </label>
+                    @if (!string.IsNullOrWhiteSpace(cancelMessage)) { <div class="form-message error">@cancelMessage</div> }
+                </div>
+                <footer class="tt-dialog-actions">
+                    <button type="button" class="compact-action action-danger" @onclick="ConfirmCancelAsync" disabled="@busy">Cancel Voucher</button>
+                    <button type="button" class="compact-action action-secondary" @onclick="CloseCancelModal" disabled="@busy">Return</button>
+                </footer>
+            </section>
+        </div>
+    }
+
+@code {
+    [Parameter, EditorRequired] public string IdPrefix { get; set; } = "";
+    [Parameter, EditorRequired] public PurchaseFamilyFormOptions Options { get; set; } = default!;
+    [Parameter, EditorRequired] public PurchaseVoucherEntryDefaults Defaults { get; set; } = new();
+    [Parameter, EditorRequired] public PurchaseFamilyFormState State { get; set; } = new();
+    [Parameter, EditorRequired] public PurchaseLineLookupData Lookup { get; set; } = new();
+    [Parameter, EditorRequired] public Func<long, CancellationToken, Task<PurchaseItemVariantDetail?>> GetItemVariantDetailAsync { get; set; } = default!;
+    [Parameter] public Func<long, CancellationToken, Task<IReadOnlyList<UpstreamDocumentSummary>>>? GetOutstandingUpstreamDocumentsAsync { get; set; }
+    [Parameter] public Func<long, CancellationToken, Task<UpstreamHydrationResult?>>? GetUpstreamHydrationAsync { get; set; }
+    [Parameter, EditorRequired] public Func<PurchaseFamilyFormState, CancellationToken, Task<PurchaseFamilySaveOutcome>> SaveAsync { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<string, CancellationToken, Task<OperationResult>> CancelVoucherAsync { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<CancellationToken, Task<OperationResult>> DeleteVoucherAsync { get; set; } = default!;
+    [Parameter, EditorRequired] public long? EditingVoucherId { get; set; }
+    [Parameter, EditorRequired] public string EditingConcurrencyToken { get; set; } = "";
+
+    /// <summary>Bumped by the wrapper page (OpenCreate/OpenVoucherAsync/post-save reset) to signal
+    /// "focus the initial field again" - a plain EditingVoucherId diff can't distinguish
+    /// create-to-create transitions (e.g. Save then immediately start a new entry).</summary>
+    [Parameter, EditorRequired] public int FormGeneration { get; set; }
+    [Parameter, EditorRequired] public EventCallback OnQuit { get; set; }
+    [Parameter, EditorRequired] public EventCallback<PurchaseFamilySaveOutcome> OnSaved { get; set; }
+    [Parameter, EditorRequired] public EventCallback OnDeleted { get; set; }
+    [Parameter, EditorRequired] public EventCallback OnCancelledVoucher { get; set; }
+
+    /// <summary>Lets a wrapper page's own page-root onkeydown handler (Alt+A/Alt+X/Escape,
+    /// mirroring every other voucher page) reach into this component's actions.</summary>
+    public bool Busy => busy;
+    public Task RequestSaveAsync() => SaveCurrentAsync();
+    public Task RequestCancelVoucherAsync() { OpenCancelModal(); return Task.CompletedTask; }
+    public Task RequestQuitAsync() => HandleVoucherEscapeAsync();
+
+    /// <summary>Lets the wrapper page show a status banner (e.g. "saved successfully") after
+    /// it resets this same component instance back to a blank create form post-save/delete/
+    /// cancel - message/messageIsError are otherwise this component's own private state.</summary>
+    public void SetStatusMessage(string text, bool isError)
+    {
+        message = text;
+        messageIsError = isError;
+        StateHasChanged();
+    }
+
+    private int lastSeenFormGeneration = -1;
+    private string FormRootId => $"{IdPrefix}-form-root";
+    private string IdFor(string suffix) => $"{IdPrefix}-{suffix}";
+
+    private VoucherLayoutProfile LayoutProfile => Options.Mode switch
+    {
+        PurchaseFamilyMode.PurchaseOrder => VoucherLayoutProfiles.PurchaseOrder,
+        PurchaseFamilyMode.Purchase => VoucherLayoutProfiles.Purchase,
+        PurchaseFamilyMode.PurchaseReturn => VoucherLayoutProfiles.PurchaseReturn,
+        _ => VoucherLayoutProfiles.Placeholder(IdPrefix)
+    };
+
+    private static readonly PurchaseItemVariantDetail EmptyItemDetail = new();
+
+    private string? activeLookupKey;
+    private string message = string.Empty;
+    private bool messageIsError;
+    private bool busy;
+    private string? pendingFocusId;
+
+    private List<UpstreamDocumentSummary> outstandingUpstreamDocuments = new();
+    private readonly Dictionary<long, PurchaseItemVariantDetail> itemDetailCache = new();
+
+    private bool showAllocationModal;
+    private int? allocationModalRowIndex;
+    private PurchaseItemVariantDetail? allocationModalItemDetail;
+
+    private bool showQuitModal;
+    private bool quitSelectYes = true;
+    private string? quitReturnFocusId;
+
+    private bool showCancelModal;
+    private string cancellationReason = string.Empty;
+    private string cancelMessage = string.Empty;
+
+    private bool showAttachmentsModal;
+    private string attachmentsMessage = string.Empty;
+    private readonly List<AttachmentRow> attachments = new();
+
+    private sealed class AttachmentRow
+    {
+        public string ClientKey { get; } = Guid.NewGuid().ToString("N");
+        public string Description { get; set; } = "";
+        public string FileName { get; set; } = "";
+        public string Extension { get; set; } = "FILE";
+        public string? PreviewDataUrl { get; set; }
+    }
+
+    private IReadOnlyDictionary<long, decimal>? AllocationCapsForCurrentRow =>
+        allocationModalRowIndex is int i
+            ? State.Lines[i].Allocations.Where(a => a.PendingCap is not null)
+                .ToDictionary(a => a.StockItemVariantId, a => a.PendingCap!.Value)
+            : null;
+
+    protected override void OnParametersSet()
+    {
+        if (FormGeneration == lastSeenFormGeneration) return;
+        lastSeenFormGeneration = FormGeneration;
+        pendingFocusId = EditingVoucherId is not null
+            ? IdFor("date")
+            : (Defaults.NumberingMode == "Manual" ? IdFor("voucher-number") : IdFor("supplier"));
+    }
+
+    private DotNetObjectReference<PurchaseFamilyEntryForm>? relatedMasterRefreshReference;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            relatedMasterRefreshReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("texTrackRegisterRelatedMasterRefresh", relatedMasterRefreshReference);
+        }
+        if (pendingFocusId is null)
+        {
+            if (firstRender) await JS.InvokeVoidAsync("texTrackFocusById", FormRootId);
+            return;
+        }
+        var target = pendingFocusId;
+        pendingFocusId = null;
+        await Task.Delay(40);
+        await JS.InvokeVoidAsync("texTrackFocusById", target);
+    }
+
+    // Reuses the shared related-master-refresh registration the global closeLookupOnBlur
+    // JS calls whenever a data-erp-lookup field loses focus with its dropdown open, so
+    // activeLookupKey genuinely clears server-side instead of relying only on the
+    // client-side hide - which a later unrelated re-render (e.g. moving focus to the next
+    // field via Backspace/Enter) would otherwise undo, resurrecting a dropdown the user
+    // already navigated away from. Field ids only carry the row's ClientKey, not its
+    // index, so the matching activeLookupKey (which is index-based) is resolved by
+    // looking the row up first.
+    [JSInvokable]
+    public Task ClearLookupOnBlurAsync(string fieldId)
+    {
+        var prefix = $"{IdPrefix}-";
+        if (!fieldId.StartsWith(prefix, StringComparison.Ordinal)) return Task.CompletedTask;
+        var suffix = fieldId[prefix.Length..];
+
+        string? key = suffix switch
+        {
+            "supplier" => "supplier",
+            "upstream" => "upstream",
+            _ when suffix.StartsWith("item-", StringComparison.Ordinal) => RowLookupKey(suffix["item-".Length..], "item"),
+            _ when suffix.StartsWith("godown-", StringComparison.Ordinal) => RowLookupKey(suffix["godown-".Length..], "godown"),
+            _ => null
+        };
+
+        if (key is not null && activeLookupKey == key)
+        {
+            activeLookupKey = null;
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
+    }
+
+    private string? RowLookupKey(string clientKey, string kind)
+    {
+        var index = State.Lines.FindIndex(x => x.ClientKey == clientKey);
+        return index >= 0 ? $"{kind}-{index}" : null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (relatedMasterRefreshReference is not null)
+        {
+            try { await JS.InvokeVoidAsync("texTrackUnregisterRelatedMasterRefresh", relatedMasterRefreshReference); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+        relatedMasterRefreshReference?.Dispose();
+    }
+
+    // ---- Supplier ----
+
+    private void OpenSupplierLookup() => activeLookupKey = "supplier";
+
+    private void SupplierTextChanged(ChangeEventArgs e)
+    {
+        State.SupplierText = Convert.ToString(e.Value) ?? string.Empty;
+        if (State.SupplierLedgerId != 0 &&
+            !string.Equals(State.SupplierText, Lookup.Suppliers.FirstOrDefault(x => x.Id == State.SupplierLedgerId)?.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            State.SupplierLedgerId = 0;
+            outstandingUpstreamDocuments.Clear();
+            State.ReferencedUpstreamDocuments.Clear();
+        }
+        activeLookupKey = "supplier";
+    }
+
+    private async Task SelectSupplier(PurchaseSupplierLookup supplier)
+    {
+        State.SupplierLedgerId = supplier.Id;
+        State.SupplierText = supplier.Name;
+        activeLookupKey = null;
+        if (Options.ShowUpstreamReference && GetOutstandingUpstreamDocumentsAsync is not null)
+            outstandingUpstreamDocuments = (await GetOutstandingUpstreamDocumentsAsync(supplier.Id, CancellationToken.None)).ToList();
+        pendingFocusId = Options.ShowUpstreamReference ? IdFor("upstream") : (State.Lines.Count > 0 ? IdFor($"item-{State.Lines[0].ClientKey}") : IdFor("reference"));
+    }
+
+    private IEnumerable<PurchaseSupplierLookup> FilterSuppliers() =>
+        string.IsNullOrWhiteSpace(State.SupplierText) ? Lookup.Suppliers : Lookup.Suppliers.Where(x => x.Name.Contains(State.SupplierText.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    // ---- Upstream reference (Purchase Order for Purchase; Purchase for Purchase Return) ----
+
+    private void OpenUpstreamLookup()
+    {
+        if (State.SupplierLedgerId != 0) activeLookupKey = "upstream";
+    }
+
+    private void UpstreamTextChanged(ChangeEventArgs e)
+    {
+        State.UpstreamReferenceText = Convert.ToString(e.Value) ?? string.Empty;
+        activeLookupKey = "upstream";
+    }
+
+    private IEnumerable<UpstreamDocumentSummary> FilterUpstreamDocuments()
+    {
+        var referencedIds = State.ReferencedUpstreamDocuments.Select(x => x.VoucherId).ToHashSet();
+        var candidates = outstandingUpstreamDocuments.Where(x => !referencedIds.Contains(x.VoucherId));
+        return string.IsNullOrWhiteSpace(State.UpstreamReferenceText)
+            ? candidates
+            : candidates.Where(x => x.VoucherNumber.Contains(State.UpstreamReferenceText.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Adds the selected document's lines to whatever is already in the voucher - a single
+    /// invoice can legitimately cover several POs (or, for Purchase Return, several Purchase
+    /// bills), so this appends rather than replacing. The reference field clears afterward so
+    /// the same search-and-pick can add another one right away.
+    /// </summary>
+    private async Task SelectUpstreamDocumentAsync(UpstreamDocumentSummary doc)
+    {
+        activeLookupKey = null;
+        State.UpstreamReferenceText = string.Empty;
+        if (GetUpstreamHydrationAsync is null) return;
+        var hydration = await GetUpstreamHydrationAsync(doc.VoucherId, CancellationToken.None);
+        if (hydration is null)
+        {
+            SetMessage($"The selected {Options.UpstreamReferenceLabel.Replace(" (optional)", "")} is unavailable or has nothing left to receive.", true);
+            return;
+        }
+        State.ReferencedUpstreamDocuments.Add(doc);
+        var newRows = PurchaseFamilyLineGrouping.GroupLines(hydration.Lines).Where(x => x.HasItem).ToList();
+        State.Lines.RemoveAll(x => !x.HasItem);
+        State.Lines.AddRange(newRows);
+        EnsureTrailingBlankRow();
+        pendingFocusId = newRows.Count > 0 ? IdFor($"item-{newRows[0].ClientKey}") : IdFor("upstream");
+    }
+
+    // ---- Header bulk discount ----
+
+    private void OnHeaderDiscountChanged(ChangeEventArgs e)
+    {
+        var text = Convert.ToString(e.Value);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            State.HeaderDiscountPercent = null;
+            return;
+        }
+        if (decimal.TryParse(text, out var value))
+        {
+            value = Math.Clamp(value, 0, 100);
+            State.HeaderDiscountPercent = value;
+            foreach (var line in State.Lines) line.DiscountPercent = value;
+        }
+    }
+
+    // ---- Line: item ----
+
+    private void OpenItemLookup(int index) => activeLookupKey = $"item-{index}";
+
+    private void ItemTextChanged(int index, ChangeEventArgs e)
+    {
+        var row = State.Lines[index];
+        row.ItemText = Convert.ToString(e.Value) ?? string.Empty;
+        if (row.HasItem && !string.Equals(row.ItemText, Lookup.Items.FirstOrDefault(x => x.StockItemId == row.StockItemId)?.StockItemName, StringComparison.OrdinalIgnoreCase))
+        {
+            row.StockItemId = 0;
+            row.UqcId = 0;
+            row.UqcShortName = string.Empty;
+            row.Allocations = [];
+        }
+        activeLookupKey = $"item-{index}";
+    }
+
+    private IEnumerable<PurchaseItemLookup> FilterItems(string text) =>
+        string.IsNullOrWhiteSpace(text) ? Lookup.Items : Lookup.Items.Where(x => x.StockItemName.Contains(text.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private async Task SelectItemAsync(int index, PurchaseItemLookup item)
+    {
+        var row = State.Lines[index];
+        activeLookupKey = null;
+        // Backspace can walk focus back onto an already-filled Item field, which
+        // reopens this lookup on focus - a bare Enter there re-"selects" the exact
+        // same item the row already has. Re-picking the same item must be a no-op
+        // for its data, not silently wipe an allocation the user already entered.
+        if (row.StockItemId == item.StockItemId)
+        {
+            row.ItemText = item.StockItemName;
+            pendingFocusId = IdFor($"godown-{row.ClientKey}");
+            return;
+        }
+        row.StockItemId = item.StockItemId;
+        row.ItemText = item.StockItemName;
+        row.UqcId = item.UqcId;
+        row.UqcShortName = item.UqcShortName;
+        row.Allocations = [];
+        await CacheItemDetailAsync(item.StockItemId);
+        EnsureTrailingBlankRow();
+        pendingFocusId = IdFor($"godown-{row.ClientKey}");
+    }
+
+    // ---- Line: godown ----
+
+    private void OpenGodownLookup(int index) => activeLookupKey = $"godown-{index}";
+
+    private void GodownTextChanged(int index, ChangeEventArgs e)
+    {
+        var row = State.Lines[index];
+        row.GodownText = Convert.ToString(e.Value) ?? string.Empty;
+        if (row.GodownId is long gid && !string.Equals(row.GodownText, Lookup.Godowns.FirstOrDefault(x => x.Id == gid)?.Name, StringComparison.OrdinalIgnoreCase))
+            row.GodownId = null;
+        activeLookupKey = $"godown-{index}";
+    }
+
+    private async Task SelectGodownAsync(int index, PurchaseGodownLookup godown)
+    {
+        var row = State.Lines[index];
+        row.GodownId = godown.Id;
+        row.GodownText = godown.Name;
+        activeLookupKey = null;
+        // Reopening the allocation modal on every Godown selection - even re-selecting
+        // the same godown (e.g. after Backspace reopened this lookup) - is intentional:
+        // it's the deliberate way to jump back into the matrix and review/edit an
+        // existing row's quantities. It's non-destructive because the modal re-seeds
+        // itself from row.Allocations, which SelectItemAsync above is careful to leave
+        // untouched when the item hasn't actually changed.
+        await OpenAllocationModalAsync(index);
+    }
+
+    private IEnumerable<PurchaseGodownLookup> FilterGodowns(string text) =>
+        string.IsNullOrWhiteSpace(text) ? Lookup.Godowns : Lookup.Godowns.Where(x => x.Name.Contains(text.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    // ---- Variant allocation modal ----
+
+    private async Task CacheItemDetailAsync(long stockItemId)
+    {
+        if (itemDetailCache.ContainsKey(stockItemId)) return;
+        var detail = await GetItemVariantDetailAsync(stockItemId, CancellationToken.None);
+        if (detail is not null) itemDetailCache[stockItemId] = detail;
+    }
+
+    private async Task OpenAllocationModalAsync(int index)
+    {
+        var row = State.Lines[index];
+        if (!row.HasItem) return;
+        await CacheItemDetailAsync(row.StockItemId);
+        allocationModalItemDetail = itemDetailCache.GetValueOrDefault(row.StockItemId);
+        if (allocationModalItemDetail is null)
+        {
+            SetMessage("This Stock Item's variant detail is unavailable.", true);
+            return;
+        }
+        allocationModalRowIndex = index;
+        showAllocationModal = true;
+    }
+
+    private void HandleAllocationCancelled()
+    {
+        showAllocationModal = false;
+        allocationModalRowIndex = null;
+    }
+
+    private void HandleAllocationConfirmed(VariantAllocationResult result)
+    {
+        if (allocationModalRowIndex is not int index) return;
+        var row = State.Lines[index];
+        var discountChanged = row.DiscountPercent != result.DiscountPercent;
+        row.Allocations = result.Allocations.ToList();
+        row.Rate = result.Rate;
+        row.DiscountPercent = result.DiscountPercent;
+        row.PoRefNo = result.PoRefNo;
+        if (discountChanged) State.HeaderDiscountPercent = null;
+        showAllocationModal = false;
+        allocationModalRowIndex = null;
+        EnsureTrailingBlankRow();
+        // Land on this same row's Rate field first, matching row-major reading order -
+        // Rate/Discount are real, now-enabled editable fields for the row that was just
+        // allocated, not skippable fields. Reaching them one at a time via Enter (Rate ->
+        // Discount -> next row's Item) is handled by the normal Enter-forward chain.
+        pendingFocusId = IdFor($"rate-{row.ClientKey}");
+    }
+
+    // ---- Line: rate / discount / remove ----
+
+    private void RateChanged(int index, ChangeEventArgs e)
+    {
+        if (decimal.TryParse(Convert.ToString(e.Value), out var value) && value >= 0)
+            State.Lines[index].Rate = value;
+    }
+
+    private void LineDiscountChanged(int index, ChangeEventArgs e)
+    {
+        var text = Convert.ToString(e.Value);
+        var value = string.IsNullOrWhiteSpace(text) ? 0 : (decimal.TryParse(text, out var parsed) ? Math.Clamp(parsed, 0, 100) : State.Lines[index].DiscountPercent);
+        State.Lines[index].DiscountPercent = value;
+        State.HeaderDiscountPercent = null;
+    }
+
+    private void EnsureTrailingBlankRow()
+    {
+        if (State.Lines.Count == 0 || State.Lines[^1].HasItem)
+        {
+            var row = new PurchaseFamilyLineRow();
+            if (State.HeaderDiscountPercent is decimal v) row.DiscountPercent = v;
+            State.Lines.Add(row);
+        }
+    }
+
+    private void RemoveRow(int index)
+    {
+        State.Lines.RemoveAt(index);
+        EnsureTrailingBlankRow();
+    }
+
+    // ---- Save / Cancel / Delete ----
+
+    private async Task SaveCurrentAsync()
+    {
+        if (busy) return;
+        message = string.Empty;
+        var validation = Validate();
+        if (validation is not null) { SetMessage(validation, true); return; }
+
+        busy = true;
+        try
+        {
+            var outcome = await SaveAsync(State, CancellationToken.None);
+            if (!outcome.Success) { SetMessage(outcome.Message, true); return; }
+            await OnSaved.InvokeAsync(outcome);
+        }
+        catch (Exception ex) { SetMessage(VoucherErrorMessages.For(ex), true); }
+        finally { busy = false; }
+    }
+
+    private string? Validate()
+    {
+        if (Options.RequireSupplier && State.SupplierLedgerId == 0) return "Select a Supplier.";
+        if (Defaults.NumberingMode == "Manual" && string.IsNullOrWhiteSpace(Defaults.VoucherNumber)) return "Voucher Number is required.";
+        if (!State.Lines.Any(x => x.HasAllocation)) return "Enter at least one line with an allocated quantity.";
+        if (Options.GodownRequired && State.Lines.Any(x => x.HasAllocation && x.GodownId is null)) return "Select a Godown for every line.";
+        return null;
+    }
+
+    private void OpenCancelModal()
+    {
+        if (EditingVoucherId is null || busy) return;
+        cancellationReason = string.Empty;
+        cancelMessage = string.Empty;
+        showCancelModal = true;
+        pendingFocusId = IdFor("cancel-reason");
+    }
+
+    private void CloseCancelModal()
+    {
+        showCancelModal = false;
+        cancelMessage = string.Empty;
+        cancellationReason = string.Empty;
+        pendingFocusId = IdFor("narration");
+    }
+
+    private void HandleCancelModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseCancelModal();
+        else if (e.AltKey && string.Equals(e.Key, "x", StringComparison.OrdinalIgnoreCase)) _ = ConfirmCancelAsync();
+    }
+
+    private async Task ConfirmCancelAsync()
+    {
+        if (EditingVoucherId is null || busy) return;
+        if (string.IsNullOrWhiteSpace(cancellationReason)) { cancelMessage = "Cancellation reason is required."; pendingFocusId = IdFor("cancel-reason"); return; }
+
+        busy = true;
+        try
+        {
+            var result = await CancelVoucherAsync(cancellationReason, CancellationToken.None);
+            if (!result.Success) { cancelMessage = result.Message; return; }
+            showCancelModal = false;
+            await OnCancelledVoucher.InvokeAsync();
+        }
+        finally { busy = false; }
+    }
+
+    // ---- Attachments ----
+
+    private void OpenAttachmentsModal()
+    {
+        attachmentsMessage = string.Empty;
+        showAttachmentsModal = true;
+    }
+
+    private void CloseAttachmentsModal()
+    {
+        showAttachmentsModal = false;
+        attachmentsMessage = string.Empty;
+        pendingFocusId = IdFor("attachments-btn");
+    }
+
+    private void HandleAttachmentsModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseAttachmentsModal();
+    }
+
+    private void RemoveAttachmentRow(int index) => attachments.RemoveAt(index);
+
+    private async Task AddAttachmentAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        const long maxSize = 10 * 1024 * 1024;
+        if (file.Size > maxSize) { attachmentsMessage = $"{file.Name}: files over 10 MB are not supported."; return; }
+
+        var isImage = file.ContentType is "image/jpeg" or "image/png" or "image/webp";
+        await using var stream = file.OpenReadStream(maxSize);
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory);
+
+        attachments.Add(new AttachmentRow
+        {
+            FileName = file.Name,
+            Extension = string.IsNullOrEmpty(Path.GetExtension(file.Name)) ? "FILE" : Path.GetExtension(file.Name).TrimStart('.').ToUpperInvariant(),
+            PreviewDataUrl = isImage ? $"data:{file.ContentType};base64,{Convert.ToBase64String(memory.ToArray())}" : null
+        });
+        attachmentsMessage = string.Empty;
+    }
+
+    private async Task DeleteCurrentAsync()
+    {
+        if (EditingVoucherId is null || busy) return;
+        var confirmed = await JS.InvokeAsync<bool>("texTrackConfirmDelete", $"Delete {Options.VoucherNoun}?",
+            $"Delete {Options.VoucherNoun} {Defaults.VoucherNumber}?" + (Options.ReversesStockOnCancel ? " Its stock postings will be removed." : ""),
+            IdFor("narration"));
+        if (!confirmed) return;
+
+        busy = true;
+        try
+        {
+            var result = await DeleteVoucherAsync(CancellationToken.None);
+            if (!result.Success) { SetMessage(result.Message, true); pendingFocusId = IdFor("narration"); return; }
+            await OnDeleted.InvokeAsync();
+        }
+        finally { busy = false; }
+    }
+
+    // ---- Quit ----
+
+    private async Task HandleVoucherEscapeAsync()
+    {
+        if (busy) return;
+        quitReturnFocusId = await JS.InvokeAsync<string?>("texTrackKeyboardContexts.getActiveElementId");
+        var isDirty = await JS.InvokeAsync<bool>("texTrackKeyboardContexts.isVoucherDirty", $"{IdPrefix}-entry");
+        if (!isDirty) { await OnQuit.InvokeAsync(); return; }
+        showQuitModal = true;
+        quitSelectYes = true;
+        pendingFocusId = IdFor("quit-yes");
+    }
+
+    private async Task HandleQuitModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "ArrowLeft" or "Left" or "ArrowRight" or "Right" or "Tab") { quitSelectYes = !quitSelectYes; pendingFocusId = quitSelectYes ? IdFor("quit-yes") : IdFor("quit-no"); return; }
+        if (e.Key == "Enter") { if (quitSelectYes) await ConfirmQuitAsync(); else CancelQuit(); return; }
+        if (string.Equals(e.Key, "y", StringComparison.OrdinalIgnoreCase)) { await ConfirmQuitAsync(); return; }
+        if (string.Equals(e.Key, "n", StringComparison.OrdinalIgnoreCase) || e.Key == "Escape") CancelQuit();
+    }
+
+    private async Task ConfirmQuitAsync()
+    {
+        showQuitModal = false;
+        quitReturnFocusId = null;
+        await OnQuit.InvokeAsync();
+    }
+
+    private void CancelQuit()
+    {
+        showQuitModal = false;
+        pendingFocusId = quitReturnFocusId ?? FormRootId;
+        quitReturnFocusId = null;
+    }
+
+    private void SetMessage(string text, bool error) { message = text; messageIsError = error; }
+}

@@ -1,0 +1,44 @@
+TexTrack ERP v0.4 Build 2 — Tally-Aligned JWO Finalisation
+==========================================================
+
+1. LIVE TALLY JWO ALIGNMENT
+- Voucher Reference remains independent from Voucher Number. New vouchers default it
+  to the same value only as a convenience.
+- Finished Goods Godown stored per FG line.
+- Destination Godown stored per FG line.
+- Component Godown stored per component line.
+- XML valuation placeholders added per FG/component for future Tally import/export.
+- Multiple Finished Goods retain independent component allocations.
+
+2. TALLY-STYLE LOOKUPS
+- Job Worker, Voucher Type, Finished Good, Colour, Godown and Component fields now
+  use application-owned lookup panels rather than browser history/datalist suggestions.
+- Contains search, Up/Down selection, Enter selection and Esc close behavior.
+- Selected records are stored by master ID; unmatched free text is not trusted.
+
+3. JWO KEYBOARD WORKFLOW
+- Due Date defaults from Voucher Date and follows it until manually changed.
+- Tally-style Component Allocation popup:
+  Component > Component Godown > Quantity > next blank line.
+- Enter on a completely blank component line closes the popup.
+- First Esc removes active field focus; next Esc asks before exiting.
+- Unsaved changes produce an explicit loss warning.
+
+4. VOUCHER TYPES
+- Permanent Voucher Types remain protected.
+- Users can create custom Voucher Types under a permanent parent.
+- Custom types inherit Nature and Posting Mode.
+- Used custom types cannot be deleted; parent cannot be changed after use.
+- Custom JWO types appear in the JWO Voucher Type lookup.
+
+5. GROUPED MASTERS MENU
+- Accounting Masters: Ledger Groups, Ledgers, Voucher Types.
+- Inventory Masters: Stock Groups, Stock Categories, Stock Items, Colours, Sizes,
+  Units (UQC), Godowns, Tax Classifications.
+- Production Masters: Processes.
+- Expand/collapse and keyboard focus restoration retained.
+
+6. SAFETY
+- JWO still creates no stock or accounting posting in TexTrack.
+- Existing JWO dependency/edit/delete protections remain.
+- Migration uses RESTRICT foreign keys for godown and Voucher Type dependencies.

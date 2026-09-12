@@ -1,0 +1,198 @@
+@page "/settings/tally-xml"
+@attribute [Authorize(Policy = SecurityPolicies.ExportData)]
+@rendermode InteractiveServer
+@inject TallyXmlExchangeService Exchange
+@inject CurrentPeriodContext Period
+@inject NavigationManager Navigation
+@inject GlobalOperationState GlobalOperations
+@inject IJSRuntime JS
+
+<PageTitle>Tally XML Exchange</PageTitle>
+
+<div id="tally-xml-root" class="tally-page" tabindex="0" @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="tally-xml-exchange" RootElementId="tally-xml-root"
+                          ContextType="KeyboardContextType.Form" Mode="KeyboardContextMode.List"
+                          CanDelete="false" InitialFocusTarget="tally-import-file" />
+
+    <header class="tally-titlebar">
+        <div><p>SETTINGS</p><h1>Tally XML Exchange</h1><small>Manual, company-aware import and export for production vouchers</small></div>
+    </header>
+
+    <nav class="tally-tabs" aria-label="Tally XML sections">
+        @foreach (var item in Tabs)
+        {
+            <button type="button" class="@(activeTab == item.Key ? "active" : null)" @onclick="() => OpenTab(item.Key)">@item.Text</button>
+        }
+    </nav>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    { <p class="tally-message @(messageIsError ? "error" : "success")">@message</p> }
+
+    @if (activeTab == "import")
+    {
+        <section class="tally-panel import-panel">
+            <h2>Import XML</h2>
+            <p class="panel-note">Preview is read-only. Apply commits the complete approved file atomically; any unexpected failure rolls everything back.</p>
+            <div class="file-row">
+                <label for="tally-import-file">Tally XML file</label>
+                <InputFile id="tally-import-file" accept=".xml,text/xml,application/xml" OnChange="ReadFile" />
+                <button type="button" @onclick="ClearPreview" disabled="@(preview is null)">Clear</button>
+            </div>
+
+            @if (busy) { <p class="loading">Reading and validating XML...</p> }
+            @if (preview is not null)
+            {
+                <div class="company-confirm">
+                    <div><strong>@preview.CompanyName</strong><small>Identity: @preview.CompanyIdentity</small></div>
+                    <label><input type="checkbox" @bind="companyConfirmed" /> This XML belongs to the current TexTrack company</label>
+                </div>
+                <div class="preview-counts">
+                    <span>New masters <b>@preview.NewMasterCount</b></span><span>New <b>@preview.NewCount</b></span>
+                    <span>Updated <b>@preview.UpdatedCount</b></span><span>Unchanged <b>@preview.UnchangedCount</b></span>
+                    <span>Cancelled <b>@preview.CancelledCount</b></span><span>Exceptions <b>@preview.ExceptionCount</b></span>
+                </div>
+                @if (preview.Rows.Count == 0)
+                { <p class="empty-state">Master-only XML detected. @preview.NewMasterCount missing master(s) will be created.</p> }
+                else
+                {
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Import</th><th>Type</th><th>Voucher No.</th><th>Date</th><th>Order No.</th><th>Party</th><th>State</th><th>Variant handling</th><th>Details</th></tr></thead>
+                            <tbody>
+                            @foreach (var row in preview.Rows)
+                            {
+                                <tr class="state-@row.State.ToLowerInvariant()">
+                                    <td><input type="checkbox" @bind="row.Selected" disabled="@(row.State is "Unchanged" or "Exception")" /></td>
+                                    <td>@row.VoucherTypeName</td><td>@row.VoucherNumber</td><td>@row.VoucherDate.ToString("dd-MM-yyyy")</td>
+                                    <td>@row.OrderNumber</td><td>@row.PartyLedgerName</td><td><b>@row.State</b></td>
+                                    <td>
+                                        @if (row.VoucherTypeName == "Material In" && row.State is not ("Unchanged" or "Exception"))
+                                        { <label class="others-choice"><input type="checkbox" @bind="row.UseOthersVariant" /> Put in Others</label> }
+                                        else { <span>—</span> }
+                                    </td>
+                                    <td>@row.Message</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                <div class="action-row">
+                    <button id="tally-apply-import" type="button" class="primary" @onclick="ApplyImport" disabled="@(!companyConfirmed || busy)"><span>Alt+A</span> Apply Import</button>
+                </div>
+            }
+        </section>
+    }
+    else if (activeTab == "export")
+    {
+        <section class="tally-panel export-panel">
+            <h2>Export XML</h2>
+            <p class="panel-note">Export Job Work Out Orders first. Import that file into TallyPrime before importing the Material Out / Material In package.</p>
+            <div class="period-grid">
+                <label>From <FlexibleDateInput Id="tally-export-from" Value="exportFrom" ValueChanged="SetExportFrom" /></label>
+                <label>To <FlexibleDateInput Id="tally-export-to" Value="exportTo" ValueChanged="SetExportTo" /></label>
+            </div>
+            <div class="export-cards">
+                <article><h3>1. Job Work Out Orders</h3><p>Independent package containing order vouchers and required masters.</p><button class="primary" @onclick='() => DownloadExport("jwo")'>Download JWO XML</button></article>
+                <article><h3>2. Material Out + Material In</h3><p>Bulk downstream package. Matching JWO voucher/order numbers must already exist in Tally.</p><button class="primary" @onclick='() => DownloadExport("material")'>Download Material XML</button></article>
+            </div>
+        </section>
+    }
+    else if (activeTab == "exceptions")
+    {
+        <section class="tally-panel"><h2>Import Exceptions</h2>
+            <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Voucher</th><th>Order</th><th>Reason</th><th>Message</th><th>Status</th></tr></thead>
+            <tbody>@foreach (var row in exceptions) { <tr><td>@row.Date.ToLocalTime().ToString("dd-MM-yyyy HH:mm")</td><td>@row.VoucherTypeName</td><td>@row.VoucherNumber</td><td>@row.OrderNumber</td><td>@row.ReasonCode</td><td>@row.Message</td><td>@row.Status</td></tr> }</tbody></table></div>
+            @if (exceptions.Count == 0) { <p class="empty-state">No import exceptions.</p> }
+        </section>
+    }
+    else if (activeTab == "variants")
+    {
+        <section class="tally-panel"><h2>Variant Allocation Pending</h2><p class="panel-note">These Tally receipts were deliberately held because colour/size was not assigned and “Put in Others” was not selected.</p>
+            <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Voucher</th><th>Stock Item</th><th>Quantity</th><th>Status</th></tr></thead>
+            <tbody>@foreach (var row in variantTasks) { <tr><td>@row.Date.ToLocalTime().ToString("dd-MM-yyyy HH:mm")</td><td>@row.VoucherTypeName</td><td>@row.VoucherNumber</td><td>@row.StockItemName</td><td>@row.Quantity.ToString("0.####") @row.UqcName</td><td>@row.Status</td></tr> }</tbody></table></div>
+            @if (variantTasks.Count == 0) { <p class="empty-state">No pending variant allocations.</p> }
+        </section>
+    }
+    else
+    {
+        <section class="tally-panel"><h2>Exchange History</h2>
+            <div class="table-wrap"><table><thead><tr><th>Date</th><th>Direction</th><th>File</th><th>Tally Company</th><th>Status</th><th>Summary</th></tr></thead>
+            <tbody>@foreach (var row in history) { <tr><td>@row.Date.ToLocalTime().ToString("dd-MM-yyyy HH:mm")</td><td>@row.Direction</td><td>@row.FileName</td><td>@row.CompanyName</td><td>@row.Status</td><td>@row.Summary</td></tr> }</tbody></table></div>
+            @if (history.Count == 0) { <p class="empty-state">No Tally XML exchange has been recorded.</p> }
+        </section>
+    }
+    <p class="tally-help">Alt+A Apply Import · Esc Back</p>
+</div>
+
+@code {
+    private const long MaxXmlBytes = 256L * 1024 * 1024;
+    private static readonly (string Key, string Text)[] Tabs =
+    [
+        ("import", "Import XML"), ("export", "Export XML"), ("exceptions", "Import Exceptions"),
+        ("variants", "Variant Allocation Pending"), ("history", "History")
+    ];
+    private string activeTab = "import";
+    private TallyImportPreview? preview;
+    private bool companyConfirmed;
+    private bool busy;
+    private string? message;
+    private bool messageIsError;
+    private DateOnly exportFrom;
+    private DateOnly exportTo;
+    private IReadOnlyList<TallyExceptionRow> exceptions = [];
+    private IReadOnlyList<TallyVariantTaskRow> variantTasks = [];
+    private IReadOnlyList<TallyExchangeHistoryRow> history = [];
+
+    protected override void OnInitialized() { exportFrom = Period.From; exportTo = Period.To; }
+
+    private async Task ReadFile(InputFileChangeEventArgs args)
+    {
+        using var operation = GlobalOperations.Begin("Reading and validating Tally XML…");
+        busy = true; message = null; preview = null; companyConfirmed = false;
+        try
+        {
+            var file = args.File;
+            await using var stream = file.OpenReadStream(MaxXmlBytes);
+            using var reader = new StreamReader(stream);
+            var xml = await reader.ReadToEndAsync();
+            preview = await Exchange.PreviewAsync(file.Name, xml);
+            message = $"Preview ready: {preview.Rows.Count} supported production voucher(s), {preview.NewMasterCount} missing master(s).";
+        }
+        catch (Exception exception) { messageIsError = true; message = exception.GetBaseException().Message; }
+        finally { busy = false; }
+    }
+
+    private async Task ApplyImport()
+    {
+        if (preview is null || !companyConfirmed || busy) return;
+        using var operation = GlobalOperations.Begin("Importing Tally data…");
+        busy = true; message = null;
+        var result = await Exchange.ApplyAsync(preview);
+        messageIsError = !result.Success; message = result.Message; busy = false;
+        if (result.Success) { companyConfirmed = false; await LoadLists(); }
+    }
+
+    private async Task OpenTab(string key) { activeTab = key; message = null; await LoadLists(); }
+    private async Task LoadLists()
+    {
+        if (activeTab == "exceptions") exceptions = await Exchange.GetExceptionsAsync();
+        else if (activeTab == "variants") variantTasks = await Exchange.GetVariantTasksAsync();
+        else if (activeTab == "history") history = await Exchange.GetHistoryAsync();
+    }
+    private void ClearPreview() { preview = null; companyConfirmed = false; message = null; }
+    private void SetExportFrom(DateOnly? value) { if (value.HasValue) exportFrom = value.Value; }
+    private void SetExportTo(DateOnly? value) { if (value.HasValue) exportTo = value.Value; }
+    private string ExportUrl(string package) => $"/api/tally-xml/export/{package}?from={exportFrom:yyyy-MM-dd}&to={exportTo:yyyy-MM-dd}";
+    private async Task DownloadExport(string package)
+    {
+        using var operation = GlobalOperations.Begin("Preparing and downloading Tally XML…");
+        try { await JS.InvokeVoidAsync("texTrackDownload", ExportUrl(package)); }
+        catch (Exception ex) { messageIsError = true; message = ex.GetBaseException().Message; }
+    }
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.AltKey && e.Key.Equals("a", StringComparison.OrdinalIgnoreCase) && activeTab == "import") await ApplyImport();
+        else if (e.Key == "Escape") Navigation.NavigateTo("/");
+    }
+}

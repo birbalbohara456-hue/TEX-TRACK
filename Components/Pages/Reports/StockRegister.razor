@@ -1,0 +1,148 @@
+@page "/reports/inventory/stock-register"
+@attribute [Authorize(Policy = SecurityPolicies.ViewReports)]
+@inject OperationalReportingService Reporting
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject GlobalOperationState GlobalOperations
+
+<PageTitle>Stock Register</PageTitle>
+<div id="stock-register-root" class="page-card master-page stock-register-page tt-report-natural-flow" tabindex="0" data-keyboard-list-root="true" data-fast-row-navigation="true" @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="stock-register-report" RootElementId="stock-register-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List" CanDelete="false"
+                          HandlesEscape="true" EscapeAsync="HandleEscape"
+                          InitialFocusTarget="stock-register-root" />
+    <div class="page-header"><div><p class="eyebrow">INVENTORY REPORTS</p><h1>Stock Register</h1></div>
+        <div class="header-actions">
+            @if(detail is null){<button id="register-apply-command" class="primary-button" @onclick="Load">Apply</button><button @onclick="Clear">Clear</button>}
+            else{<button id="tt-report-voucher-search-command" type="button" @onclick="OpenVoucherSearch">Alt+F Search</button>}
+        </div></div>
+    <div class="database-ok">● Valid stock movements only · Alt+F searches by voucher number · Enter opens the voucher</div>
+    @if(detail is null)
+    {
+        <section class="form-section stock-register-filter-panel" data-enter-navigation="true"><div class="form-heading"><strong>Filters</strong><span>Stock Ledger</span></div>
+            <div class="stock-register-filter-grid">
+                <label>From<FlexibleDateInput Id="register-from-filter" @bind-Value="filter.DateFrom" BasisDate="CurrentDateBasis" /></label><label>To<FlexibleDateInput Id="register-to-filter" @bind-Value="filter.DateTo" BasisDate="CurrentDateBasis" /></label>
+                <label>Item<div class="lookup-field"><input id="register-item-filter" data-erp-lookup="true" data-tt-related-master="/masters/stock-items" data-tt-filter-input="true" autocomplete="off" value="@itemText" @onfocus="OpenItemLookup" @oninput="ItemChanged" placeholder="Type to search Item" />
+                    @if(activeLookupKey=="item"){<div class="erp-lookup-panel">@foreach(var x in FilterLookup(lookups.StockItems,itemText)){<button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="()=>SelectItem(x)"><strong>@x.Name</strong></button>}@if(!FilterLookup(lookups.StockItems,itemText).Any()){<div class="erp-lookup-empty">No matching Item</div>}</div>}</div></label>
+                <label>Stock Category<div class="lookup-field"><input id="register-category-filter" data-erp-lookup="true" data-tt-related-master="/masters/stock-categories" data-tt-filter-input="true" autocomplete="off" value="@categoryText" @onfocus="OpenCategoryLookup" @oninput="CategoryChanged" placeholder="Type to search Category" />
+                    @if(activeLookupKey=="category"){<div class="erp-lookup-panel">@foreach(var x in FilterLookup(lookups.StockCategories,categoryText)){<button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="()=>SelectCategory(x)"><strong>@x.Name</strong></button>}@if(!FilterLookup(lookups.StockCategories,categoryText).Any()){<div class="erp-lookup-empty">No matching Category</div>}</div>}</div></label>
+                <label>Godown<div class="lookup-field"><input id="register-godown-filter" data-erp-lookup="true" data-tt-related-master="/masters/godowns" data-tt-filter-input="true" autocomplete="off" value="@godownText" @onfocus="OpenGodownLookup" @oninput="GodownChanged" placeholder="Type to search Godown" />
+                    @if(activeLookupKey=="godown"){<div class="erp-lookup-panel">@foreach(var x in FilterLookup(lookups.Godowns,godownText)){<button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="()=>SelectGodown(x)"><strong>@x.Name</strong></button>}@if(!FilterLookup(lookups.Godowns,godownText).Any()){<div class="erp-lookup-empty">No matching Godown</div>}</div>}</div></label>
+            </div>
+        </section>
+    }
+    @if(showVoucherSearch)
+    {
+        <section class="form-section"><div class="form-heading"><strong>Voucher Search</strong><span>Esc Close Search</span></div>
+            <input id="register-voucher-filter" data-tt-filter-input="true" autocomplete="off" value="@voucherSearch" @oninput="VoucherSearchChanged" placeholder="Type voucher number…" />
+        </section>
+    }
+    @if(!string.IsNullOrWhiteSpace(message)){<p class="notice notice-error">@message</p>}
+    @if(loading){<p class="muted">Loading stock register…</p>}
+    else if(detail is null)
+    {
+        <section class="form-section stock-register-results"><div class="form-heading"><strong>Item Summary</strong><span>@summary.Count items</span></div><div class="grid-wrap stock-register-grid">
+            <table class="data-grid selectable-grid"><thead><tr><th>Item Name</th><th>Category</th><th>Godown</th><th>Qty</th><th>Value</th></tr></thead><tbody>
+            @if(summary.Count==0){<tr><td colspan="5" class="empty-cell">@(filter.GodownId is null?"Select a Godown to view stock.":"No matching movements.")</td></tr>}
+            @foreach(var row in PagedSummary)
+            {
+                <tr id="@row.RowKey" tabindex="-1" @key="row.RowKey" class="@(selectedKey==row.RowKey?"selected-row":null)" @onclick="()=>Select(row.RowKey)" @ondblclick="OpenSelected">
+                    <td><strong>@row.StockItemName</strong></td><td>@Display(row.StockCategoryName)</td><td>@row.GodownName</td><td>@Qty(row.ClosingQuantity) @row.UqcName</td><td>@Money(row.Value)</td>
+                </tr>
+            }
+            </tbody><tfoot>
+            @foreach(var total in summary.GroupBy(x=>x.UqcName,StringComparer.OrdinalIgnoreCase))
+            { <tr class="report-total"><td colspan="3">Total @total.Key</td><td>@Qty(total.Sum(x=>x.ClosingQuantity)) @total.Key</td><td>@Money(total.Sum(x=>x.Value))</td></tr> }
+            </tfoot></table>
+        </div></section>
+    }
+    else
+    {
+        <section class="form-section stock-register-results"><div class="form-heading"><strong>@detail.StockItemName · @detail.GodownName</strong><span>Opening @Qty(detail.OpeningQuantity) @detail.UqcName · Closing @Qty(detail.ClosingQuantity) @detail.UqcName</span></div><div class="grid-wrap stock-register-grid">
+            <table class="data-grid selectable-grid register-transactions"><thead><tr><th>Date</th><th>Voucher Type</th><th>Voucher No.</th><th>Party / Job Worker</th><th>Godown</th><th>Batch</th><th>Rate</th><th>Value</th><th>Inward</th><th>Outward</th><th>Running Qty</th></tr></thead><tbody>
+            @if(FilteredMovements.Count==0){<tr><td colspan="11" class="empty-cell">No voucher number matches this search.</td></tr>}
+            @foreach(var row in PagedMovements)
+            { <tr id="@row.RowKey" tabindex="-1" @key="row.RowKey" class="@(selectedKey==row.RowKey?"selected-row":null)" @onclick="()=>Select(row.RowKey)" @ondblclick="OpenSelected"><td>@row.Date.ToString("dd-MM-yyyy")</td><td>@row.VoucherType</td><td>@row.VoucherNumber</td><td>@Display(row.PartyOrJobWorker)</td><td>@row.Godown</td><td>@Display(row.Batch)</td><td>@Money(row.Rate)</td><td>@Money(row.Value)</td><td>@Qty(row.Inward)</td><td>@Qty(row.Outward)</td><td>@Qty(row.RunningQuantity)</td></tr> }
+            </tbody><tfoot><tr class="report-total"><td colspan="7">Totals @detail.UqcName</td><td>@Money(FilteredMovements.Sum(x=>x.Value))</td><td>@Qty(FilteredMovements.Sum(x=>x.Inward))</td><td>@Qty(FilteredMovements.Sum(x=>x.Outward))</td><td>@Qty(detail.ClosingQuantity)</td></tr></tfoot></table>
+        </div></section>
+    }
+    <p class="master-help">↑/↓ Select · PgUp/PgDn Jump · Enter Open · Alt+F Search Voucher No. · Esc Previous Level</p>
+</div>
+
+@code {
+    private const int JumpSize = 15;
+    private DateOnly CurrentDateBasis => filter.DateTo ?? filter.DateFrom ?? DateOnly.FromDateTime(DateTime.Today);
+    [SupplyParameterFromQuery(Name="itemId")] public long? ItemId {get;set;}
+    [SupplyParameterFromQuery(Name="godownId")] public long? GodownId {get;set;}
+    [SupplyParameterFromQuery(Name="origin")] public string? Origin {get;set;}
+    [SupplyParameterFromQuery(Name="movementId")] public long? MovementId {get;set;}
+    [SupplyParameterFromQuery(Name="from")] public DateOnly? From {get;set;}
+    [SupplyParameterFromQuery(Name="to")] public DateOnly? To {get;set;}
+    [SupplyParameterFromQuery(Name="returnUrl")] public string? ReturnUrl {get;set;}
+    private OperationalReportLookups lookups=new(); private InventoryReportFilter filter=new();
+    private List<StockRegisterSummaryRow> summary=new(); private StockRegisterDetail? detail;
+    private string? selectedKey; private bool loading;private string message=""; private string? pendingFocusId;
+    private string? activeLookupKey; private string itemText="",categoryText="",godownText="";
+    private bool showVoucherSearch; private string voucherSearch="";
+    private List<StockRegisterMovementRow> FilteredMovements=>detail?.Movements.Where(x=>string.IsNullOrWhiteSpace(voucherSearch)||x.VoucherNumber.Contains(voucherSearch.Trim(),StringComparison.OrdinalIgnoreCase)).ToList()??new();
+    private IReadOnlyList<StockRegisterSummaryRow> PagedSummary=>summary;
+    private IReadOnlyList<StockRegisterMovementRow> PagedMovements=>FilteredMovements;
+    private int ActiveRowCount=>detail is null?summary.Count:FilteredMovements.Count;
+    protected override async Task OnInitializedAsync(){using var operation=GlobalOperations.Begin("Opening Stock Register…");lookups=await Reporting.GetLookupsAsync();filter.StockItemId=ItemId;filter.GodownId=GodownId;filter.DateFrom=From;filter.DateTo=To;itemText=lookups.StockItems.FirstOrDefault(x=>x.Id==ItemId)?.Name??"";godownText=lookups.Godowns.FirstOrDefault(x=>x.Id==GodownId)?.Name??"";await Load();if(ItemId is not null && GodownId is not null){detail=await Reporting.GetStockRegisterDetailAsync(ItemId.Value,filter);selectedKey=MovementId is null?detail?.Movements.FirstOrDefault()?.RowKey:$"stock-movement-{MovementId}";}else pendingFocusId="register-item-filter";}
+    protected override async Task OnAfterRenderAsync(bool firstRender){if(pendingFocusId is not null){var id=pendingFocusId;pendingFocusId=null;await JS.InvokeVoidAsync("texTrackFocusById",id);}}
+    private async Task Load(){using var operation=GlobalOperations.Begin("Opening Stock Register…");loading=true;message="";activeLookupKey=null;try{ResolveTypedFilters();if(filter.GodownId is null){summary.Clear();detail=null;message=string.IsNullOrWhiteSpace(godownText)?"Select a Godown.":"No matching Godown. Select a result from the list or type its exact name.";}else{summary=(await Reporting.GetStockRegisterSummaryAsync(filter)).ToList();detail=null;Restore(PagedSummary.Select(x=>x.RowKey));}}catch(Exception ex){message=ex.Message;}finally{loading=false;}}
+    private async Task Clear(){filter=new InventoryReportFilter();itemText=categoryText=godownText="";activeLookupKey=null;summary.Clear();detail=null;message="Select a Godown.";pendingFocusId="register-item-filter";await Task.CompletedTask;}
+    private void OpenItemLookup()=>activeLookupKey="item";
+    private void OpenCategoryLookup()=>activeLookupKey="category";
+    private void OpenGodownLookup()=>activeLookupKey="godown";
+    private IEnumerable<LookupItem> FilterLookup(IEnumerable<LookupItem> source,string text)=>source.Where(x=>string.IsNullOrWhiteSpace(text)||x.Name.Contains(text.Trim(),StringComparison.OrdinalIgnoreCase)).Take(15);
+    private void ResolveTypedFilters(){
+        if(filter.StockItemId is null&&!string.IsNullOrWhiteSpace(itemText)){
+            var item=ResolveTypedLookup(lookups.StockItems,itemText);
+            if(item is not null){filter.StockItemId=item.Id;filter.StockItem="";itemText=item.Name;}
+            else filter.StockItem=itemText.Trim();
+        }
+        if(filter.StockCategoryId is null&&!string.IsNullOrWhiteSpace(categoryText)){
+            var category=ResolveTypedLookup(lookups.StockCategories,categoryText);
+            if(category is not null){filter.StockCategoryId=category.Id;categoryText=category.Name;}
+        }
+        if(filter.GodownId is null&&!string.IsNullOrWhiteSpace(godownText)){
+            var godown=ResolveTypedLookup(lookups.Godowns,godownText);
+            if(godown is not null){filter.GodownId=godown.Id;godownText=godown.Name;}
+        }
+    }
+    private static LookupItem? ResolveTypedLookup(IEnumerable<LookupItem> source,string text){
+        var term=text.Trim();
+        var exact=source.FirstOrDefault(x=>string.Equals(x.Name,term,StringComparison.OrdinalIgnoreCase));
+        if(exact is not null)return exact;
+        var matches=source.Where(x=>x.Name.Contains(term,StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+        return matches.Count==1?matches[0]:null;
+    }
+    private void ItemChanged(ChangeEventArgs e){itemText=e.Value?.ToString()??"";filter.StockItem=itemText;filter.StockItemId=null;activeLookupKey="item";}
+    private void CategoryChanged(ChangeEventArgs e){categoryText=e.Value?.ToString()??"";filter.StockCategoryId=null;activeLookupKey="category";}
+    private void GodownChanged(ChangeEventArgs e){godownText=e.Value?.ToString()??"";filter.GodownId=null;activeLookupKey="godown";}
+    private void SelectItem(LookupItem x){filter.StockItemId=x.Id;filter.StockItem="";itemText=x.Name;activeLookupKey=null;pendingFocusId="register-category-filter";}
+    private void SelectCategory(LookupItem x){filter.StockCategoryId=x.Id;categoryText=x.Name;activeLookupKey=null;pendingFocusId="register-godown-filter";}
+    private void SelectGodown(LookupItem x){filter.GodownId=x.Id;godownText=x.Name;activeLookupKey=null;pendingFocusId="register-from-filter";}
+    private void OpenVoucherSearch(){showVoucherSearch=true;pendingFocusId="register-voucher-filter";}
+    private void VoucherSearchChanged(ChangeEventArgs e){voucherSearch=e.Value?.ToString()??"";Restore(PagedMovements.Select(x=>x.RowKey));}
+    private void Select(string key)=>selectedKey=key;
+    private void Restore(IEnumerable<string> keys){var a=keys.ToList();if(selectedKey is null||!a.Contains(selectedKey))selectedKey=a.FirstOrDefault();}
+    private IReadOnlyList<string> Keys()=>detail is null?PagedSummary.Select(x=>x.RowKey).ToList():PagedMovements.Select(x=>x.RowKey).ToList();
+    private async Task Move(int d){var a=Keys();if(a.Count==0)return;var i=a.ToList().IndexOf(selectedKey??"");var next=i<0?(d>0?0:a.Count-1):Math.Clamp(i+d,0,a.Count-1);if(next==i)return;selectedKey=a[next];await JS.InvokeVoidAsync("texTrackScrollRowIntoView",selectedKey,"stock-register-root");}
+    private async Task OpenSelected(){
+        if(selectedKey is null)return;
+        if(detail is null){var row=summary.FirstOrDefault(x=>x.RowKey==selectedKey);if(row is null)return;detail=await Reporting.GetStockRegisterDetailAsync(row.StockItemId,filter);selectedKey=PagedMovements.FirstOrDefault()?.RowKey;return;}
+        var movement=detail.Movements.FirstOrDefault(x=>x.RowKey==selectedKey);if(movement is null)return;
+        var dates=$"{(filter.DateFrom is null?string.Empty:$"&from={filter.DateFrom:yyyy-MM-dd}")}{(filter.DateTo is null?string.Empty:$"&to={filter.DateTo:yyyy-MM-dd}")}";
+        var previous=string.IsNullOrWhiteSpace(ReturnUrl)?string.Empty:$"&returnUrl={Uri.EscapeDataString(ReturnUrl)}";
+        var returnPath = $"reports/inventory/stock-register?itemId={detail.StockItemId}&godownId={filter.GodownId}&origin={Uri.EscapeDataString(Origin ?? "direct")}&movementId={movement.MovementId}{previous}{dates}";
+        var returnUrl=Uri.EscapeDataString(returnPath);
+        var route=movement.VoucherSystemTypeCode switch{"MATERIAL_OUT"=>"/vouchers/material-out","MATERIAL_IN"=>"/vouchers/material-in","JOB_WORK_OUT_ORDER"=>"/vouchers/job-work-out-order",_=>string.Empty};
+        if(route.Length==0){message="This source voucher type does not yet have a persisted voucher view.";return;}
+        Navigation.NavigateTo($"{route}?voucherId={movement.VoucherId}&returnUrl={returnUrl}");
+    }
+    private async Task HandleKeyDown(KeyboardEventArgs e){if(e.AltKey&&string.Equals(e.Key,"a",StringComparison.OrdinalIgnoreCase)&&detail is null){await Load();return;}if(e.AltKey&&string.Equals(e.Key,"f",StringComparison.OrdinalIgnoreCase)&&detail is not null){OpenVoucherSearch();return;}if(e.Key=="PageDown"){await Move(JumpSize);return;}if(e.Key=="PageUp"){await Move(-JumpSize);return;}if(e.Key is "ArrowDown" or "Down"){await Move(1);return;}if(e.Key is "ArrowUp" or "Up"){await Move(-1);return;}if(e.Key=="Enter"){await OpenSelected();return;}if(e.Key=="Escape"){if(activeLookupKey is not null){activeLookupKey=null;return;}await HandleEscape();}}
+    private async Task HandleEscape(){if(showVoucherSearch){showVoucherSearch=false;voucherSearch="";Restore(Keys());await InvokeAsync(StateHasChanged);await JS.InvokeVoidAsync("texTrackFocusById","stock-register-root");return;}if(!string.IsNullOrWhiteSpace(ReturnUrl)){Navigation.NavigateTo("/"+ReturnUrl.TrimStart('/'));return;}if(string.Equals(Origin,"closing",StringComparison.OrdinalIgnoreCase)){Navigation.NavigateTo("/reports/inventory/closing-stock");return;}if(detail is not null){var item=detail.StockItemId;detail=null;selectedKey=$"register-{item}";await InvokeAsync(StateHasChanged);await JS.InvokeVoidAsync("texTrackFocusById","stock-register-root");return;}await JS.InvokeVoidAsync("texTrackLeaveCurrentPage","reports","reports-child-2-1");}
+    private static string Qty(decimal v)=>v.ToString("0.####");private static string Money(decimal v)=>v.ToString("0.00");private static string Display(string s)=>string.IsNullOrWhiteSpace(s)?"—":s;
+}

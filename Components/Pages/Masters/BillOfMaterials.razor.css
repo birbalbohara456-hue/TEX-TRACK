@@ -1,0 +1,46 @@
+.lookup-field { position: relative; }
+.bom-lookup-panel { min-width: 300px; max-height: 260px; overflow-y: auto; z-index: 1800; }
+.bom-lookup-panel button { display: flex; justify-content: space-between; gap: 16px; }
+.erp-lookup-empty { padding: 9px 10px; color: #526173; background: #f7f9fc; font-size: 12px; }
+
+.bom-master-page {
+    height: calc(100dvh - 150px);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.bom-list-grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.bom-list-grid table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.bom-list-grid thead { position: sticky; top: 0; z-index: 2; }
+.bom-list-grid th, .bom-list-grid td { padding: 8px 10px; border-bottom: 1px solid #d7e0ea; text-align: left; }
+.bom-list-grid tbody tr { cursor: pointer; }
+.bom-list-grid tbody tr.selected-row { background: #294f89; color: #fff; }
+
+.list-pager {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 7px 10px;
+    background: #edf3f9;
+    border-top: 1px solid #c9d5e2;
+}
+
+.list-pager button { min-width: 116px; }
+.bom-compare-controls { display:grid; grid-template-columns:minmax(12rem,1fr) minmax(12rem,1fr) auto; gap:.75rem; align-items:end; margin:.6rem 0; }
+.bom-compare-controls label { display:grid; gap:.3rem; font-weight:700; }
+.bom-comparison { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; margin-top:.75rem; }
+.bom-comparison article { min-width:0; border:1px solid #c8d1db; background:#fff; padding:.75rem; overflow:auto; }
+.bom-comparison h3 { margin:0 0 .35rem; }
+.bom-comparison p { margin:.2rem 0; }
+@media (max-width: 900px) { .bom-compare-controls,.bom-comparison { grid-template-columns:1fr; } }

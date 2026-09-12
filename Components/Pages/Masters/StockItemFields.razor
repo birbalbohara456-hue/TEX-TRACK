@@ -1,0 +1,42 @@
+@page "/masters/stock-item-fields"
+@inject StockItemFieldRepository Repository
+@inject IJSRuntime JS
+@attribute [Authorize(Policy = SecurityPolicies.ManageMasters)]
+<PageTitle>Stock Item Fields</PageTitle>
+
+<div id="stock-item-fields-root" class="page-card master-page stock-item-fields-page" tabindex="0"
+     data-keyboard-list-root="true" data-fast-row-navigation="true" @onkeydown="HandleKeyDown">
+    <div class="page-header"><div><p class="eyebrow">INVENTORY MASTER</p><h1>Stock Item Fields</h1></div>
+        <div class="header-actions"><button class="primary-button" @onclick="Create">Alt+C Create</button><button @onclick="Edit" disabled="@(selected < 0)">Enter Edit</button><button class="danger-button" @onclick="Delete" disabled="@(selected < 0)">Alt+D Delete</button></div></div>
+    <div class="database-ok">● Renameable item attributes · Named photo slots · Existing values stay linked by field ID</div>
+    @if (showForm)
+    {
+        <div class="master-edit-form stock-item-field-form" data-enter-navigation="true">
+            <div class="stock-item-form-grid">
+                <label>Field Name <b>*</b><input id="item-field-name" maxlength="120" @bind="edit.Name" /></label>
+                <label>Field Type <b>*</b><select @bind="edit.FieldType"><option>Text</option><option>Number</option><option>Date</option><option>YesNo</option><option>Choice</option><option>Photo</option></select></label>
+                <label>Display Order <b>*</b><input type="number" min="1" max="9999" @bind="edit.DisplayOrder" /></label>
+                @if (edit.FieldType == "Choice") { <label class="wide-field">Choices (one per line)<textarea rows="4" @bind="edit.OptionsText"></textarea></label> }
+                <label class="checkbox-field"><input type="checkbox" @bind="edit.IsRequired" /> Required</label>
+                @if (edit.FieldType == "Photo") { <label class="checkbox-field"><input type="checkbox" @bind="edit.AllowMultiple" /> Allow multiple photos</label> }
+                <label class="checkbox-field"><input type="checkbox" @bind="edit.IsActive" /> Active</label>
+            </div>
+            <div class="form-actions"><button class="primary-button" type="button" data-enter-save="true" @onclick="Save">Alt+S Save</button><button type="button" @onclick="Close">Esc Cancel</button></div>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice @(error ? "notice-error" : "notice-success")">@message</p> }
+    <div class="grid-wrap tt-contained-scroll"><table class="data-grid selectable-grid"><thead><tr><th>Field Name</th><th>Type</th><th>Order</th><th>Required</th><th>Multiple</th><th>Status</th></tr></thead><tbody>
+        @for(var i=0;i<rows.Count;i++){var index=i;var row=rows[i];<tr id="stock-item-field-row-@row.Id" class="@(selected==index ? "selected-row" : null)" @onclick="()=>selected=index" @ondblclick="Edit"><td><strong>@row.Name</strong></td><td>@row.FieldType</td><td>@row.DisplayOrder</td><td>@(row.IsRequired?"Yes":"No")</td><td>@(row.AllowMultiple?"Yes":"No")</td><td>@(row.IsActive?"Active":"Inactive")</td></tr>}
+    </tbody></table></div><p class="master-help">↑/↓ Select · Enter Edit · Alt+C Create · Alt+D Delete · Esc Back</p>
+</div>
+
+@code{
+    private List<StockItemFieldDefinitionEditModel> rows=new(); private StockItemFieldDefinitionEditModel edit=new(); private int selected=-1; private bool showForm; private string message=""; private bool error;
+    protected override async Task OnInitializedAsync()=>rows=await Repository.GetAllAsync();
+    private void Create(){edit=new(){DisplayOrder=(rows.LastOrDefault()?.DisplayOrder??90)+10,IsActive=true};showForm=true;message="";}
+    private void Edit(){if(selected<0)return;var r=rows[selected];edit=new(){Id=r.Id,Name=r.Name,FieldType=r.FieldType,DisplayOrder=r.DisplayOrder,IsRequired=r.IsRequired,AllowMultiple=r.AllowMultiple,OptionsText=r.OptionsText,IsActive=r.IsActive,ConcurrencyToken=r.ConcurrencyToken};showForm=true;}
+    private void Close(){showForm=false;edit=new();}
+    private async Task Save(){var result=await Repository.SaveAsync(edit);message=result.Message;error=!result.Success;if(result.Success){showForm=false;rows=await Repository.GetAllAsync();selected=Math.Max(0,rows.FindIndex(x=>x.Id==result.EntityId));}}
+    private async Task Delete(){if(selected<0)return;var row=rows[selected];if(!await JS.InvokeAsync<bool>("texTrackConfirmDelete","Delete Stock Item Field?",$"Delete '{row.Name}'?",null))return;var result=await Repository.DeleteAsync(row.Id);message=result.Message;error=!result.Success;if(result.Success){rows=await Repository.GetAllAsync();selected=Math.Min(selected,rows.Count-1);}}
+    private async Task HandleKeyDown(KeyboardEventArgs e){if(showForm){if(e.Key=="Escape")Close();else if(e.AltKey&&e.Key.Equals("s",StringComparison.OrdinalIgnoreCase))await Save();return;}if(e.AltKey&&e.Key.Equals("c",StringComparison.OrdinalIgnoreCase)){Create();return;}if(rows.Count==0)return;if(e.Key=="ArrowDown")selected=Math.Min(selected+1,rows.Count-1);else if(e.Key=="ArrowUp")selected=Math.Max(selected-1,0);else if(e.Key=="Enter")Edit();else if(e.AltKey&&e.Key.Equals("d",StringComparison.OrdinalIgnoreCase))await Delete();}
+}

@@ -1,0 +1,12 @@
+TexTrack ERP v0.4 Build 1.1.1 — Razor Hotfix
+
+Corrected the Razor parser error in JobWorkOutOrder.razor:
+Unexpected "{" after "@" character.
+
+Cause:
+Two nested @{} transitions were used inside existing Razor code blocks.
+
+Fix:
+The local orderedAllocations and visibleComponents variables now use direct C# statements inside their existing @for/@if code blocks.
+
+No database, migration, business-rule, UI-layout, due-date, typeable lookup, 12px text, or Tally-style component-allocation behavior was changed.

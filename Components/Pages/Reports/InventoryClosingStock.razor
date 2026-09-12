@@ -1,0 +1,158 @@
+@page "/reports/inventory/closing-stock"
+@page "/reports/closing-stock"
+@attribute [Authorize(Policy = SecurityPolicies.ViewReports)]
+@inject OperationalReportingService Reporting
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject GlobalOperationState GlobalOperations
+
+<PageTitle>Closing Stock</PageTitle>
+<div id="closing-stock-root" class="page-card master-page closing-stock-page" tabindex="0" data-keyboard-list-root="true" data-fast-row-navigation="true" @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="closing-stock-report" RootElementId="closing-stock-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List" CanDelete="false"
+                          HandlesEscape="true" EscapeAsync="HandleEscape"
+                          InitialFocusTarget="closing-item-filter" />
+    <div class="page-header">
+        <div><p class="eyebrow">INVENTORY REPORTS</p><h1>Closing Stock</h1></div>
+        <div class="header-actions"><button class="primary-button" @onclick="Load">Apply</button><button @onclick="Clear">Clear</button></div>
+    </div>
+    <div class="database-ok">● Valid stock movements · Weighted average = net valid value / net quantity · UQCs are never mixed</div>
+    @if (showFilters)
+    {
+        <section class="form-section closing-stock-filter-panel" data-enter-navigation="true"><div class="form-heading"><strong>Filters</strong><span>Stock Balance</span></div>
+            <div class="closing-stock-filter-grid">
+                <label>As of Date<FlexibleDateInput @bind-Value="filter.DateTo" BasisDate="@(filter.DateTo ?? DateOnly.FromDateTime(DateTime.Today))" /></label>
+                <label>Stock Group<select @bind="filter.StockGroupId"><option value="">All Groups</option>@foreach(var x in lookups.StockGroups){<option value="@x.Id">@x.Name</option>}</select></label>
+                <label>Item Name<input id="closing-item-filter" data-tt-filter-input="true" @bind="filter.StockItem" @bind:event="oninput" placeholder="Item code or name" /></label>
+                <label>Stock Category<select @bind="filter.StockCategoryId"><option value="">All Categories</option>@foreach(var x in lookups.StockCategories){<option value="@x.Id">@x.Name</option>}</select></label>
+                <label>Stock State<select @bind="filter.QuantityFilter"><option value="@ClosingQuantityFilter.All">All</option><option value="@ClosingQuantityFilter.Positive">Positive</option><option value="@ClosingQuantityFilter.Negative">Negative</option><option value="@ClosingQuantityFilter.Zero">Zero</option></select></label>
+            </div>
+        </section>
+    }
+    @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice notice-error">@message</p> }
+    @if (loading) { <p class="muted">Loading closing stock…</p> }
+    else if (detail is null && godownDetail is null)
+    {
+        <section class="form-section closing-stock-results"><div class="form-heading"><strong>Stock Group Summary</strong><span>@groups.Count group/UQC rows</span></div>
+            <div class="grid-wrap closing-stock-grid"><table class="data-grid selectable-grid"><thead><tr><th>Stock Group</th><th>UQC</th><th>Items</th><th>Closing Quantity</th><th>Value</th><th>Weighted Avg.</th></tr></thead><tbody>
+                @if(groups.Count==0){<tr><td colspan="6" class="empty-cell">No matching closing stock.</td></tr>}
+                @foreach(var row in PagedGroups)
+                {
+                    <tr id="@row.RowKey" tabindex="-1" @key="row.RowKey" class="@(selectedKey==row.RowKey?"selected-row":null)" @onclick="()=>Select(row.RowKey)" @ondblclick="OpenSelected">
+                        <td><strong>@row.StockGroupName</strong></td><td>@row.UqcName</td><td>@row.ItemCount</td><td>@Qty(row.Quantity)</td><td>@Money(row.Value)</td><td>@Money(row.AverageRate)</td>
+                    </tr>
+                }
+            </tbody><tfoot>
+                @foreach(var total in groups.GroupBy(x=>x.UqcName,StringComparer.OrdinalIgnoreCase))
+                { <tr class="report-total"><td colspan="3">Total @total.Key</td><td>@Qty(total.Sum(x=>x.Quantity))</td><td>@Money(total.Sum(x=>x.Value))</td><td></td></tr> }
+            </tfoot></table></div>
+        </section>
+    }
+    else if (detail is not null && godownDetail is null)
+    {
+        <section class="form-section closing-stock-results"><div class="form-heading"><strong>@detail.GroupName · @detail.UqcName</strong><span>Item Summary</span></div>
+            <div class="grid-wrap closing-stock-grid"><table class="data-grid selectable-grid closing-matrix"><thead><tr><th>Item Name</th><th>Stock Category</th><th>Colours</th>
+                @foreach(var size in DetailSizes){<th>@size</th>}
+                <th>Closing Qty</th><th>UQC</th><th>Weighted Average Rate</th><th>Closing Value</th></tr></thead><tbody>
+                @foreach(var row in PagedItems)
+                {
+                    <tr id="@row.RowKey" tabindex="-1" @key="row.RowKey" class="@(selectedKey==row.RowKey?"selected-row":null)" @onclick="()=>Select(row.RowKey)" @ondblclick="OpenSelected">
+                        <td><strong>@row.StockItemName</strong></td><td>@Display(row.StockCategoryName)</td><td class="closing-colours">@ColourSummary(row)</td>
+                        @foreach(var size in DetailSizes){<td>@VariantQuantity(row.Variants, size)</td>}
+                        <td>@Qty(row.Quantity)</td><td>@detail.UqcName</td><td>@Money(row.AverageRate)</td><td>@Money(row.Value)</td>
+                    </tr>
+                    @if(expandedKeys.Contains(row.RowKey))
+                    {
+                        @foreach(var colour in ColourGroups(row))
+                        {
+                            var colourQty = colour.Sum(x => x.Quantity); var colourValue = colour.Sum(x => x.Value);
+                            <tr class="closing-child"><td>↳ @colour.Key</td><td></td><td>@colour.Key</td>
+                                @foreach(var size in DetailSizes){<td>@VariantQuantity(colour, size)</td>}
+                                <td>@Qty(colourQty)</td><td>@detail.UqcName</td><td>@Money(colourQty==0?0:colourValue/colourQty)</td><td>@Money(colourValue)</td></tr>
+                        }
+                    }
+                }
+            </tbody><tfoot><tr class="report-total"><td colspan="@(3+DetailSizes.Count)">Total @detail.UqcName</td><td>@Qty(detail.Items.Sum(x=>x.Quantity))</td><td>@detail.UqcName</td><td></td><td>@Money(detail.Items.Sum(x=>x.Value))</td></tr></tfoot></table></div>
+        </section>
+    }
+    else
+    {
+        <section class="form-section closing-stock-results"><div class="form-heading"><strong>@godownDetail!.StockItemName</strong><span>Godown-wise Closing Stock</span></div>
+            <div class="grid-wrap closing-stock-grid"><table class="data-grid selectable-grid"><thead><tr><th>Godown</th><th>Closing Quantity</th><th>UQC</th><th>Weighted Average Rate</th><th>Closing Value</th></tr></thead><tbody>
+                @if(godownDetail.Godowns.Count==0){<tr><td colspan="5" class="empty-cell">No matching godown balances.</td></tr>}
+                @foreach(var row in PagedGodowns)
+                {
+                    <tr id="@row.RowKey" tabindex="-1" @key="row.RowKey" class="@(selectedKey==row.RowKey?"selected-row":null)" @onclick="()=>Select(row.RowKey)" @ondblclick="OpenSelected">
+                        <td><strong>@row.GodownName</strong></td><td>@Qty(row.Quantity)</td><td>@godownDetail.UqcName</td><td>@Money(row.AverageRate)</td><td>@Money(row.Value)</td>
+                    </tr>
+                }
+            </tbody><tfoot><tr class="report-total"><td>Total @godownDetail.UqcName</td><td>@Qty(godownDetail.Godowns.Sum(x=>x.Quantity))</td><td>@godownDetail.UqcName</td><td></td><td>@Money(godownDetail.Godowns.Sum(x=>x.Value))</td></tr></tfoot></table></div>
+        </section>
+    }
+    <p class="master-help">↑/↓ Select · PgUp/PgDn Jump · Enter Drill Down · Shift+Enter Expand · Alt+F1 Expand All · F4 Filters · Esc Return</p>
+</div>
+
+@code {
+    private const int JumpSize = 15;
+    [SupplyParameterFromQuery(Name="groupId")] public long? GroupId {get;set;}
+    [SupplyParameterFromQuery(Name="uqcId")] public long? UqcId {get;set;}
+    [SupplyParameterFromQuery(Name="itemId")] public long? ItemId {get;set;}
+    [SupplyParameterFromQuery(Name="godownId")] public long? GodownId {get;set;}
+    private OperationalReportLookups lookups = new();
+    private InventoryReportFilter filter = new();
+    private List<ClosingStockGroupRow> groups = new();
+    private ClosingStockItemDetail? detail;
+    private ClosingStockGodownDetail? godownDetail;
+    private readonly HashSet<string> expandedKeys = new();
+    private string? selectedKey;
+    private bool showFilters = true, loading;
+    private string message = string.Empty;
+    private long? activeGroupId, activeUqcId;
+
+    private IReadOnlyList<ClosingStockGroupRow> PagedGroups => groups;
+    private IReadOnlyList<ClosingStockItemDetailRow> PagedItems => detail?.Items ?? [];
+    private IReadOnlyList<ClosingStockGodownRow> PagedGodowns => godownDetail?.Godowns ?? [];
+    private int ActiveRowCount => godownDetail is not null ? godownDetail.Godowns.Count : detail is not null ? detail.Items.Count : groups.Count;
+
+    protected override async Task OnInitializedAsync(){using var operation=GlobalOperations.Begin("Opening Closing Stock report…");lookups=await Reporting.GetLookupsAsync();await Load();if(GroupId is not null&&UqcId is not null){activeGroupId=GroupId;activeUqcId=UqcId;detail=await Reporting.GetClosingStockItemsAsync(GroupId.Value,UqcId.Value,filter);selectedKey=detail.Items.FirstOrDefault()?.RowKey;if(ItemId is not null){godownDetail=await Reporting.GetClosingStockGodownsAsync(ItemId.Value,filter);selectedKey=GodownId is null?godownDetail?.Godowns.FirstOrDefault()?.RowKey:$"closing-godown-{GodownId}";}}}
+    private async Task Load(){using var operation=GlobalOperations.Begin("Opening Closing Stock report…");loading=true;message="";try{groups=(await Reporting.GetClosingStockGroupsAsync(filter)).ToList();detail=null;godownDetail=null;RestoreSelection(PagedGroups.Select(x=>x.RowKey));}catch(Exception ex){message=ex.Message;}finally{loading=false;}}
+    private async Task Clear(){filter=new();expandedKeys.Clear();await Load();}
+    private void Select(string key){selectedKey=key;}
+    private void RestoreSelection(IEnumerable<string> keys){var list=keys.ToList();if(selectedKey is null||!list.Contains(selectedKey))selectedKey=list.FirstOrDefault();}
+    private IReadOnlyList<string> VisibleKeys()=>godownDetail is not null?PagedGodowns.Select(x=>x.RowKey).ToList():detail is null?PagedGroups.Select(x=>x.RowKey).ToList():PagedItems.Select(x=>x.RowKey).ToList();
+    private async Task Move(int delta){var keys=VisibleKeys();if(keys.Count==0)return;var i=selectedKey is null?-1:keys.ToList().IndexOf(selectedKey);var next=i<0?(delta>0?0:keys.Count-1):Math.Clamp(i+delta,0,keys.Count-1);if(next==i)return;selectedKey=keys[next];await JS.InvokeVoidAsync("texTrackScrollRowIntoView",selectedKey,"closing-stock-root");}
+    private async Task OpenSelected(){
+        if(selectedKey is null)return;
+        if(detail is null){var row=groups.FirstOrDefault(x=>x.RowKey==selectedKey);if(row is null)return;activeGroupId=row.StockGroupId;activeUqcId=row.UqcId;detail=await Reporting.GetClosingStockItemsAsync(row.StockGroupId,row.UqcId,filter);selectedKey=PagedItems.FirstOrDefault()?.RowKey;return;}
+        if(godownDetail is not null){var godown=godownDetail.Godowns.FirstOrDefault(x=>x.RowKey==selectedKey);if(godown is null||activeGroupId is null||activeUqcId is null)return;var dates=$"{(filter.DateFrom is null?string.Empty:$"&from={filter.DateFrom:yyyy-MM-dd}")}{(filter.DateTo is null?string.Empty:$"&to={filter.DateTo:yyyy-MM-dd}")}";var returnPath=$"reports/inventory/closing-stock?groupId={activeGroupId}&uqcId={activeUqcId}&itemId={godownDetail.StockItemId}&godownId={godown.GodownId}";Navigation.NavigateTo($"/reports/inventory/stock-register?itemId={godownDetail.StockItemId}&godownId={godown.GodownId}&origin=closing&returnUrl={Uri.EscapeDataString(returnPath)}{dates}");return;}
+        var item=detail.Items.FirstOrDefault(x=>x.RowKey==selectedKey);if(item is null)return;
+        godownDetail=await Reporting.GetClosingStockGodownsAsync(item.StockItemId,filter);selectedKey=PagedGodowns.FirstOrDefault()?.RowKey;
+    }
+    private void ToggleSelected(){if(detail is null||godownDetail is not null||selectedKey is null)return;if(!expandedKeys.Add(selectedKey))expandedKeys.Remove(selectedKey);}
+    private void ToggleAll(){if(detail is null||godownDetail is not null)return;var keys=detail.Items.Select(x=>x.RowKey).ToList();if(keys.All(expandedKeys.Contains))foreach(var k in keys)expandedKeys.Remove(k);else foreach(var k in keys)expandedKeys.Add(k);}
+    private async Task HandleKeyDown(KeyboardEventArgs e){
+        if(e.Key=="F4"){showFilters=true;await InvokeAsync(StateHasChanged);await JS.InvokeVoidAsync("texTrackFocusById","closing-item-filter");return;}
+        if(e.AltKey&&e.Key=="F1"){ToggleAll();return;} if(e.ShiftKey&&e.Key=="Enter"){ToggleSelected();return;}
+        if(e.Key=="PageDown"){await Move(JumpSize);return;}if(e.Key=="PageUp"){await Move(-JumpSize);return;}
+        if(e.Key is "ArrowDown" or "Down"){await Move(1);return;}if(e.Key is "ArrowUp" or "Up"){await Move(-1);return;}if(e.Key=="Enter"){await OpenSelected();return;}
+        if(e.Key=="Escape") await HandleEscape();
+    }
+    private async Task HandleEscape(){if(godownDetail is not null){var itemId=godownDetail.StockItemId;godownDetail=null;selectedKey=$"closing-item-{itemId}";await InvokeAsync(StateHasChanged);await JS.InvokeVoidAsync("texTrackFocusById","closing-stock-root");return;}if(detail is not null){detail=null;RestoreSelection(PagedGroups.Select(x=>x.RowKey));await InvokeAsync(StateHasChanged);await JS.InvokeVoidAsync("texTrackFocusById","closing-stock-root");return;}await JS.InvokeVoidAsync("texTrackLeaveCurrentPage","reports","reports-child-2-0");}
+    private IReadOnlyList<string> DetailSizes => detail?.Items.SelectMany(x => x.Variants).Select(x => x.SizeName)
+        .Where(x => x != "N/A").Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToList() ?? new List<string>();
+    private static IEnumerable<IGrouping<string, ClosingStockVariantDetailRow>> ColourGroups(ClosingStockItemDetailRow row) =>
+        row.Variants.Where(x => x.ColourName != "N/A").GroupBy(x => x.ColourName).OrderBy(x => x.Key);
+    private static string ColourSummary(ClosingStockItemDetailRow row)
+    {
+        var colours = row.Variants.Select(x => x.ColourName)
+            .Where(x => !string.Equals(x, "N/A", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToList();
+        return colours.Count == 0 ? "—" : string.Join(", ", colours);
+    }
+    private static string VariantQuantity(IEnumerable<ClosingStockVariantDetailRow> variants, string size)
+    {
+        var matching = variants.Where(x => string.Equals(x.SizeName, size, StringComparison.OrdinalIgnoreCase)).ToList();
+        return matching.Count == 0 ? string.Empty : Qty(matching.Sum(x => x.Quantity));
+    }
+    private static string Qty(decimal v)=>v.ToString("0.####"); private static string Money(decimal v)=>v.ToString("0.00"); private static string Display(string value)=>string.IsNullOrWhiteSpace(value)?"—":value;
+}

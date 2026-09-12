@@ -1,0 +1,26 @@
+<section class="mi-view-shell">
+    <header class="mi-view-title"><div><strong>Material In @Data.Header.VoucherNumber</strong><span>Persisted audit view · posting fields are read-only</span></div><b>@Data.Header.Status</b></header>
+    <div class="mi-view-header">
+        <label>Date<input value="@Data.Header.VoucherDate.ToString("dd-MM-yyyy")" readonly /></label><label>Job Worker<input value="@Data.Header.JobWorkerName" readonly /></label>
+        <label>Original JWO<input value="@Data.Header.JwoVoucherNumber" readonly /></label><label>Batch<input value="@Data.Header.Batch" readonly /></label>
+        <label>Consumption Godown<input value="@Data.Header.ConsumptionGodownName" readonly /></label><label>Finished Goods Godown<input value="@Data.Header.ReceivingGodownName" readonly /></label>
+    </div>
+    <div class="mi-view-columns">
+        <section><h2>Finished Goods Received</h2>
+            @foreach(var fg in Data.FinishedGoods)
+            {
+                <article class="mi-view-fg"><header><strong>@fg.StockItemName</strong><span>@fg.ReceivedQuantity.ToString("0.###") @fg.UqcName</span></header>
+                    @foreach(var variant in fg.Variants){<div class="mi-view-child"><span>↳ @variant.ColourName / @variant.SizeName</span><b>@variant.Quantity.ToString("0.###")</b></div>}
+                    <div class="mi-view-cost"><span>Material Value <b>@fg.MaterialValue.ToString("0.00")</b></span><span>Process Charge <b>@fg.ProcessCharge.ToString("0.00")</b></span><span>FG Value <b>@fg.FinishedGoodsValue.ToString("0.00")</b></span><span>Rate <b>@fg.Rate.ToString("0.00")</b></span></div>
+                </article>
+            }
+        </section>
+        <section><h2>Linked Component Consumption</h2><div class="mi-view-consumption">
+            <div class="head"><span>Finished Good</span><span>Component</span><span>Qty</span><span>Rate</span><span>Value</span></div>
+            @foreach(var row in Data.Consumptions){<div><strong>@row.FinishedGoodName</strong><span>@row.StockItemName</span><span>@row.ConsumedQuantity.ToString("0.###") @row.UqcName</span><span>@row.Rate.ToString("0.00")</span><span>@row.Value.ToString("0.00")</span></div>}
+        </div></section>
+    </div>
+    <footer class="mi-view-totals"><span>FG Qty <b>@Data.Header.ReceivedQuantity.ToString("0.###")</b></span><span>Consumed Material <b>@Data.Header.ConsumedMaterialValue.ToString("0.00")</b></span><span>Process Charge <b>@Data.Header.ProcessCharge.ToString("0.00")</b></span><span>FG Value <b>@Data.Header.FinishedGoodsValue.ToString("0.00")</b></span></footer>
+    <div class="voucher-action-bar"><button type="button" @onclick="CloseRequested">Esc Back to List</button></div>
+</section>
+@code { [Parameter,EditorRequired] public MaterialInViewData Data {get;set;}=new(); [Parameter] public EventCallback CloseRequested {get;set;} }

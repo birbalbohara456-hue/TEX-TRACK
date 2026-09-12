@@ -1,0 +1,22 @@
+TexTrack ERP v0.4 Build 2.0.11 - Verified Return Focus
+
+BASE
+Complete project package based on v0.4 Build 2 Tally-Aligned JWO with all focus/menu fixes consolidated.
+
+FIXED
+- Selecting Yes in the JWO Exit Voucher dialog now closes the form and restores focus to the JWO list page root.
+- Focus restoration retries after Blazor rendering until the destination element exists and owns document.activeElement.
+- No mouse click should be needed before Up/Down, Enter, Alt+C, F4, or Esc work on the returned JWO list.
+- The TexTrack native exit modal is retained; browser confirm() is not used by the JWO form.
+
+INSTALL
+1. Back up the existing project folder and PostgreSQL database.
+2. Extract this complete ZIP into a new folder.
+3. Run START_TEXTRACK.bat or dotnet run --project TexTrack.Web.csproj.
+4. Hard refresh once with Ctrl+F5.
+
+DATABASE
+No new migration in Build 2.0.11. Existing Build 2 migrations remain included.
+
+EXPECTED FOOTER
+v0.4 Build 2.0.11 Verified Return Focus

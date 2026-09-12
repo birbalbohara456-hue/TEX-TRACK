@@ -1,0 +1,60 @@
+@page "/settings/ai-assistant"
+@attribute [Authorize(Policy = SecurityPolicies.DeveloperOnly)]
+@using TexTrack.Web.Models
+@inject DeveloperAccessService DeveloperAccess
+@inject TexTrackAssistant Assistant
+
+<PageTitle>TexTrack AI Settings</PageTitle>
+<div class="page-card ai-settings">
+    <header><p>SETTINGS</p><h1>TexTrack AI Assistant</h1><small>Read-only provider configuration</small></header>
+    @if (!DeveloperAccess.IsDeveloper)
+    {
+        <div class="form-message error">Developer authentication is required to change AI provider settings.</div>
+        <a class="ai-button" href="/login?returnUrl=/settings/ai-assistant">Login</a>
+    }
+    else if (!loaded) { <p>Loading configuration…</p> }
+    else
+    {
+        <section>
+            <label>Provider</label>
+            <select @bind="model.Provider"><option value="@AssistantProviderKind.Ollama">Ollama (local testing)</option><option value="@AssistantProviderKind.OpenAiCompatible">OpenAI-compatible API</option></select>
+            <label>Base URL</label><input @bind="model.BaseUrl" autocomplete="off" />
+            <label>Model</label><input @bind="model.Model" autocomplete="off" />
+            <label>API key</label><input type="password" @bind="model.ApiKey" autocomplete="new-password" placeholder="@(apiKeyConfigured ? "Configured — leave blank to keep" : "Required for compatible API")" />
+            <label class="check"><input type="checkbox" @bind="model.ClearApiKey" /> Clear saved API key</label>
+            <label>Timeout (seconds)</label><input type="number" min="10" max="300" @bind="model.TimeoutSeconds" />
+            <div class="ai-note">The key is encrypted with ASP.NET Core Data Protection and stored on this TexTrack server. It is never shown again after saving.</div>
+            <div class="actions"><button class="ai-button" type="button" @onclick="SaveAsync" disabled="@busy">@(busyAction == "save" ? "Saving..." : "Save")</button><button class="ai-button secondary" type="button" @onclick="TestAsync" disabled="@busy">@(busyAction == "test" ? "Testing..." : "Test Connection")</button></div>
+        </section>
+    }
+    @if (!string.IsNullOrWhiteSpace(message)) { <div class="form-message @(success ? "success" : "error")">@message</div> }
+</div>
+
+@code {
+    private readonly AssistantSettingsUpdate model = new();
+    private bool loaded, busy, success, apiKeyConfigured;
+    private string message = string.Empty, busyAction = string.Empty;
+    protected override async Task OnInitializedAsync()
+    {
+        if (!DeveloperAccess.IsDeveloper) return;
+        var view = await Assistant.GetSettingsViewAsync();
+        model.Provider = view.Provider; model.BaseUrl = view.BaseUrl; model.Model = view.Model; model.TimeoutSeconds = view.TimeoutSeconds;
+        apiKeyConfigured = view.ApiKeyConfigured; loaded = true;
+    }
+    private async Task SaveAsync()
+    {
+        busy = true; busyAction = "save"; success = true; message = "Saving AI settings...";
+        await InvokeAsync(StateHasChanged);
+        try { var result = await Assistant.SaveSettingsAsync(model); success = result.Success; message = result.Message; if (success) { apiKeyConfigured = !model.ClearApiKey && (apiKeyConfigured || model.ApiKey.Length > 0); model.ApiKey = string.Empty; model.ClearApiKey = false; } }
+        catch (Exception ex) { success = false; message = $"Save failed: {ex.Message}"; }
+        finally { busy = false; busyAction = string.Empty; await InvokeAsync(StateHasChanged); }
+    }
+    private async Task TestAsync()
+    {
+        busy = true; busyAction = "test"; success = true; message = $"Testing {model.Provider} connection to {model.BaseUrl}...";
+        await InvokeAsync(StateHasChanged);
+        try { var result = await Assistant.TestAsync(model); success = result.Success; message = result.Message; }
+        catch (Exception ex) { success = false; message = $"Connection test failed: {ex.Message}"; }
+        finally { busy = false; busyAction = string.Empty; await InvokeAsync(StateHasChanged); }
+    }
+}

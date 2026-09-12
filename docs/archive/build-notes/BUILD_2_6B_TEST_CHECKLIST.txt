@@ -1,0 +1,18 @@
+BUILD 2.6B TEST CHECKLIST
+
+1. Run dotnet run and confirm all prior modules open normally.
+2. Open Entries > Material In.
+3. Select a Job Worker that has a JWO and saved Material Out.
+4. Confirm only pending JWO orders for that Job Worker appear.
+5. Select an order and verify Batch, pending FG variants, and component availability.
+6. Select Consumption Godown and Receiving Godown.
+7. Enter one or more FG colour/size quantities. Confirm Received total changes.
+8. Enter per-FG Process Charge.
+9. Enter RM Consume Now quantities not exceeding Available.
+10. Press Alt+S.
+11. Confirm success message and a new voucher number is prepared.
+12. Re-select the same Job Worker/JWO and confirm pending FG and available RM reduce.
+13. Confirm over-receipt and over-consumption are blocked.
+14. Verify previous JWO and Material Out features still work.
+
+Important: Build 2.6B supports CREATE only. Alteration and deletion are intentionally deferred.

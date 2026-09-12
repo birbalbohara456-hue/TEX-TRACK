@@ -1,0 +1,36 @@
+@inject VoucherAuditTrailRepository AuditTrail
+@inject NavigationManager Navigation
+
+@if (VoucherId > 0 && stamp is not null)
+{
+    <aside class="voucher-audit-stamp" aria-label="Voucher audit identity">
+        <span>@(stamp.IsLegacyBaseline ? "Baseline captured by" : "Saved by") <strong>@FriendlyActor(stamp.CreatedBy)</strong> · @LocalTime(stamp.CreatedAtUtc)</span>
+        <span>Last action <strong>@stamp.LastAction</strong> by <strong>@FriendlyActor(stamp.LastEditedBy)</strong> · @LocalTime(stamp.LastEditedAtUtc)</span>
+        <AuthorizeView Policy="@SecurityPolicies.ViewAuditTrail">
+            <Authorized><button type="button" @onclick="ShowHistory">Show Full History</button></Authorized>
+        </AuthorizeView>
+    </aside>
+}
+
+@code {
+    [Parameter] public long VoucherId { get; set; }
+    private VoucherAuditStampModel? stamp;
+    private long loadedVoucherId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (VoucherId <= 0) { stamp = null; loadedVoucherId = 0; return; }
+        if (loadedVoucherId == VoucherId) return;
+        loadedVoucherId = VoucherId;
+        stamp = await AuditTrail.GetStampAsync(VoucherId);
+    }
+
+    private void ShowHistory() => Navigation.NavigateTo($"/reports/audit-trail?voucher={stamp!.VoucherAuditIdentity:D}");
+    private static string FriendlyActor(string actor)
+    {
+        if (!actor.StartsWith("user:", StringComparison.Ordinal)) return actor;
+        var parts = actor.Split(':', 3);
+        return parts.Length == 3 ? parts[2] : actor;
+    }
+    private static string LocalTime(DateTimeOffset value) => value.ToLocalTime().ToString("dd-MMM-yyyy HH:mm");
+}

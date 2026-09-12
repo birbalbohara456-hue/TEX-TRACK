@@ -1,0 +1,2834 @@
+:root {
+    --tt-deep: #091426;
+    --tt-primary: #091426;
+    --tt-primary-2: #1e293b;
+    --tt-primary-soft: #d0e1fb;
+    --tt-workspace: #fbf8fa;
+    --tt-paper: #ffffff;
+    --tt-panel: #ffffff;
+    --tt-grid-head: #f5f3f4;
+    --tt-focus: #fff0b7;
+    --tt-selection: #263a55;
+    --tt-selection-border: #091426;
+    --tt-border: #75777d;
+    --tt-border-soft: #c5c6cd;
+    --tt-text: #1b1b1d;
+    --tt-muted: #505f76;
+    --tt-danger: #a33a3a;
+    --tt-success: #2f6b4b;
+    --tt-accent: #b88824;
+    --tt-accent-soft: #fff0b7;
+    --tt-voucher-header: #091426;
+    --tt-voucher-rail: #101f35;
+    --tt-voucher-rail-hover: #263a55;
+    --tt-voucher-grid-head: #e8edf4;
+    --tt-voucher-subtle: #f4f6f9;
+    --tt-voucher-line: #9aa8b6;
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    color: var(--tt-text);
+    background: var(--tt-workspace);
+    font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+html,
+body { margin: 0; height: 100%; overflow: hidden; }
+
+body { background: var(--tt-workspace); }
+
+button,
+input,
+select,
+textarea { font: inherit; }
+
+button { color: inherit; }
+
+a { color: inherit; }
+
+/*
+ * Text-alignment utilities used across voucher table markup (th/td classes
+ * like "text-right" on Amount/Rate/Qty headers). These were never actually
+ * defined anywhere in the stylesheet, so every <th> silently fell back to
+ * the browser's default centered heading alignment instead of matching its
+ * column's data alignment below it.
+ */
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+
+/* Shared voucher foundation. Voucher pages supply only their field controls and data area. */
+.tt-voucher-entry { position: fixed; inset: 0 0 0 208px; z-index: 100; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--tt-workspace); color: var(--tt-text); }
+.tt-voucher-titlebar { min-height: 34px; padding: 6px 14px; display: flex; align-items: center; justify-content: space-between; gap: 18px; background: var(--tt-workspace); border-bottom: 1px solid var(--tt-border-soft); }
+.tt-voucher-identity, .tt-voucher-date-block { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.tt-voucher-title { color: var(--tt-deep); font-size: 13px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.tt-voucher-day { color: var(--tt-muted); font-size: 11px; font-weight: 700; }
+.tt-voucher-body { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: auto; }
+.tt-voucher-message { flex: 0 0 auto; }
+.tt-voucher-field { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tt-voucher-field > label { color: var(--tt-text); font-size: 10px; line-height: 12px; font-weight: 800; text-transform: uppercase; }
+.tt-voucher-field > label b { margin-left: 3px; color: var(--tt-danger); }
+.tt-voucher-control { min-width: 0; position: relative; }
+.tt-voucher-control input, .tt-voucher-control select, .tt-voucher-control textarea { width: 100%; min-width: 0; border: 1px solid var(--tt-border); background: #fff; color: var(--tt-text); }
+.tt-voucher-control :disabled, .tt-voucher-control [readonly] { background: #f0edef; color: var(--tt-muted); }
+.tt-voucher-actionbar { flex: 0 0 auto; min-height: 48px; padding: 7px 14px; display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--tt-border-soft); background: var(--tt-workspace); }
+.tt-voucher-action-note { margin-right: auto; color: var(--tt-muted); font-size: 11px; }
+.tt-voucher-action-buttons { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.tt-voucher-actionbar button { min-height: 30px; padding: 5px 14px; border: 1px solid var(--tt-border); background: #fff; font-weight: 800; }
+.tt-voucher-actionbar .action-save, .tt-voucher-actionbar .btn-primary-accept { border-color: var(--tt-deep); background: var(--tt-deep); color: #fff; }
+.tt-voucher-actionbar .action-danger { border-color: #c94f4f; color: var(--tt-danger); }
+.tt-voucher-entry .lookup-field { position: relative; }
+.tt-voucher-entry .lookup-field:focus-within { z-index: 500; }
+.tt-voucher-entry .erp-lookup-panel { z-index: 700 !important; pointer-events: auto !important; }
+
+/* Compact Tally-style voucher composition using the TexTrack navy/white palette. */
+.tt-voucher-entry.has-command-rail {
+    padding-right: 118px !important;
+    background: #fff !important;
+}
+
+.tt-voucher-entry.has-command-rail > .tt-voucher-titlebar,
+.tt-voucher-entry.has-command-rail > .jwo-form-heading,
+.tt-voucher-entry.has-command-rail > .mo-form-heading {
+    min-height: 29px !important;
+    height: 29px !important;
+    padding: 3px 10px !important;
+    background: var(--tt-voucher-header) !important;
+    color: #fff !important;
+    border: 0 !important;
+    border-bottom: 1px solid #000 !important;
+}
+
+.tt-voucher-entry.has-command-rail .tt-voucher-title,
+.tt-voucher-entry.has-command-rail .tt-voucher-titlebar strong,
+.tt-voucher-entry.has-command-rail .jwo-form-heading strong,
+.tt-voucher-entry.has-command-rail .mo-form-heading strong { color: #fff !important; font-size: 12px !important; letter-spacing: .04em !important; }
+
+.tt-voucher-entry.has-command-rail .tt-voucher-day,
+.tt-voucher-entry.has-command-rail .jwo-form-heading span,
+.tt-voucher-entry.has-command-rail .mo-form-heading span { color: #d0e1fb !important; font-size: 10px !important; }
+
+.tt-voucher-entry.has-command-rail .tt-voucher-number,
+.tt-voucher-entry.has-command-rail .tt-voucher-date { color: #fff; }
+
+.tt-voucher-command-rail {
+    position: fixed;
+    z-index: 850;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 118px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--tt-voucher-rail);
+    color: #fff;
+    border-left: 1px solid #000;
+}
+
+.tt-command-rail-title {
+    min-height: 29px;
+    display: flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-bottom: 1px solid rgba(255,255,255,.2);
+    color: #d0e1fb;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.tt-command-rail-primary { display: flex; flex-direction: column; }
+.tt-command-rail-footer { margin-top: auto; min-height: 24px; padding: 5px 7px; display: flex; flex-direction: column; justify-content: center; border-top: 1px solid rgba(255,255,255,.22); color: #d0e1fb; font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+
+.tt-command-button {
+    width: 100%;
+    min-height: 27px;
+    padding: 4px 7px;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    align-items: center;
+    gap: 2px;
+    border: 0;
+    border-bottom: 1px solid rgba(255,255,255,.14);
+    border-radius: 0;
+    background: transparent;
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
+    font-size: 10px;
+}
+
+.tt-command-button:hover:not(:disabled),
+.tt-command-button:focus-visible,
+.tt-command-button.is-active { background: var(--tt-voucher-rail-hover); outline: 1px solid #d0e1fb; outline-offset: -1px; }
+.tt-command-button:disabled { opacity: .38; cursor: default; }
+.tt-command-shortcut { color: #fff0b7; font-weight: 900; white-space: nowrap; }
+.tt-command-label { overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.tt-command-button.is-danger .tt-command-label { color: #ffc8c8; }
+
+.tt-voucher-entry.has-command-rail .tally-master-fields,
+.tt-voucher-entry.has-command-rail .panel-light {
+    padding: 5px 10px !important;
+    gap: 12px !important;
+    background: #fff !important;
+    border-bottom: 1px solid var(--tt-voucher-line) !important;
+    box-shadow: none !important;
+}
+
+.tt-voucher-entry.has-command-rail input,
+.tt-voucher-entry.has-command-rail select { min-height: 22px; font-size: 11px; }
+.tt-voucher-entry.has-command-rail textarea { font-size: 11px; }
+.tt-voucher-entry.has-command-rail table th { background: var(--tt-voucher-grid-head) !important; color: #000 !important; }
+.tt-voucher-entry.has-command-rail table td { color: #000; }
+.tt-voucher-entry.has-command-rail .tally-grid th,
+.tt-voucher-entry.has-command-rail .erp-table th { height: 24px; padding-top: 2px !important; padding-bottom: 2px !important; }
+.tt-voucher-entry.has-command-rail .tally-grid td,
+.tt-voucher-entry.has-command-rail .erp-table td { min-height: 25px; padding-top: 2px !important; padding-bottom: 2px !important; }
+.tt-voucher-entry.has-command-rail input:focus,
+.tt-voucher-entry.has-command-rail select:focus,
+.tt-voucher-entry.has-command-rail textarea:focus { background: var(--tt-focus) !important; color: #000 !important; }
+
+/* The command rail owns voucher actions; the bottom strip remains a compact status/narration area. */
+.tt-voucher-entry.has-command-rail .jwo-save-actions,
+.tt-voucher-entry.has-command-rail .tt-voucher-actionbar {
+    min-height: 24px !important;
+    padding: 3px 9px !important;
+    background: var(--tt-voucher-header) !important;
+    border-top: 1px solid #000 !important;
+    color: #fff !important;
+}
+.tt-voucher-entry.has-command-rail .jwo-save-actions > button,
+.tt-voucher-entry.has-command-rail .tt-voucher-action-buttons { display: none !important; }
+.tt-voucher-entry.has-command-rail .jwo-save-actions > span,
+.tt-voucher-entry.has-command-rail .tt-voucher-action-note { color: #d0e1fb !important; font-size: 9px !important; }
+.tt-voucher-entry.has-command-rail .voucher-paper-surface > div:last-child > div:last-child { display: none !important; }
+.tt-voucher-entry.has-command-rail .voucher-paper-surface > div:last-child > div:first-child { grid-column: span 12 !important; }
+
+/* The JWO finished-goods grid has six real columns. Keep its table pinned to
+   the full line-workspace width so no unused right-side panel appears. */
+#jwo-form-root .jwo-lines-workspace > .tally-grid,
+#jwo-form-root .jwo-lines-workspace > .tally-grid > table {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+@media (max-width: 900px) {
+    .tt-voucher-entry.has-command-rail { padding-right: 104px !important; }
+    .tt-voucher-command-rail { width: 104px; }
+    .tt-command-button { grid-template-columns: 34px minmax(0, 1fr); padding-inline: 5px; }
+}
+
+.jwcc-page{display:flex;flex-direction:column;overflow:hidden}
+.jwcc-titlebar{display:flex;align-items:center;gap:16px;padding:8px 14px;background:#172f52;color:#fff;font-size:13px;font-weight:700}
+.jwcc-breadcrumb{margin-right:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.jwcc-crumb-sep{margin:0 6px;color:#8fa5bb}.jwcc-titlebar label{display:flex;align-items:center;gap:6px;font-size:.68rem;font-weight:800}.jwcc-titlebar input{min-width:135px}.jwcc-titlebar button{background:#fff;color:#122b4d}
+.jwcc-tabs{position:relative;display:flex;gap:6px;align-items:center;padding:10px 14px;border-bottom:1px solid #c6d2df;background:#edf3f8}.jwcc-tabs button,.jwcc-tabs a,.jwcc-toolbar button{padding:8px 12px;border:1px solid #9eb2c7;border-radius:4px;background:#fff;color:#132d51;font-weight:700;text-decoration:none}.jwcc-tabs button.active,.jwcc-toolbar button.active{background:#17385f;color:#fff}.jwcc-tabs a{margin-left:0}.jwcc-compact-filter{position:relative;margin-left:auto}.jwcc-compact-filter>button{padding:5px 9px;font-size:.76rem}.jwcc-compact-filter>button.filtered{border-color:#2d69ad;background:#e7f1fc;color:#123d70}.jwcc-aging-filter-menu{position:absolute;z-index:650;top:calc(100% + 5px);right:0;width:210px;padding:6px;border:1px solid #8fa5bb;border-radius:4px;background:#fff;box-shadow:0 8px 24px rgba(10,31,57,.24)}.jwcc-aging-filter-menu strong{display:block;padding:6px 8px;color:#61758a;font-size:.7rem;text-transform:uppercase}.jwcc-aging-filter-menu button{display:block;width:100%;padding:7px 9px;border:0;border-radius:2px;text-align:left}.jwcc-aging-filter-menu button:hover,.jwcc-aging-filter-menu button.selected{background:#17385f;color:#fff}
+.jwcc-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 16px;background:#f6f9fc;border-bottom:1px solid #d3dfe9}.jwcc-toolbar>span{color:#45617d;margin-right:auto}.jwcc-toolbar label{display:flex;align-items:center;gap:4px;font-size:.82rem;font-weight:700}.jwcc-toolbar input{width:72px}
+.jwcc-slabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;padding:14px 16px;background:#f6f9fc}.jwcc-slabs button{display:grid;gap:4px;text-align:left;padding:12px;border:1px solid #aebed0;border-radius:6px;background:#fff;color:#152f54}.jwcc-slabs button.selected{outline:3px solid #3a78c2;background:#e8f1fc}.jwcc-slabs strong{font-size:1.45rem}
+.jwcc-grid{flex:1 1 auto;min-height:0;margin:0;border:0;border-bottom:1px solid #aebed0;overflow:hidden;background:#fff}.jwcc-grid table{width:100%;border-collapse:collapse;table-layout:fixed;white-space:nowrap}.jwcc-grid th{background:#dce7f1;color:#17324f;text-align:left;font-size:.76rem}.jwcc-grid th,.jwcc-grid td{padding:8px 10px;border-right:1px solid #c4d1df;border-bottom:1px solid #d2dce7;overflow:hidden;text-overflow:ellipsis}.jwcc-grid tbody tr:hover{background:#edf5ff}.jwcc-grid td button{border:0;background:none;color:#14569a;font-weight:800;cursor:pointer;padding:0}.jwcc-empty{padding:28px;text-align:center;color:#637991}
+.jwcc-grid tbody tr.selected{background:#294f8c;color:#fff;outline:1px solid #071a35}.jwcc-grid tbody tr.selected a,.jwcc-grid tbody tr.selected td button{color:#fff}
+.jwcc-pagination{flex:0 0 38px;display:flex;align-items:center;justify-content:center;gap:12px;margin:0;padding:5px;border:0;background:#edf3f8}.jwcc-pagination button{min-width:100px;padding:5px 10px;border:1px solid #8da0b5;background:#fff;color:#102b4d;font-weight:700}.jwcc-pagination button:disabled{opacity:.45}.jwcc-pagination span{min-width:130px;text-align:center;font:11px Consolas,monospace}
+@media(max-width:900px){.jwcc-titlebar{flex-wrap:wrap}.jwcc-breadcrumb{width:100%}.jwcc-tabs a{margin-left:0}}
+
+/* Application shell */
+
+.app-shell {
+    height: 100vh;
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    outline: none;
+    background: var(--tt-workspace);
+}
+
+/* Zoho-style vertical left sidebar - replaces the old two-line horizontal
+   top bar (brand+subtitle row, then a separate nav row) entirely, and the
+   old bottom statusbar's nav-help/company/DB-status content is folded in
+   here too, freeing the vertical space both used to take on every page.
+   Light theme + blue accent, matching the approved JobWorkOutOrder mockup -
+   scoped to its own tokens rather than the app's existing navy/gold ones
+   (--tt-primary/--tt-accent), which other pages still rely on unchanged. */
+.topbar {
+    --sb-panel: #1a3254;
+    --sb-border: rgba(255,255,255,.08);
+    --sb-text: #ffffff;
+    --sb-muted: #8aaad0;
+    --sb-accent: rgba(255,255,255,.15);
+    --sb-accent-ink: #ffffff;
+    --sb-accent-soft: rgba(255,255,255,.12);
+    width: 208px;
+    flex: 0 0 208px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--sb-panel);
+    color: var(--sb-text);
+    border-right: 1px solid var(--sb-border);
+    z-index: 30;
+}
+
+.brand {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--sb-border);
+}
+
+.brand-mark {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-radius: 7px;
+    background: var(--sb-accent);
+    border: 1px solid rgba(255,255,255,.22);
+    color: #fff;
+    font: 800 12px/1 Consolas, monospace;
+}
+
+.brand-copy { min-width: 0; display: flex; flex-direction: column; line-height: 1.05; }
+
+.brand-copy strong { font-size: 14.5px; font-weight: 800; letter-spacing: -.01em; }
+
+.brand-copy small { display: none; }
+
+.topnav { min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px; }
+
+.topnav button {
+    min-width: 0;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--sb-muted);
+    padding: 9px 11px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.topnav button:hover,
+.topnav button:focus-visible {
+    background: rgba(255,255,255,.08);
+    color: var(--sb-text);
+    outline: none;
+}
+
+.topnav button.active {
+    background: var(--sb-accent-soft);
+    color: var(--sb-accent-ink);
+}
+
+.menu-label { font-size: 13px; font-weight: 650; letter-spacing: .1px; }
+
+.menu-shortcut { font: 9.5px/1 Consolas, monospace; color: var(--sb-muted); opacity: .8; }
+
+.sidebar-spacer { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 14px; }
+
+.company {
+    min-width: 0;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 3px;
+    border-top: 1px solid var(--sb-border);
+    line-height: 1.15;
+}
+
+.company-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; }
+
+.company-meta { display: flex; align-items: center; font-size: 11px; color: var(--sb-muted); }
+
+.db-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: #e6a23c; }
+
+.db-dot.online { background: #16a15e; }
+
+.db-dot.offline { background: #c4432f; }
+
+.sidebar-foot {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 16px 12px;
+    font-size: 10.5px;
+    color: var(--sb-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.status-database.connected { color: #16a15e; }
+
+.status-database.disconnected { color: #c4432f; }
+
+.app-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding: 14px;
+    background:
+        linear-gradient(rgba(255,255,255,.18), rgba(255,255,255,.18)),
+        var(--tt-workspace);
+}
+
+.master-list-pager { display:flex; align-items:center; justify-content:center; gap:16px; min-height:38px; border-top:1px solid var(--tt-border); background:var(--tt-grid-head); }
+
+/*
+ * TexTrack Desk visual system
+ *
+ * The modern workspace is deliberately scoped to non-voucher routes.  The
+ * compact Tally-style voucher entry/alteration surface remains frozen while
+ * masters, reports, settings and the dashboard share one ERP workspace.
+ */
+.desk-shell {
+    --desk-navy: #142b4a;
+    --desk-navy-strong: #0b1f3a;
+    --desk-blue: #2f6fed;
+    --desk-blue-soft: #edf3ff;
+    --desk-canvas: #f5f7fa;
+    --desk-surface: #ffffff;
+    --desk-surface-muted: #f8fafc;
+    --desk-border: #d9e1ea;
+    --desk-border-strong: #bdc9d7;
+    --desk-text: #1f2937;
+    --desk-muted: #667085;
+    --desk-success: #16825d;
+    --desk-danger: #c43f4b;
+    color: var(--desk-text);
+    background: var(--desk-canvas);
+}
+
+/* The sidebar itself (.topbar/.brand/.topnav/.company) is now the same light,
+   blue-accented look on every route - desk-shell no longer needs to re-theme
+   it. Only the content workspace and the flyout menu still differ here. */
+.desk-shell .workspace {
+    padding: 18px 22px;
+    background: var(--desk-canvas);
+    scrollbar-gutter: stable;
+}
+
+.desk-shell .dropdown-menu {
+    width: 348px;
+    max-height: calc(100vh - 16px);
+    margin: 8px 0 8px 216px;
+    padding: 7px;
+    border: 1px solid var(--desk-border);
+    border-radius: 9px;
+    background: var(--desk-surface);
+    box-shadow: 0 18px 42px rgba(15, 23, 42, .2);
+}
+.desk-shell .dropdown-heading {
+    margin: -7px -7px 6px;
+    padding: 11px 13px 9px;
+    background: var(--desk-surface-muted);
+    border-color: var(--desk-border);
+    border-radius: 9px 9px 0 0;
+}
+.desk-shell .dropdown-heading h2 { color: var(--desk-navy-strong); font-size: 14px; }
+.desk-shell .dropdown-heading span { color: var(--desk-muted); font-size: 11px; }
+.desk-shell .menu-link,
+.desk-shell .master-menu-group-button {
+    min-height: 34px;
+    margin: 2px 0;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 6px;
+    font-size: 12px;
+}
+.desk-shell .menu-link:hover:not(.keyboard-selected),
+.desk-shell .master-menu-group-button:hover:not(.keyboard-selected) {
+    background: var(--desk-blue-soft);
+    color: var(--desk-navy-strong);
+    outline: none;
+}
+.desk-shell .menu-link.keyboard-selected,
+.desk-shell .menu-link:focus-visible,
+.desk-shell .master-menu-group-button.keyboard-selected,
+.desk-shell .master-menu-group-button:focus-visible {
+    background: var(--desk-navy);
+    color: #fff;
+    outline: 2px solid #d69e2e;
+    outline-offset: -2px;
+}
+/* Keep keyboard selection authoritative when the mouse happens to rest on it. */
+.desk-shell .menu-link.keyboard-selected,
+.desk-shell .menu-link.keyboard-selected:hover,
+.desk-shell .master-menu-group-button.keyboard-selected,
+.desk-shell .master-menu-group-button.keyboard-selected:hover {
+    background: var(--desk-navy);
+    color: #fff;
+}
+.desk-shell .master-menu-children { margin: 2px 0 6px 13px; padding-left: 7px; border-left: 2px solid var(--desk-border); }
+
+.desk-shell .page-card,
+.desk-shell .gateway-window {
+    width: 100%;
+    max-width: 1450px;
+    border: 1px solid var(--desk-border);
+    border-radius: 10px;
+    background: var(--desk-surface);
+    box-shadow: 0 4px 16px rgba(15, 23, 42, .07);
+}
+.desk-shell .page-card { padding: 0 16px 13px; }
+
+/* Edge-to-edge like .voucher-history: cancels the shared .desk-shell .workspace
+   padding (18px top/bottom, 22px left/right) via negative top/left/bottom
+   margins and an explicit width, instead of the old centered-card-with-gaps
+   look (max-width:1800px; margin:18px auto) .jwcc-page used to declare.
+   Placed here (after .desk-shell .page-card above), not next to the rest of
+   the .jwcc-* rules, because it needs to win a same-specificity tie against
+   that block - CSS breaks such ties by source order, so an earlier override
+   of these exact properties silently loses regardless of what it declares.
+   The width/height offsets are fixed pixel amounts calibrated the same way
+   as .voucher-history's - they hold regardless of viewport width, leaving a
+   small ~4px gap on the right to match the sidebar/content gap. */
+.desk-shell .jwcc-page{width:calc(100% + 55px);height:calc(100% + 36px);min-height:0;max-height:calc(100% + 36px);max-width:none;margin:-18px 0 -18px -22px;padding:0;border-radius:0;box-shadow:none}
+
+.desk-shell .page-header {
+    min-height: 64px;
+    margin: 0 -16px;
+    padding: 13px 16px 11px;
+    align-items: center;
+    background: var(--desk-surface);
+    color: var(--desk-text);
+    border-bottom: 1px solid var(--desk-border);
+    border-radius: 10px 10px 0 0;
+}
+.desk-shell .page-header h1 { color: var(--desk-navy-strong); font-size: 20px; letter-spacing: -.2px; }
+.desk-shell .page-header .eyebrow { color: var(--desk-muted); opacity: 1; font-size: 10px; letter-spacing: .11em; }
+.desk-shell .header-actions { gap: 8px; }
+.desk-shell .header-actions button,
+.desk-shell .primary-button,
+.desk-shell .form-actions button,
+.desk-shell .ledger-list-toolbar button,
+.desk-shell .stock-item-list-toolbar button,
+.desk-shell .inventory-pagination button,
+.desk-shell .master-pager button,
+.desk-shell .master-list-pager button {
+    min-height: 32px;
+    padding: 5px 12px;
+    border: 1px solid var(--desk-border-strong);
+    border-radius: 6px;
+    background: var(--desk-surface);
+    color: #344054;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    font-weight: 650;
+}
+.desk-shell .header-actions .primary-button,
+.desk-shell .primary-button {
+    border-color: var(--desk-navy);
+    background: var(--desk-navy);
+    color: #fff;
+}
+.desk-shell .header-actions button:hover:not(:disabled),
+.desk-shell .form-actions button:hover:not(:disabled),
+.desk-shell .ledger-list-toolbar button:hover:not(:disabled),
+.desk-shell .stock-item-list-toolbar button:hover:not(:disabled),
+.desk-shell .inventory-pagination button:hover:not(:disabled) {
+    border-color: #8ca4bf;
+    background: var(--desk-blue-soft);
+    color: var(--desk-navy-strong);
+}
+
+.desk-shell .database-ok,
+.desk-shell .master-context-note {
+    margin: 0 -16px 12px;
+    padding: 7px 16px;
+    border-bottom: 1px solid #cfe6dd;
+    background: #effaf6;
+    color: var(--desk-success);
+}
+
+.desk-shell .form-section {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-color: var(--desk-border);
+    border-radius: 8px;
+    background: var(--desk-surface);
+}
+.desk-shell .form-section h2 {
+    margin: -12px -14px 11px;
+    padding: 9px 14px;
+    border-color: var(--desk-border);
+    border-radius: 8px 8px 0 0;
+    background: var(--desk-surface-muted);
+    color: var(--desk-navy-strong);
+}
+.desk-shell .form-heading { min-height: 25px; }
+.desk-shell .form-heading strong { color: var(--desk-navy-strong); }
+.desk-shell .form-heading span { color: var(--desk-muted); }
+
+.desk-shell .compact-form input,
+.desk-shell .compact-form select,
+.desk-shell .ledger-form-grid input,
+.desk-shell .ledger-form-grid select,
+.desk-shell .stock-item-form-grid input,
+.desk-shell .stock-item-form-grid select,
+.desk-shell .ledger-list-toolbar input,
+.desk-shell .stock-item-list-toolbar input,
+.desk-shell textarea {
+    min-height: 32px;
+    border: 1px solid var(--desk-border-strong);
+    border-radius: 6px;
+    background: var(--desk-surface);
+    padding: 5px 8px;
+}
+.desk-shell .compact-form input:focus,
+.desk-shell .compact-form select:focus,
+.desk-shell .ledger-form-grid input:focus,
+.desk-shell .ledger-form-grid select:focus,
+.desk-shell .stock-item-form-grid input:focus,
+.desk-shell .stock-item-form-grid select:focus,
+.desk-shell .ledger-list-toolbar input:focus,
+.desk-shell .stock-item-list-toolbar input:focus,
+.desk-shell textarea:focus {
+    border-color: var(--desk-blue);
+    background: #fff;
+    outline: 3px solid rgba(47, 111, 237, .13);
+}
+
+.desk-shell .ledger-list-toolbar,
+.desk-shell .stock-item-list-toolbar {
+    margin: 12px 0 10px;
+    padding: 10px;
+    border: 1px solid var(--desk-border);
+    border-radius: 8px;
+    background: var(--desk-surface-muted);
+}
+.desk-shell .ledger-list-toolbar label span,
+.desk-shell .stock-item-list-toolbar label span { color: var(--desk-navy-strong); font-size: 10px; letter-spacing: .07em; }
+
+.desk-shell .grid-wrap {
+    border-color: var(--desk-border);
+    border-radius: 7px;
+    background: var(--desk-surface);
+    scrollbar-color: #a8b4c3 transparent;
+    scrollbar-width: thin;
+}
+.desk-shell .data-grid { color: var(--desk-text); }
+.desk-shell .data-grid th,
+.desk-shell .data-grid td {
+    height: 32px;
+    padding: 6px 9px;
+    border-right-color: #e5eaf0;
+    border-bottom-color: #e5eaf0;
+}
+.desk-shell .data-grid th {
+    background: #f3f6f9;
+    color: #475467;
+    border-bottom-color: var(--desk-border-strong);
+    font-size: 10px;
+    letter-spacing: .055em;
+}
+.desk-shell .data-grid tbody tr:nth-child(even) { background: #fbfcfd; }
+.desk-shell .data-grid tbody tr:hover { background: #f0f5fb; }
+.desk-shell .selectable-grid tbody tr.selected-row,
+.desk-shell .selectable-grid tbody tr.selected-row:hover { background: var(--desk-navy); color: #fff; }
+.desk-shell .data-grid tfoot td,
+.desk-shell .data-grid tr.report-total td { background: #edf2f7; color: var(--desk-navy-strong); }
+.desk-shell .empty-cell { padding: 34px 20px !important; color: var(--desk-muted); }
+
+.desk-shell .notice,
+.desk-shell .database-warning {
+    border-radius: 7px;
+    padding: 9px 11px;
+}
+.desk-shell .notice-success { color: #116b4d; background: #effaf6; border-color: #acd8c8; }
+.desk-shell .notice-error { color: #a52d3b; background: #fff3f4; border-color: #efbbc0; }
+.desk-shell .muted { color: var(--desk-muted); }
+
+.desk-shell .master-help {
+    margin-top: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    background: var(--desk-surface-muted);
+    color: var(--desk-muted);
+    font-size: 11px;
+}
+.desk-shell .inventory-pagination,
+.desk-shell .master-pager,
+.desk-shell .master-list-pager {
+    min-height: 44px;
+    margin-top: 8px;
+    border: 1px solid var(--desk-border);
+    border-radius: 7px;
+    background: var(--desk-surface-muted);
+}
+
+.desk-shell .dashboard { max-width: 1240px; }
+.desk-shell .gateway-dashboard { justify-content: flex-start; padding: 8px 0 0; }
+.desk-shell .gateway-window { width: 100%; overflow: hidden; }
+.desk-shell .gateway-titlebar {
+    min-height: 46px;
+    padding: 0 18px;
+    background: var(--desk-navy);
+    font-size: 13px;
+}
+.desk-shell .gateway-body { min-height: 430px; grid-template-columns: minmax(0, .9fr) minmax(430px, 1.1fr); }
+.desk-shell .gateway-company-panel { padding: 34px 38px; background: linear-gradient(145deg, #f7faff, #eef3f9); border-color: var(--desk-border); }
+.desk-shell .gateway-company-panel h1 { color: var(--desk-navy-strong); font-size: 28px; }
+.desk-shell .company-facts { border-color: var(--desk-border); }
+.desk-shell .company-facts > div { padding: 11px 0; border-color: var(--desk-border); }
+.desk-shell .dashboard-db-status { border-radius: 7px; box-shadow: 0 1px 3px rgba(15,23,42,.05); }
+.desk-shell .gateway-menu-panel { padding: 26px 28px; }
+.desk-shell .gateway-section-title {
+    margin: 0 0 5px;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--desk-surface-muted);
+    color: var(--desk-navy-strong);
+}
+.desk-shell .gateway-menu-panel a {
+    min-height: 34px;
+    margin: 2px 0;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 6px;
+}
+.desk-shell .gateway-menu-panel a:hover,
+.desk-shell .gateway-menu-panel a:focus-visible,
+.desk-shell .gateway-menu-panel a.keyboard-selected {
+    background: var(--desk-navy);
+    color: #fff;
+    outline: none;
+}
+.desk-shell .gateway-footer { min-height: 34px; padding-inline: 14px; border-color: var(--desk-border); background: var(--desk-surface-muted); }
+.desk-shell .build-note { border: 1px solid var(--desk-border); border-left: 4px solid var(--desk-blue); border-radius: 7px; background: var(--desk-surface); }
+
+.desk-shell .tt-dialog {
+    border: 1px solid var(--desk-border-strong);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 22px 55px rgba(15, 23, 42, .28);
+}
+.desk-shell .tt-dialog-titlebar { background: var(--desk-navy); }
+.desk-shell .tt-global-busy section {
+    border: 0;
+    border-radius: 11px;
+    box-shadow: 0 22px 55px rgba(15, 23, 42, .3);
+}
+
+@media (max-width: 1000px) {
+    .desk-shell .gateway-body { grid-template-columns: 1fr; }
+}
+
+/* Top menu overlay */
+
+.menu-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(20, 35, 55, .26);
+}
+
+.tt-global-busy {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    place-items: center;
+    background: rgba(5, 18, 38, .55);
+    cursor: wait;
+}
+
+.tt-global-busy section {
+    width: min(430px, calc(100vw - 32px));
+    display: grid;
+    grid-template-columns: 38px 1fr;
+    gap: 5px 14px;
+    align-items: center;
+    padding: 20px 24px;
+    color: #0b1b31;
+    background: #fff;
+    border: 2px solid #0b1b31;
+    box-shadow: 0 18px 46px rgba(0,0,0,.34);
+}
+
+.tt-global-busy small { grid-column: 2; color: #526174; }
+.tt-global-spinner { grid-row: 1 / span 2; width: 30px; height: 30px; border: 3px solid #cad7e6; border-top-color: #0b1b31; border-radius: 50%; animation: tt-busy-spin .7s linear infinite; }
+@keyframes tt-busy-spin { to { transform: rotate(360deg); } }
+
+.dropdown-menu {
+    width: 330px;
+    max-height: calc(100vh - 16px);
+    margin: 8px 0 8px 216px;
+    overflow: auto;
+    background: #fffdf8;
+    border-right: 1px solid var(--tt-border);
+    border-bottom: 1px solid var(--tt-border);
+    box-shadow: 5px 6px 14px rgba(14, 36, 58, .2);
+    padding: 0 7px 7px;
+}
+
+.dropdown-heading {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin: 0 -7px 5px;
+    padding: 7px 10px 6px;
+    background: var(--tt-grid-head);
+    border-bottom: 1px solid var(--tt-border);
+}
+
+.dropdown-heading h2 { margin: 0; color: var(--tt-primary); font-size: 13px; }
+
+.dropdown-heading span { display: block; margin-top: 2px; color: var(--tt-muted); font-size: 12px; }
+
+.menu-link {
+    width: 100%;
+    min-height: 29px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 0;
+    border-bottom: 1px solid #e6ebf0;
+    background: transparent;
+    padding: 5px 8px;
+    text-align: left;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.menu-chevron { opacity: .45; font-size: 17px; line-height: 1; }
+
+.menu-link:hover:not(.keyboard-selected),
+.master-menu-group-button:hover:not(.keyboard-selected) {
+    background: #e4edf6;
+    color: var(--tt-primary);
+    outline: none;
+    font-weight: 700;
+}
+
+.menu-link.keyboard-selected {
+    background: var(--tt-selection);
+    color: white;
+    outline: 1px solid var(--tt-selection-border);
+    outline-offset: -1px;
+    font-weight: 700;
+}
+
+.menu-link.keyboard-selected *,
+.master-menu-group-button.keyboard-selected *,
+.menu-link:focus-visible *,
+.master-menu-group-button:focus-visible * { color: #fff !important; }
+
+.menu-link:hover .menu-chevron,
+.menu-link:focus-visible .menu-chevron,
+.menu-link.keyboard-selected .menu-chevron { opacity: 1; }
+
+.menu-placeholder { padding: 18px 11px; font-size: 12px; }
+
+.menu-placeholder p { margin: 6px 0 0; color: var(--tt-muted); }
+
+.muted { color: var(--tt-muted); font-size: 12px; }
+
+/* Shared Tally-like surfaces */
+
+.page-card,
+.voucher-card,
+.gateway-window {
+    background: var(--tt-paper);
+    border: 1px solid #66788c;
+    border-radius: 2px;
+    box-shadow: 0 5px 13px rgba(18, 47, 76, .17);
+}
+
+.page-card { max-width: 1180px; margin: 0 auto; padding: 12px; }
+
+.page-header,
+.voucher-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    min-height: 44px;
+    margin: -12px -12px 0;
+    padding: 8px 12px 7px;
+    background: var(--tt-primary-2);
+    color: white;
+    border-bottom: 1px solid #263b56;
+}
+
+.page-header > div:first-child,
+.voucher-header > div:first-child { min-width: 0; }
+
+.eyebrow {
+    margin: 0 0 2px;
+    color: inherit;
+    opacity: .76;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.1px;
+}
+
+.page-header h1,
+.voucher-header h1,
+.welcome-panel h1 { margin: 0; font-size: 17px; line-height: 1.15; }
+
+.header-actions { display: flex; gap: 5px; align-items: center; }
+
+.header-actions button,
+.primary-button,
+.form-actions button,
+.ledger-list-toolbar button {
+    min-height: 28px;
+    border: 1px solid #7c8ea0;
+    border-radius: 2px;
+    background: #fffdf8;
+    color: var(--tt-text);
+    padding: 4px 9px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.header-actions .primary-button,
+.primary-button {
+    border-color: #0b2945;
+    background: var(--tt-deep);
+    color: white;
+}
+
+.page-header .header-actions button:not(.primary-button) {
+    border-color: rgba(255,255,255,.62);
+    background: rgba(255,255,255,.96);
+}
+
+.header-actions button:hover:not(:disabled),
+.form-actions button:hover:not(:disabled),
+.ledger-list-toolbar button:hover:not(:disabled) { background: var(--tt-focus); }
+
+button:disabled { opacity: .48; cursor: not-allowed; }
+
+.danger-button { color: var(--tt-danger) !important; border-color: #c99393 !important; }
+
+/* Dashboard / Gateway */
+
+.dashboard { width: 100%; max-width: 1080px; height: 100%; margin: 0 auto; }
+
+.gateway-dashboard { display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 0 12px; }
+.gateway-dashboard:focus,
+.gateway-dashboard:focus-visible { outline: none; }
+
+.gateway-window { width: min(900px, 100%); margin: 0 auto; overflow: hidden; }
+
+.gateway-titlebar {
+    min-height: 31px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 11px;
+    background: var(--tt-primary-2);
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.gateway-product { color: var(--tt-accent-soft); }
+
+.gateway-body { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(300px, .9fr); min-height: 385px; }
+
+.gateway-company-panel { padding: 26px 30px; background: #f5f8fb; border-right: 1px solid var(--tt-border); }
+
+.gateway-company-panel .eyebrow { color: var(--tt-primary); opacity: 1; }
+
+.gateway-company-panel h1 { margin: 5px 0 20px; color: var(--tt-primary); font-size: 23px; }
+
+.company-facts { margin: 0; border-top: 1px solid var(--tt-border-soft); }
+
+.company-facts > div { display: grid; grid-template-columns: 130px 1fr; gap: 12px; padding: 9px 0; border-bottom: 1px solid #dfe6ed; font-size: 12px; }
+
+.company-facts dt { color: var(--tt-muted); }
+
+.company-facts dd { margin: 0; font-weight: 650; }
+
+.state-good { color: var(--tt-success); }
+
+.state-warning { color: #976000; }
+
+.dashboard-db-status {
+    display: grid;
+    gap: 3px;
+    margin-top: 18px;
+    padding: 9px 10px;
+    border: 1px solid;
+    background: white;
+    font-size: 12px;
+}
+
+.dashboard-db-status.connected { border-color: #91c5a6; border-left: 4px solid var(--tt-success); }
+
+.dashboard-db-status.disconnected { border-color: #ddb579; border-left: 4px solid #9a6100; }
+
+.dashboard-db-status span { color: var(--tt-muted); }
+
+.gateway-menu-panel { padding: 18px 20px; background: var(--tt-paper); }
+
+.gateway-section-title { margin: 0 -8px 4px; padding: 4px 8px; background: var(--tt-grid-head); color: var(--tt-primary); border-bottom: 1px solid var(--tt-border); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+
+.gateway-section-space { margin-top: 14px; }
+
+.gateway-menu-panel a {
+    min-height: 29px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    border-bottom: 1px dotted #aab7c4;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.gateway-menu-panel a:hover,
+.gateway-menu-panel a:focus-visible { background: var(--tt-selection); color: white; outline: 1px solid var(--tt-selection-border); }
+
+.gateway-menu-panel kbd { font: 12px/1 Consolas, monospace; opacity: .55; }
+
+.gateway-footer { min-height: 28px; display: flex; gap: 20px; align-items: center; padding: 0 10px; background: #e4eaf1; border-top: 1px solid var(--tt-border); color: var(--tt-muted); font-size: 12px; }
+
+.gateway-footer span:last-child { margin-left: auto; }
+
+.gateway-footer b { color: var(--tt-primary); }
+
+/* Compact post-login operations dashboard. */
+.operations-dashboard { display:flex; flex-direction:column; gap:12px; max-width:none; padding:12px 18px 8px; outline:none; }
+.operations-heading { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-radius:10px; background:var(--tt-primary); color:white; }
+.operations-heading p { margin:0 0 3px; font-size:11px; font-weight:800; letter-spacing:.09em; color:#b9cee8; }
+.operations-heading h1 { margin:0; font-size:23px; }
+.operations-heading small { color:#d7e3f1; }
+.operations-db { min-width:260px; display:grid; gap:3px; padding:10px 12px; border:1px solid #ffffff44; border-radius:7px; text-align:right; }
+.operations-db.connected b { color:#80e4af; }
+.operations-db span { max-width:330px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:#d7e3f1; }
+.operations-metrics { display:grid; grid-template-columns:repeat(5,minmax(135px,1fr)); gap:10px; }
+.operations-metrics .metric { display:grid; gap:4px; padding:13px 15px; border:1px solid var(--tt-border); border-left:4px solid #4777ad; border-radius:8px; background:white; color:var(--tt-primary); text-decoration:none; box-shadow:0 2px 8px #17304f0b; }
+.operations-metrics .metric:hover,.operations-metrics .metric:focus-visible { outline:2px solid #2f6fed; outline-offset:1px; }
+.operations-metrics .metric.danger { border-left-color:#b42318; }.operations-metrics .metric.critical { border-left-color:#d97706; }
+.operations-metrics .metric span { font-size:12px; font-weight:700; color:var(--tt-muted); }.operations-metrics .metric strong { font-size:25px; }.operations-metrics .metric small { color:#718096; }
+.operations-grid { min-height:0; flex:1; display:grid; grid-template-columns:minmax(0,1.65fr) minmax(300px,.75fr); gap:12px; }
+.operations-panel { min-height:0; overflow:hidden; display:flex; flex-direction:column; border:1px solid var(--tt-border); border-radius:9px; background:white; }
+.operations-panel>header { display:flex; justify-content:space-between; align-items:center; padding:11px 14px; background:var(--tt-grid-head); border-bottom:1px solid var(--tt-border); }
+.operations-panel>header div { display:grid; gap:2px; }.operations-panel>header small { color:var(--tt-muted); }.operations-panel>header a { font-weight:700; color:#245f9e; }
+.operations-table-wrap { min-height:0; max-height:355px; flex:1; overflow:auto; }.operations-table-wrap table { width:100%; border-collapse:collapse; font-size:12px; }.operations-table-wrap th,.operations-table-wrap td { padding:9px 10px; border-bottom:1px solid var(--tt-border); text-align:left; }.operations-table-wrap th { position:sticky; top:0; background:#edf2f8; z-index:1; }.operations-table-wrap td a { font-weight:800; color:#163f70; }
+.dashboard-status { padding:2px 6px; border:1px solid #9babc0; background:#f4f7fb; font-size:10px; font-weight:800; white-space:nowrap; }.dashboard-status.overdue { color:#b42318; border-color:#e2a39e; background:#fff2f1; }
+.dashboard-status.material-out.not-sent { color:#b42318; border-color:#e2a39e; background:#fff2f1; }
+.dashboard-status.material-out.partially-sent { color:#9a4d00; border-color:#e9b96e; background:#fff7e8; }
+.dashboard-status.material-out.sent { color:#067647; border-color:#82c9aa; background:#ecfdf3; }
+.dashboard-status.material-out.not-required { color:#667085; border-color:#c7cfda; background:#f5f7fa; }
+.jwa-actions { align-items: end; }
+.jwa-as-on { display:grid; gap:2px; color:#d6e1ed; font-size:9px; font-weight:700; text-transform:uppercase; }
+.jwa-as-on input { height:29px; border:1px solid #aebed0; border-radius:4px; padding:3px 6px; background:#fff; color:#132b4c; font-size:10px; }
+.jwa-filters.compact { display:block; padding:5px 14px; }
+.jwe-filters.compact { display:block; padding:5px 14px; }
+.jwa-detail .jwa-stage-history { grid-column:1/-1; overflow:auto; }
+.jwa-detail .jwa-stage-history table { min-width:1050px; }
+.exception-items { min-height:0; max-height:355px; flex:1; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }.exception-items>a { display:grid; grid-template-columns:auto 1fr; gap:3px 8px; padding:10px 12px; border-bottom:1px solid var(--tt-border); color:var(--tt-primary); text-decoration:none; }.exception-items>a:hover,.exception-items>a:focus-visible { background:#edf4ff; outline:none; }.exception-items small { grid-column:2; color:var(--tt-muted); line-height:1.3; }.priority { align-self:start; padding:2px 5px; border-radius:3px; background:#e8eef5; font-size:9px; font-weight:800; text-transform:uppercase; }.priority.critical { background:#fee4e2; color:#b42318; }.priority.high { background:#ffedd5; color:#9a4d00; }
+.operations-panel .empty,.dashboard-loading { padding:25px; color:var(--tt-muted); text-align:center; }.operations-footer { display:flex; gap:18px; padding:8px 12px; border:1px solid var(--tt-border); border-radius:7px; background:#e6edf5; font:11px Consolas,monospace; }.operations-footer span:last-child { margin-left:auto; }
+@media(max-width:1000px){.operations-metrics{grid-template-columns:repeat(3,1fr)}.operations-grid{grid-template-columns:1fr}.operations-db{display:none}.operations-footer span:last-child{display:none}}
+
+.build-note { padding: 9px 11px; border-left: 4px solid var(--tt-primary-2); background: rgba(255,255,255,.72); color: var(--tt-muted); font-size: 12px; }
+
+.compact-build-note { width: min(900px, 100%); margin: 0 auto; }
+
+.compact-build-note strong { color: var(--tt-primary); }
+
+/* Forms */
+
+.compact-form { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; padding: 11px 0; }
+
+.compact-form label,
+.voucher-meta label { color: #33465a; font-size: 12px; font-weight: 650; }
+
+.compact-form input,
+.compact-form select,
+.voucher-meta input,
+.ledger-form-grid input,
+.ledger-form-grid select,
+.ledger-list-toolbar input {
+    display: block;
+    width: 100%;
+    min-height: 27px;
+    margin-top: 3px;
+    border: 0;
+    border-bottom: 1px dotted #6c7e90;
+    border-radius: 0;
+    background: transparent;
+    color: var(--tt-text);
+    padding: 3px 5px;
+}
+
+.compact-form select,
+.ledger-form-grid select { border: 1px solid #9aa8b6; background: white; }
+
+.compact-form input:focus,
+.compact-form select:focus,
+.ledger-form-grid input:focus,
+.ledger-form-grid select:focus,
+.ledger-list-toolbar input:focus,
+textarea:focus {
+    background: var(--tt-focus);
+    outline: 1px solid #b7791f;
+    outline-offset: 0;
+}
+
+.form-actions { grid-column: 1 / -1; display: flex; gap: 6px; }
+
+.form-heading { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; padding-bottom: 4px; }
+
+.form-heading span { color: var(--tt-muted); font-size: 12px; }
+
+/* Notices and database state */
+
+.database-warning { margin: 10px 0; padding: 10px 12px; border: 1px solid #d4a18f; border-left: 4px solid #b14a32; background: #fff4ee; font-size: 12px; }
+
+.database-warning p { margin: 5px 0 0; }
+
+.database-warning code { font-family: Consolas, monospace; }
+
+.database-ok { margin: 0 -12px 8px; padding: 5px 9px; border-bottom: 1px solid #b9d3c2; background: #edf7f1; color: var(--tt-success); font-size: 12px; }
+
+.master-context-note {
+    margin: 0 -12px 8px;
+    padding: 6px 9px;
+    border-bottom: 1px solid var(--tt-border-soft);
+    background: #f2f5f9;
+    color: #43546a;
+    font-size: 12px;
+}
+
+.notice { margin: 7px 0 0; padding: 7px 9px; border: 1px solid; font-size: 12px; }
+
+.notice-success { color: #25613f; background: #edf7f1; border-color: #9cc8ad; }
+
+.notice-error { color: #8e2f2f; background: #fff2f2; border-color: #d8aaaa; }
+
+/* Shared master list */
+
+.master-page { height: calc(100vh - 94px); display: flex; flex-direction: column; overflow: hidden; outline: none; }
+
+.master-edit-form { flex: 0 0 auto; margin: 0 -12px; padding: 10px 12px; border-bottom: 1px solid var(--tt-border); background: #f4f7fa; }
+
+.grid-wrap { min-height: 0; overflow: auto; max-height: calc(100vh - 210px); border: 1px solid var(--tt-border); background: white; }
+
+/* ERPNext-style desk scrolling: the application chrome stays fixed and each
+   working pane owns its scroll position without chaining into the page. */
+.grid-wrap,
+.tt-contained-scroll,
+.tt-voucher-body,
+.voucher-workspace,
+.stock-item-edit-form,
+.ledger-edit-form,
+.stock-item-option-grid,
+.report-scroll,
+[class*="report-scroll"],
+[class*="grid-scroll"] {
+    min-height: 0;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+}
+
+.grid-wrap,
+.tt-contained-scroll,
+.report-scroll,
+[class*="report-scroll"],
+[class*="grid-scroll"] { overflow: auto; }
+
+.data-grid { width: 100%; border-collapse: collapse; margin: 0; font-size: 12px; }
+
+.data-grid th,
+.data-grid td { height: 27px; border-right: 1px solid #d9e0e7; border-bottom: 1px solid #d9e0e7; padding: 4px 7px; text-align: left; }
+
+.data-grid th:last-child,
+.data-grid td:last-child { border-right: 0; }
+
+.data-grid th { position: sticky; top: 0; z-index: 1; background: var(--tt-grid-head); color: var(--tt-primary); border-bottom: 1px solid var(--tt-border); font-size: 12px; text-transform: uppercase; letter-spacing: .25px; }
+
+.data-grid tbody tr:nth-child(even) { background: #fcfdfe; }
+
+.data-grid tbody tr:hover { background: #e4edf6; }
+.data-grid tfoot td,
+.data-grid tr.report-total td { position: sticky; bottom: 0; z-index: 1; background: #e8eef5; color: var(--tt-primary); border-top: 1px solid var(--tt-border); font-weight: 700; }
+
+.selectable-grid tbody tr { cursor: pointer; }
+
+.selectable-grid tbody tr.selected-row,
+.selectable-grid tbody tr.selected-row:hover { background: var(--tt-selection); color: white; }
+
+.selectable-grid tbody tr.selected-row td { border-color: rgba(255,255,255,.22); }
+.selectable-grid tbody tr.multi-selected-row:not(.selected-row):not(.selected) {
+    background: #e8f4ed;
+    box-shadow: inset 4px 0 #2f7d55;
+}
+.selectable-grid tbody tr.multi-selected-row td:first-child::before {
+    content: "✓";
+    display: inline-block;
+    margin-right: .4rem;
+    color: #16734b;
+    font-weight: 900;
+}
+.selectable-grid tbody tr.multi-selected-row.selected-row td:first-child::before,
+.selectable-grid tbody tr.multi-selected-row.selected td:first-child::before { color: #f8d76b; }
+
+/* A modal owns focus. Keep the remembered row visible but clearly inactive. */
+body.tt-modal-open .selectable-grid tbody tr.selected-row,
+body.tt-modal-open .selectable-grid tbody tr.selected-row:hover {
+    background: #d8dee6 !important;
+    color: #475569 !important;
+}
+body.tt-modal-open .selectable-grid tbody tr.selected-row td { border-color: #c2cad4 !important; }
+
+.tt-header-filter-button {
+    float: right; margin-left: .35rem; width: 1.15rem; height: 1.15rem; padding: 0;
+    border: 1px solid transparent; background: transparent; color: #64748b;
+    font-size: .58rem; line-height: 1; cursor: pointer;
+}
+.tt-header-filter-button:hover, .tt-column-filtered .tt-header-filter-button {
+    color: #fff; background: #18385f; border-color: #18385f;
+}
+.tt-header-filter-popup {
+    position: fixed; z-index: 10050; width: min(22rem, calc(100vw - 1rem)); max-height: min(31rem, calc(100vh - 1rem));
+    display: flex; flex-direction: column; gap: .45rem; padding: .65rem; background: #fff;
+    border: 1px solid #31455d; border-radius: 4px; box-shadow: 0 14px 36px rgba(15,23,42,.28); color: #172334;
+}
+.tt-header-filter-search { width: 100%; min-height: 2rem; border: 1px solid #9aa9ba; padding: .3rem .45rem; }
+.tt-header-filter-actions, .tt-header-filter-popup footer { display: flex; flex-wrap: wrap; gap: .35rem; }
+.tt-header-filter-actions button, .tt-header-filter-popup footer button { border: 1px solid #9aa9ba; background: #f7f9fb; padding: .3rem .55rem; font-weight: 700; }
+.tt-header-filter-popup footer { justify-content: flex-end; }
+.tt-header-filter-popup footer [data-action="apply"] { background: #132f52; border-color: #132f52; color: #fff; }
+.tt-header-filter-values { overflow: auto; min-height: 4rem; max-height: 19rem; border: 1px solid #d2d9e1; }
+.tt-header-filter-values label { display: flex; align-items: center; gap: .45rem; padding: .3rem .45rem; border-bottom: 1px solid #edf0f3; }
+.tt-header-filter-values label:hover { background: #eef4fa; }
+.tt-active-column-filters { display:flex; flex-wrap:wrap; gap:4px; padding:4px 7px; border-bottom:1px solid #c8d3df; background:#eef3f8; }
+.tt-active-column-filters[hidden] { display:none; }
+.tt-active-column-filters button { min-height:22px; padding:2px 7px; border:1px solid #9fb0c3; border-radius:3px; background:#fff; color:#17304f; font-size:9px; font-weight:700; }
+.tt-active-column-filters .tt-clear-column-filters { margin-left:auto; color:#9b2c2c; border-color:#d7aaaa; }
+
+.empty-cell { padding: 20px !important; text-align: center !important; color: var(--tt-muted); }
+
+.master-help { flex: 0 0 auto; margin: 7px 0 0; color: var(--tt-muted); font: 12px/1.2 Consolas, monospace; }
+
+.next-build-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--tt-border-soft); background: #f8fafc; }
+
+.next-build-panel p { margin-bottom: 0; color: var(--tt-muted); }
+
+/* Ledger Master */
+
+.ledger-page { height: calc(100vh - 94px); display: flex; flex-direction: column; overflow: hidden; outline: none; }
+
+.ledger-page .page-header { flex: 0 0 auto; }
+
+.ledger-edit-form { margin: 0 -12px -12px; padding: 0 12px 10px; overflow: auto; background: #f4f7fa; }
+
+.ledger-form-heading { position: sticky; top: 0; z-index: 3; margin: 0 -12px; padding: 8px 12px 7px; background: #e2e9f1; border-bottom: 1px solid var(--tt-border); }
+
+.ledger-form-heading > div { display: flex; align-items: center; gap: 8px; }
+
+.system-badge { padding: 1px 6px; border: 1px solid #d09c61; background: #fff0d4; color: #7f4a0b; font-size: 12px; }
+
+.form-section { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--tt-border-soft); background: var(--tt-paper); }
+
+.form-section h2 { margin: -8px -10px 7px; padding: 4px 8px; background: var(--tt-grid-head); color: var(--tt-primary); border-bottom: 1px solid var(--tt-border-soft); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+
+.ledger-form-grid { display: grid; grid-template-columns: repeat(3, minmax(165px, 1fr)); gap: 7px 12px; }
+
+.ledger-form-grid label { color: #33465a; font-size: 12px; font-weight: 650; }
+
+.ledger-form-grid label b { color: #ad2f2f; }
+
+.ledger-form-grid input[readonly] { background: #e9edf1; color: #617080; }
+
+.wide-field { grid-column: span 2; }
+
+.checkbox-field { display: flex !important; align-items: center; gap: 7px; padding-top: 18px; }
+
+.checkbox-field input { display: inline-block !important; width: auto !important; min-height: auto !important; margin: 0 !important; }
+
+.code-input { text-transform: uppercase; font-family: Consolas, "Courier New", monospace; letter-spacing: .3px; }
+
+.section-note { margin: 6px 0 0; color: var(--tt-muted); font-size: 12px; }
+
+.bank-section { border-left: 4px solid var(--tt-primary-2); }
+
+.sticky-form-actions { position: sticky; bottom: -10px; margin-top: 8px; padding: 8px 0 1px; border-top: 1px solid var(--tt-border); background: #f4f7fa; }
+
+.ledger-list-toolbar { flex: 0 0 auto; display: grid; grid-template-columns: minmax(330px, 1fr) auto auto auto; gap: 6px; align-items: end; margin: 8px 0; }
+
+.ledger-list-toolbar label span { display: block; margin-bottom: 2px; color: var(--tt-primary); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+
+.ledger-list-toolbar button { min-height: 27px; }
+
+.ledger-list-toolbar > span { padding: 0 0 6px 5px; color: var(--tt-muted); font-size: 12px; white-space: nowrap; }
+
+.ledger-grid-wrap { flex: 1; min-height: 0; max-height: none; }
+
+.ledger-grid { min-width: 980px; }
+
+.amount-cell { text-align: right !important; font-variant-numeric: tabular-nums; }
+
+.ledger-page .master-help { flex: 0 0 auto; }
+
+.ledger-page > .notice { flex: 0 0 auto; }
+
+/* Stock Item engine */
+
+/* The edit form escapes .page-card's shared 1450px cap entirely via
+   position:fixed below, but the LIST layer (this same page before Enter Edit
+   is pressed) still renders in normal flow inside .page-card and inherited
+   that same cap - leaving the grid boxed into a narrow column with dead gray
+   on both sides. Needs .desk-shell's own specificity (two classes) to
+   actually win against .desk-shell .page-card's max-width, not just one. */
+.desk-shell .stock-item-page { max-width: none; }
+.stock-item-page { height: calc(100vh - 94px); display: flex; flex-direction: column; overflow: hidden; outline: none; }
+
+/* .stock-item-edit-form breaks out to a position:fixed overlay (below), but
+   its parent - this same #stock-items-page-root, styled by .page-card with
+   its own white background/border/shadow - still reserves the full
+   calc(100vh-94px) box regardless, since a fixed child doesn't affect its
+   parent's own layout size at all. With the form now shrink-wrapped shorter
+   than that reserved height, the leftover portion of the parent's own white
+   bordered card was showing through below the form as a big empty box.
+   Collapsing the parent's box entirely whenever the form is open removes
+   that leftover chrome - the fixed-position form supplies the entire visual
+   surface itself and isn't affected by its parent's height, since fixed
+   positioning is relative to the viewport, not this ancestor. */
+.desk-shell .stock-item-page:has(.stock-item-edit-form) {
+    height: 0;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    overflow: visible;
+}
+
+.stock-item-page .page-header { flex: 0 0 auto; }
+
+/* Fighting .page-card's shared 1450px max-width and calc(100vh-94px) height
+   with ever-more-specific overrides never actually won cleanly -
+   .desk-shell .page-card kept reasserting itself. JobWorkOutOrder.razor.css
+   already solved this exact problem for voucher entry: its .jwo-entry-form
+   takes itself out of the page-card's box model entirely with position:fixed
+   pinned straight to the real viewport (left offset = the sidebar's own
+   208px width, bottom:0 too), so its size is never inherited from an
+   ancestor at all. Copying that fully here - including bottom:0 - so the
+   card's own background always reaches the bottom of the screen like every
+   other voucher/master entry surface, rather than stopping short and
+   exposing plain page background below Save/Cancel on a tall screen. The
+   leftover vertical space this creates is deliberately not left blank inside
+   the card either - see .stock-item-top-row/.stock-item-photo-slot below,
+   which grow to absorb it instead. The list view is unaffected - it still
+   renders in normal flow inside .page-card, since only .stock-item-edit-form
+   (the create/edit form itself) switches to this fixed overlay. */
+.stock-item-edit-form {
+    position: fixed;
+    top: 0;
+    left: 208px;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0 0 0 4px;
+    overflow: hidden;
+    background: #f4f7fa;
+    /* This container itself never scrolls (its .stock-item-tab-panel child
+       does, for some tabs) - the shared scrollbar-gutter:stable rule above
+       was reserving 15px on the right that nothing ever used. */
+    scrollbar-gutter: auto;
+}
+
+.stock-item-form-heading {
+    position: sticky; top: 0; z-index: 3; margin: 0; padding: 9px 16px;
+    background: #1a3254; border-bottom: none; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    color: #fff; font-size: 13px; font-weight: 700; letter-spacing: -.2px;
+}
+.stock-item-form-heading span { font-size: 11px; font-weight: 400; color: #7aaad0; letter-spacing: normal; }
+
+/* Stock Item form tabs - each tab's content is sized to fit without scrolling;
+   only Opening Stock (a genuinely open-ended data table) gets a bounded scroll
+   area of its own, the page around it still never moves. */
+.stock-item-tabs {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 6px;
+    padding: 0 12px; margin: 0; flex: 0 0 auto;
+    background: #1e3d64; border-bottom: 1px solid #c8cfda;
+}
+.stock-item-tabs button[role="tab"] {
+    padding: 6px 18px; margin-bottom: -1px; border: 1px solid transparent; border-bottom: none;
+    background: transparent; color: #8aaad0; font-weight: 500; font-size: 12.5px;
+    border-radius: 3px 3px 0 0; cursor: pointer;
+}
+.stock-item-tabs button[role="tab"].active { background: #fff; color: #1a3254; font-weight: 600; border-color: #c8cfda; }
+.stock-item-tabs button[role="tab"]:focus-visible { outline: 2px solid #b7791f; outline-offset: 1px; }
+.stock-item-tab-hint { margin-left: auto; font-size: 10.5px; color: #6b8fb5; padding-bottom: 8px; }
+
+.stock-item-tab-panel { flex: 1 1 auto; min-height: 0; overflow: hidden; padding-top: 8px; border-top: 1px solid var(--tt-border-soft); display: flex; flex-direction: column; gap: 10px; }
+.stock-item-tab-panel-scrolls { overflow-y: auto; }
+
+/* The whole Item tab is ONE continuous card (.stock-item-item-section) rather
+   than several separately-bordered/headed sections - each extra card used to
+   cost ~12px margin + 12px*2 padding + a full heading bar (~46px) of pure
+   chrome, which is exactly what pushed real content (Colours/Sizes) below the
+   fixed no-scroll panel's visible area. Thin .stock-item-divider rules replace
+   the nested card borders; .stock-item-subhead/.stock-item-variant-label
+   replace the nested h2 bars with a single small uppercase label. */
+.stock-item-tab-panel .form-section { margin-top: 0; padding: 5px 12px; }
+.stock-item-tab-panel .form-section h2 { margin: -5px -12px 4px; padding: 2px 12px; font-size: 11px; }
+
+/* The Item tab's own card now fills the whole tab-panel height (which itself
+   fills the whole screen - .stock-item-edit-form pins bottom:0). Rather than
+   leaving that reclaimed space blank below the fixed-size sections
+   (Attributes/Colours/Sizes/Save), only .stock-item-top-row is allowed to
+   grow into it, and only its Design Photo half actually gets taller - the
+   identity fields stay their natural compact size, top-aligned, since
+   stretching input rows themselves would look broken. */
+.stock-item-item-section { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+
+.stock-item-divider { border: none; border-top: 1px solid var(--tt-border-soft); margin: 3px 0; }
+
+.stock-item-subhead, .stock-item-variant-label { display: block; font-size: 10.5px; font-weight: 700; color: var(--tt-primary); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 4px; }
+.stock-item-variant-label { display: inline; margin-bottom: 0; }
+.stock-item-variant-label small { color: var(--tt-muted); font-weight: 600; text-transform: none; letter-spacing: 0; }
+
+/* Item identity fields (left, natural/compact height, top-anchored) + the one
+   fixed Design Photo slot (top right, pinned width, stretches to match
+   whatever height the row ends up needing) sit side by side at the very top
+   of the tab. The Design Photo is a first-class Stock Item field present on
+   every item - deliberately separate from any Photo-type Attribute the
+   company may configure (which renders in the Attributes panel below, like
+   Front/Back/Additional Photos), so the two never compete for the same slot. */
+.stock-item-top-row { display: grid; grid-template-columns: 1fr 320px; gap: 12px; align-items: stretch; flex: 0 0 auto; }
+.stock-item-identity-grid { align-self: start; }
+
+/* The left column stretches to match Design Photo's height (align-items:
+   stretch above); Attributes then grows into whatever room that leaves below
+   the (short, natural-height) field grid instead of that space sitting empty. */
+.stock-item-left-column { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
+
+/* Fixed height, not min-height: Design Photo's size must not react to how
+   many Attribute fields a company has configured. It is the anchor other
+   elements in this row stretch to match, never the other way around. */
+.stock-item-photo-slot { border: 1px solid var(--tt-border-soft); background: #fcfdfe; padding: 5px; display: flex; flex-direction: column; height: 400px; }
+.stock-item-photo-placeholder { width: 100%; flex: 1 1 auto; min-height: 250px; border: 1px dashed var(--tt-border-soft); border-radius: 6px; display: flex; align-items: center; justify-content: center; background: white; color: #7c8b9a; font-size: 11px; }
+.stock-item-photo-preview { position: relative; margin: 0; width: 100%; flex: 1 1 auto; min-height: 250px; border: 1px solid var(--tt-border-soft); border-radius: 6px; overflow: hidden; background: white; }
+.stock-item-photo-preview img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.stock-item-photo-preview button { position: absolute; top: 3px; right: 3px; background: rgba(0,0,0,.6); color: white; border: none; width: 18px; height: 18px; line-height: 18px; padding: 0; font-size: 11px; cursor: pointer; border-radius: 3px; }
+.stock-item-photo-slot input[type="file"] { display: block; width: 100%; font-size: 10.5px; margin-top: 3px; }
+
+/* Full-screen click-to-zoom overlay for any Design Photo or Attribute photo
+   thumbnail - Esc closes it (handled in HandleFormKeyDown, checked before the
+   normal Esc-cancels-the-form behaviour), as does clicking the backdrop or
+   the close button. */
+.stock-item-photo-zoom-overlay { position: fixed; inset: 0; z-index: 500; background: rgba(10,16,28,.82); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+.stock-item-photo-zoom-overlay img { max-width: 90vw; max-height: 90vh; object-fit: contain; box-shadow: 0 12px 40px rgba(0,0,0,.5); cursor: default; }
+.stock-item-photo-zoom-close { position: absolute; top: 18px; right: 24px; width: 34px; height: 34px; border-radius: 50%; border: none; background: rgba(255,255,255,.15); color: #fff; font-size: 18px; line-height: 34px; padding: 0; cursor: pointer; }
+.stock-item-photo-zoom-close:hover { background: rgba(255,255,255,.3); }
+
+/* Colours / Sizes / Attributes as parallel panels (ERP master-screen density
+   convention) rather than each claiming a full-width row regardless of how
+   little content it holds. Two columns by default (Colours | Sizes, equal
+   width); a third opens up only once there's an Attribute to put in it, via
+   the .stock-item-panel-row-3 modifier applied in markup - so two panels get
+   the full width instead of sharing it with an empty third column. With
+   Attributes present, Colours/Sizes narrow to a fixed width (they're just
+   short vertical checklists - Black/Navy/S/XL never need much room) and
+   Attributes takes whatever width that frees up, since its field rows
+   benefit from the extra space far more. This row is the one that grows to
+   fill whatever height the (compact, natural-height) identity/photo row
+   above leaves spare. */
+.stock-item-panel-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1 1 auto; min-height: 0; }
+.stock-item-panel-row-3 { grid-template-columns: 190px 190px 1fr; }
+
+/* Colours/Sizes moved to their own Variants tab. Attributes now sits alone on
+   the Item tab, directly under the field grid it shares a column with, and
+   grows to fill the space that column's stretch (matching Design Photo's
+   height) leaves spare rather than that space sitting empty. */
+.stock-item-attributes-only { flex: 1 1 auto; min-height: 150px; display: flex; }
+.stock-item-attributes-only .stock-item-panel { flex: 1 1 auto; min-height: 150px; }
+.stock-item-attributes-only .stock-item-panel-list { flex: 1 1 auto; overflow: auto; }
+/* Spread whatever fields exist evenly across the full available height -
+   first field stays right under the heading, last field reaches the bottom
+   edge, and the gaps between them grow to absorb any leftover space, rather
+   than every field bunching at the top and leaving a blank strip below. */
+.stock-item-attributes-only .stock-item-custom-fields-list { flex: 1 1 auto; align-content: space-between; }
+.stock-item-panel { border: 1px solid var(--tt-border-soft); background: #fcfdfe; padding: 5px 8px; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.stock-item-panel > .empty-option-note { padding: 4px 0; margin: 0; }
+.stock-item-panel-list { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; margin-top: 2px; }
+.stock-item-panel-list .stock-item-check { width: 100%; border-bottom: 1px dotted #e2e8ee; }
+.stock-item-panel-list .stock-item-check:last-child { border-bottom: none; }
+
+.stock-item-form-grid { display: grid; grid-template-columns: repeat(3, minmax(170px, 1fr)); gap: 7px 12px; }
+.stock-item-identity-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 2px 12px; }
+
+/* Stock Category sits alone on its own row; Cost Price and Sale Price then
+   pair up on the row below it. */
+.stock-item-identity-grid .stock-item-category-row { grid-column: 1 / -1; }
+
+/* Dynasty-inspired layout: the label sits beside its field instead of above
+   it, and every field gets a fixed, comfortable width instead of stretching
+   to fill the grid column. Colours, borders and type stay TexTrack's own -
+   only the spatial arrangement borrows from Dynasty's item screen. */
+.stock-item-dynasty-layout { grid-template-columns: repeat(2, minmax(300px, 1fr)); column-gap: 28px; }
+.stock-item-dynasty-layout label { display: flex; align-items: center; gap: 10px; }
+.stock-item-dynasty-layout .field-label-text { flex: 0 0 118px; text-align: left; }
+
+/* Compact the top identity row specifically (not Tax's fields, which share
+   .stock-item-form-grid too) - the height this frees up goes to the taller
+   Design Photo box beside it rather than sitting idle. */
+.stock-item-identity-grid input,
+.stock-item-identity-grid select { min-height: 22px; margin-top: 1px; padding: 2px 4px; }
+
+.stock-item-form-grid label { color: #33465a; font-size: 12px; font-weight: 650; }
+
+.stock-item-form-grid label b { color: #ad2f2f; }
+
+.stock-item-form-grid input,
+.stock-item-form-grid select,
+.stock-item-list-toolbar input {
+    display: block;
+    width: 100%;
+    min-height: 27px;
+    margin-top: 3px;
+    border: 0;
+    border-bottom: 1px dotted #6c7e90;
+    border-radius: 0;
+    background: transparent;
+    color: var(--tt-text);
+    padding: 3px 5px;
+}
+
+.stock-item-form-grid select { border: 1px solid #9aa8b6; background: white; }
+
+/* A price never needs the full row width other fields get - keep the same
+   height/padding as every other field, just narrower. */
+.stock-item-form-grid input.stock-item-price-input { width: 130px; }
+
+/* Fixed field widths for the Dynasty-inspired layout - must come after the
+   general width:100% rule above to win the cascade at equal specificity. */
+.stock-item-dynasty-layout input,
+.stock-item-dynasty-layout select { flex: 0 0 auto; width: 200px; }
+.stock-item-dynasty-layout input.stock-item-price-input { width: 110px; }
+
+.stock-item-form-grid input:focus,
+.stock-item-form-grid select:focus,
+.stock-item-list-toolbar input:focus { background: var(--tt-focus); outline: 1px solid #b7791f; outline-offset: 0; }
+
+.variant-heading { display: flex; align-items: center; justify-content: space-between; padding: 5px 7px; border-bottom: 1px solid var(--tt-border-soft); background: var(--tt-grid-head); color: var(--tt-primary); font-size: 12px; }
+
+.variant-heading span { color: var(--tt-muted); }
+
+.stock-item-check { display: flex; align-items: center; gap: 4px; min-height: 21px; margin: 0; padding: 1px 6px; cursor: pointer; font-size: 11.5px; white-space: nowrap; }
+
+.stock-item-check:hover { background: #e4edf6; border-radius: 3px; }
+
+.stock-item-check input { width: auto; min-height: auto; margin: 0; }
+
+.stock-item-check input:focus-visible { outline: 2px solid #b7791f; outline-offset: 1px; }
+
+.empty-option-note { margin: 0; padding: 12px; color: var(--tt-muted); font-size: 12px; }
+
+.variant-summary { margin: 2px 0 0; padding: 0; color: var(--tt-muted); font-size: 10.5px; }
+
+.stock-item-list-toolbar { flex: 0 0 auto; display: grid; grid-template-columns: minmax(330px, 1fr) auto auto auto; gap: 6px; align-items: end; margin: 8px 0; }
+
+.stock-item-list-toolbar label span { display: block; margin-bottom: 2px; color: var(--tt-primary); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+
+.stock-item-list-toolbar button { min-height: 27px; }
+
+.stock-item-list-toolbar > span { padding: 0 0 6px 5px; color: var(--tt-muted); font-size: 12px; white-space: nowrap; }
+
+.stock-item-grid-wrap { flex: 1; min-height: 0; max-height: none; }
+
+.stock-item-grid { min-width: 1050px; }
+
+.stock-item-grid td small { display: block; margin-top: 2px; color: inherit; opacity: .72; font-size: 12px; }
+
+.stock-item-page .master-help { flex: 0 0 auto; }
+
+.stock-item-edit-form .sticky-form-actions { flex: 0 0 auto; }
+
+.stock-item-page > .notice { flex: 0 0 auto; }
+
+/* A plain "label : value" row list rather than the boxed label-above-input
+   grid used for identity/tax fields - keeps the Attribute Master list
+   scannable inside its own parallel panel (see .stock-item-panel-row above),
+   which is now the widest of the three (Colours/Sizes narrowed to make room
+   for it) - auto-fit lets as many field columns sit side by side as
+   genuinely fit that width, rather than a hardcoded column count. */
+.stock-item-custom-fields-list { display: grid; grid-template-columns: 1fr; gap: 14px 20px; align-content: start; }
+.stock-item-custom-field { display: flex; align-items: center; gap: 10px; min-width: 0; border-bottom: 1px dotted #c9d2dc; padding: 6px 0; }
+.stock-item-custom-field > label { flex: 0 0 auto; max-width: 45%; color: #33465a; font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stock-item-custom-field > label b { color: #ad2f2f; }
+.stock-item-custom-field > input,
+.stock-item-custom-field > select { flex: 1 1 auto; min-width: 0; height: 30px; border: 0; border-bottom: 1px dotted #6c7e90; background: transparent; color: var(--tt-text); padding: 4px 8px; font-size: 12px; }
+.stock-item-custom-field > select { border: 1px solid #9aa8b6; background: white; }
+/* .stock-item-udf-autofit's font-size is adjusted per-value by
+   textrack-udf-autofit.js so a long value stays fully visible instead of
+   scrolling out of the fixed-width field or being ellipsis-truncated - the
+   box itself (height above, width from the grid track) never changes size,
+   only the text inside it shrinks, bounded at a 9px readable floor. */
+.stock-item-custom-field > input:focus,
+.stock-item-custom-field > select:focus { background: var(--tt-focus); outline: 1px solid #b7791f; outline-offset: 0; }
+.stock-item-custom-field > small { display: block; margin-top: 2px; color: var(--tt-muted); font-size: 10.5px; }
+.stock-item-custom-field input[type="file"] { width: 100%; border: 1px solid var(--tt-border-soft); background: white; }
+
+/* A Photo-type Attribute needs real room for its upload control and thumbnail
+   strip - forcing it into the inline label-left/control-right row used by
+   every other field type is what caused it to visually collide with the
+   neighbouring grid column. It spans both columns and stacks instead. */
+.stock-item-custom-field-photo { grid-column: 1 / -1; display: block; min-height: 230px; }
+.stock-item-custom-field-photo > label { display: block; margin-bottom: 2px; }
+.stock-item-custom-field-photo > .stock-item-photo-upload { width: 100%; }
+.stock-item-photo-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.stock-item-photo-strip figure { position: relative; width: 112px; margin: 0; border: 1px solid var(--tt-border-soft); background: white; }
+.stock-item-photo-strip img { display: block; width: 110px; height: 88px; object-fit: cover; cursor: zoom-in; }
+.stock-item-photo-strip figcaption { overflow: hidden; padding: 2px 4px; color: #43546a; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.stock-item-photo-strip button { position: absolute; top: 2px; right: 2px; width: 22px; min-height: 22px; padding: 0; border-color: #a43b3b; background: #fff; color: #a21f1f; font-weight: 700; }
+.stock-item-field-form { overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.stock-item-field-form textarea { width: 100%; resize: vertical; }
+
+/* ============================================================
+   Stock Item "v2" layout - navy/table-based design matching the
+   approved Figma Make mockup. Scoped under .stock-item-v2 so it
+   only affects this form, not the rest of the app's masters pages.
+   ============================================================ */
+.stock-item-v2 { padding: 0; }
+
+.stock-item-field-strip {
+    display: flex; align-items: stretch; flex-shrink: 0;
+    border-bottom: 1px solid #d8dde8; background: #fff;
+    margin: 0 -12px;
+}
+.stock-item-field-cell {
+    padding: 6px 14px; display: flex; flex-direction: column; gap: 3px;
+    justify-content: center; min-width: 0;
+    border-right: 1px solid #d8dde8;
+}
+.stock-item-field-cell:last-child { border-right: none; }
+.stock-item-field-label {
+    font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: #6b7a8d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stock-item-field-label b { color: #dc2626; margin-left: 1px; }
+.stock-item-field-label .optional-field { color: #9aaabb; font-weight: 400; text-transform: none; letter-spacing: normal; margin-left: 4px; }
+.stock-item-field-input {
+    height: 24px; padding: 0 6px; font-size: 12.5px;
+    border: 1px solid #c8cfd8; border-radius: 2px; background: #fff;
+    color: #1a2030; outline: none; width: 100%;
+}
+.stock-item-field-input:focus { border-color: #1a3254; box-shadow: 0 0 0 2px rgba(26,50,84,.12); }
+
+.stock-item-v2-table { width: 100%; margin: 0; border-collapse: collapse; }
+/* Only the top-level table (Stock Category row, a direct child of the
+   section) needs to bleed to the section's own edge. The Attributes table
+   nested inside .stock-item-v2-main must stay within that column's own
+   width instead - it has no matching padding to bleed out of, so the same
+   trick there overflowed into the Design Photo panel next to it. */
+.stock-item-v2 > table.stock-item-v2-table { width: calc(100% + 24px); margin: 0 -12px; }
+.stock-item-v2-table th {
+    background: #1a3254; color: #c8d8ee;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+    padding: 6px 10px; text-align: center; white-space: nowrap;
+    border-right: 1px solid rgba(255,255,255,.07);
+}
+.stock-item-v2-table th.col-left { text-align: left; }
+.stock-item-v2-table th.col-num { width: 28px; }
+.stock-item-v2-table th.col-price, .stock-item-v2-table th.col-type { width: 130px; }
+.stock-item-v2-table td { padding: 4px 8px; font-size: 12px; color: #1a2030; vertical-align: middle; border-bottom: 1px solid #e8eaef; }
+.stock-item-v2-table td.col-num { text-align: center; color: #9aaabb; font-size: 11px; width: 28px; }
+.stock-item-v2-table td.col-field { font-weight: 600; color: #1a2030; white-space: nowrap; }
+.stock-item-v2-table td.col-type { color: #9aaabb; font-size: 11px; text-align: center; }
+.stock-item-v2-input {
+    height: 23px; padding: 0 5px; font-size: 12px;
+    border: 1px solid #dde1ea; border-radius: 2px; background: #fff;
+    color: #1a2030; outline: none; width: 100%; max-width: 340px;
+}
+.stock-item-v2-input.align-right { max-width: none; }
+.stock-item-v2-input.align-right { text-align: right; }
+.stock-item-v2-input:focus { border-color: #1a3254; }
+
+.stock-item-v2-section-header {
+    display: flex; align-items: center; gap: 8px; padding: 5px 10px 4px;
+    background: #f6f7fa; border-bottom: 1px solid #e4e6ed; border-top: 1px solid #e4e6ed;
+}
+.stock-item-v2-section-header span:first-child { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #8a9ab0; }
+.stock-item-v2-section-sub { font-size: 10.5px; color: #b0bbc8; }
+
+.stock-item-v2-flex { display: flex; flex: 1 1 auto; min-height: 0; margin: 0 -12px; }
+.stock-item-v2-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.stock-item-v2-photo-panel { width: 300px; flex-shrink: 0; border-left: 1px solid #d8dde8; display: flex; flex-direction: column; }
+.stock-item-v2-photo-body { flex: 1 1 auto; padding: 10px 12px 10px 10px; display: flex; flex-direction: column; gap: 8px; min-height: 300px; }
+.stock-item-v2-dropzone {
+    flex: 1 1 auto; border: 1.5px dashed #c8cfd8 !important; border-radius: 3px; background: #f8f9fb;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    color: #9aaabb; font-size: 10.5px; line-height: 1.5; cursor: pointer;
+}
+.stock-item-v2-dropzone:hover { border-color: #1a3254 !important; }
+
+/* Save/Cancel are real clickable buttons in the navy title bar itself -
+   the only place they appear, instead of duplicating them again at the
+   bottom of the form. */
+/* Higher specificity than the shared .desk-shell .form-heading strong/span
+   rules, which were rendering near-invisible dark-navy-on-navy and muted-gray-
+   on-navy text here - this heading needs its own bright, readable colours. */
+.desk-shell .stock-item-form-heading strong { color: #fff; }
+.desk-shell .stock-item-form-heading .stock-item-heading-actions { color: #aac4e0; }
+.stock-item-heading-actions { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
+.stock-item-heading-actions strong { color: #fff; margin-left: 3px; }
+.stock-item-heading-sep { color: rgba(255,255,255,.3); margin: 0 2px; }
+.stock-item-heading-btn {
+    height: 28px; padding: 0 14px; font-size: 12.5px; font-weight: 600;
+    background: rgba(255,255,255,.1); color: #cfe0f3; border: 1px solid rgba(255,255,255,.25);
+    border-radius: 4px; cursor: pointer;
+}
+.stock-item-heading-btn:hover:not(:disabled) { background: rgba(255,255,255,.18); }
+.stock-item-heading-btn:disabled { opacity: .45; cursor: not-allowed; }
+.stock-item-heading-btn-primary { background: #2f6fed; color: #fff; border-color: #2f6fed; }
+.stock-item-heading-btn-primary:hover:not(:disabled) { background: #3f7bf0; }
+
+/* Variants tab - same navy-header language as the v2 tables above. */
+.stock-item-variants-section .stock-item-panel-row { gap: 0; border-bottom: 1px solid #d8dde8; }
+.stock-item-variants-section .stock-item-panel { border: none; border-right: 1px solid #d8dde8; border-radius: 0; padding: 0; background: #fff; }
+.stock-item-variants-section .stock-item-panel:last-child { border-right: none; }
+.stock-item-variants-section .stock-item-subhead {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #1a3254; padding: 6px 10px; margin: 0;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: #c8d8ee;
+}
+.stock-item-variants-section .stock-item-subhead small { font-weight: 400; text-transform: none; letter-spacing: normal; color: #8aaad0; font-size: 10px; }
+.stock-item-variants-section .stock-item-panel-list { padding: 6px 8px; }
+.stock-item-variants-section .stock-item-check { border-bottom: none; padding: 3px 8px; border-radius: 2px; }
+.stock-item-variants-section .stock-item-check:hover { background: #eef2f9; }
+.stock-item-opening-section { border-left: 4px solid #2f7a55; }
+.opening-inventory-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.opening-inventory-heading .section-note { margin: 0; }
+.opening-inventory-grid-wrap { overflow: auto; border: 1px solid var(--tt-border-soft); background: white; }
+.opening-inventory-grid { width: 100%; min-width: 920px; border-collapse: collapse; font-size: 12px; }
+.opening-inventory-grid th { padding: 5px 7px; border: 1px solid var(--tt-border-soft); background: var(--tt-grid-head); color: var(--tt-primary); text-align: left; text-transform: uppercase; }
+.opening-inventory-grid td { padding: 4px; border: 1px solid var(--tt-border-soft); }
+.opening-inventory-grid select,
+.opening-inventory-grid input { width: 100%; min-height: 28px; border: 1px solid #9aa8b6; background: white; }
+.opening-inventory-grid input { padding: 4px 7px; text-align: right; }
+.opening-inventory-grid select:focus,
+.opening-inventory-grid input:focus { background: var(--tt-focus); outline: 1px solid #b7791f; outline-offset: 0; }
+.opening-inventory-grid .opening-uqc { min-width: 64px; font-weight: 700; text-align: center; }
+.opening-inventory-grid .opening-remove { min-width: 28px; min-height: 28px; padding: 0; border-color: #a43b3b; color: #a21f1f; font-weight: 700; }
+.opening-inventory-grid tfoot th { background: #edf2f7; text-align: right; }
+
+/* Voucher placeholders; full voucher standard follows in the next voucher patch */
+
+.voucher-card { height: calc(100vh - 94px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+
+.voucher-header { padding: 7px 12px; }
+
+.voucher-meta { display: flex; gap: 8px; }
+
+.voucher-meta input { width: 135px; }
+
+.voucher-workspace { overflow: auto; padding: 12px; background: var(--tt-paper); }
+
+.placeholder-grid { display: grid; gap: 7px; }
+
+.placeholder-grid div { padding: 17px; border: 1px dashed #8e9eae; background: rgba(255,255,255,.5); color: var(--tt-muted); }
+
+.voucher-actions { display: flex; align-items: center; gap: 14px; padding: 7px 12px; border-top: 1px solid var(--tt-border); background: #e4eaf1; font-size: 12px; }
+
+@media (max-width: 1000px) {
+.ledger-form-grid { grid-template-columns: repeat(2, minmax(170px, 1fr)); }
+
+.stock-item-form-grid { grid-template-columns: repeat(2, minmax(170px, 1fr)); }
+
+.stock-item-top-row { grid-template-columns: 1fr; }
+
+.stock-item-panel-row { grid-template-columns: 1fr; }
+.stock-item-panel-row-3 { grid-template-columns: 1fr; }
+
+.ledger-list-toolbar { grid-template-columns: 1fr auto auto; }
+
+.stock-item-list-toolbar { grid-template-columns: 1fr auto auto; }
+
+.ledger-list-toolbar > span { display: none; }
+
+.stock-item-list-toolbar > span { display: none; }
+}
+
+@media (max-width: 760px) {
+.menu-shortcut { display: none; }
+
+.workspace { padding: 8px; }
+
+.gateway-body { grid-template-columns: 1fr; }
+
+.gateway-company-panel { border-right: 0; border-bottom: 1px solid var(--tt-border); padding: 18px; }
+
+.gateway-dashboard { justify-content: flex-start; padding-top: 8px; overflow: auto; }
+
+.ledger-form-grid { grid-template-columns: 1fr; }
+
+.stock-item-form-grid { grid-template-columns: 1fr; }
+
+.stock-item-custom-fields-list { grid-template-columns: 1fr; }
+
+.wide-field { grid-column: auto; }
+
+.compact-form { grid-template-columns: 1fr; }
+}
+
+.optional-field {
+    font-size: 0.78rem;
+    font-weight: 500;
+    opacity: 0.72;
+}
+
+/* v0.4 Build 1 — Voucher Core + Job Work Out Order */
+
+.loading-state {
+    padding: 24px;
+    color: var(--tt-muted);
+    text-align: center;
+    font-size: 12px;
+}
+
+.form-message {
+    margin: 7px 0 0;
+    padding: 7px 9px;
+    border: 1px solid;
+    font-size: 12px;
+}
+
+.form-message.success { color: #25613f; background: #edf7f1; border-color: #9cc8ad; }
+
+.form-message.error { color: #8e2f2f; background: #fff2f2; border-color: #d8aaaa; }
+
+.list-message { flex: 0 0 auto; }
+
+.compact-warning { margin: 0 0 8px; padding: 7px 9px; font-size: 12px; }
+
+.compact-warning p { margin-top: 3px; }
+
+.inline-warning { grid-column: 1 / -1; padding: 6px 8px; color: #8a5514; background: #fff7df; font-size: 12px; }
+
+.list-toolbar {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) auto auto;
+    gap: 6px;
+    align-items: end;
+    margin: 8px 0;
+}
+
+.list-toolbar label { color: var(--tt-primary); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+
+.list-toolbar input {
+    display: block;
+    width: 100%;
+    min-height: 27px;
+    margin-top: 2px;
+    border: 0;
+    border-bottom: 1px dotted #6c7e90;
+    background: transparent;
+    padding: 3px 5px;
+}
+
+.list-toolbar input:focus { background: var(--tt-focus); outline: 1px solid #b7791f; }
+
+.list-toolbar button {
+    min-height: 27px;
+    border: 1px solid #7c8ea0;
+    background: #fffdf8;
+    padding: 3px 9px;
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.master-grid {
+    min-height: 0;
+    flex: 1;
+    overflow: auto;
+    border: 1px solid var(--tt-border);
+    background: white;
+}
+
+.master-grid table { width: 100%; min-width: 1120px; border-collapse: collapse; font-size: 12px; }
+
+.master-grid th,
+.master-grid td { height: 28px; padding: 4px 7px; border-right: 1px solid #d7dfe7; border-bottom: 1px solid #d7dfe7; text-align: left; }
+
+.master-grid th { position: sticky; top: 0; z-index: 2; background: var(--tt-grid-head); color: var(--tt-primary); border-bottom-color: var(--tt-border); font-size: 12px; letter-spacing: .25px; }
+
+.master-grid tbody tr { cursor: pointer; }
+
+.master-grid tbody tr:nth-child(even) { background: #fbfcfd; }
+
+.master-grid tbody tr:hover { background: #e5edf5; }
+
+.master-grid tbody tr.selected,
+.master-grid tbody tr.selected:hover { background: var(--tt-selection); color: white; }
+
+.master-grid tbody tr.selected td { border-color: rgba(255,255,255,.22); }
+
+.number-column { text-align: right !important; font-variant-numeric: tabular-nums; }
+
+.empty-row { padding: 24px !important; text-align: center !important; color: var(--tt-muted); cursor: default; }
+
+.grid-key-hint { flex: 0 0 auto; margin-top: 6px; color: var(--tt-muted); font: 12px/1.2 Consolas, monospace; }
+
+.status-chip { display: inline-block; min-width: 48px; padding: 2px 5px; border: 1px solid #93a4b5; background: #eef3f7; color: #30465e; text-align: center; font-size: 12px; font-weight: 700; }
+
+/* v0.4 Build 1.1.1 — Razor hotfix; approved 12px text and Tally-style component allocation */
+
+body,
+button,
+input,
+select,
+textarea,
+table {
+    font-size: 12px;
+}
+
+/* v0.4 Build 2: true ERP drill-down lookups and Tally-aligned JWO godowns */
+
+.lookup-field { position: relative; min-width: 0; }
+
+.lookup-field > input { width: 100%; }
+
+.erp-lookup-panel {
+    position: absolute;
+    z-index: 160;
+    top: calc(100% + 2px);
+    left: 0;
+    min-width: 100%;
+    width: max-content;
+    max-width: 520px;
+    max-height: 245px;
+    overflow-y: auto;
+    background: #fffdf8;
+    border: 1px solid var(--tt-selection-border);
+    box-shadow: 0 7px 18px rgba(20,35,55,.28);
+    padding: 3px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* The "Not Applicable" option (see updateNotApplicableOption in App.razor) is always appended
+   last in the DOM - inserting it at the front would sit inside Blazor's own @foreach-managed
+   child range and confuse its diffing on the next keystroke's re-render. `order` gives it a
+   fixed visual position at the top without moving it in the DOM. */
+.erp-lookup-panel button[data-tt-lookup-na="true"] { order: -1; }
+
+.erp-lookup-panel button {
+    width: 100%; min-width: 250px; min-height: 30px; display: flex;
+    align-items: center; justify-content: space-between; gap: 18px;
+    border: 0; border-bottom: 1px solid #e0e6ec; background: transparent;
+    padding: 5px 8px; text-align: left; cursor: pointer;
+}
+
+/* Mouse hover deliberately shows no highlight - a click selects immediately, it doesn't need
+   a preview state - so only real keyboard focus (:focus, e.g. Tab landing here) and the
+   JS-driven arrow-key/auto-highlight state (.keyboard-selected, .lookup-selected) highlight a
+   row. Combining :hover into this rule let the mouse and keyboard highlight two different rows
+   at once, whichever the cursor happened to rest on. */
+.erp-lookup-panel button:focus,
+.erp-lookup-panel button.keyboard-selected,
+.erp-lookup-panel button.lookup-selected { background: var(--tt-selection) !important; color: #fff !important; outline: none; }
+
+.erp-lookup-panel button span { color: var(--tt-muted); white-space: nowrap; }
+
+.erp-lookup-panel button:focus span,
+.erp-lookup-panel button.keyboard-selected span,
+.erp-lookup-panel button.lookup-selected span,
+.erp-lookup-panel button.keyboard-selected strong,
+.erp-lookup-panel button.lookup-selected strong { color: #fff !important; }
+
+/* A lookup shell must never appear as an empty bordered strip. */
+.erp-lookup-panel:not(:has(button)):not(:has(.erp-lookup-empty)):not(:has(.mo-order-lookup-head)) {
+    display: none !important;
+}
+
+
+.keyboard-action-proxy {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    margin: -1px !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    clip: rect(0 0 0 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.tt-period-dialog { width: min(430px, calc(100vw - 32px)); }
+.tt-period-body {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px 12px;
+}
+.tt-period-body label { color: var(--tt-text); font-weight: 700; }
+.tt-period-body input {
+    width: 100%;
+    min-height: 32px;
+    border: 1px solid var(--tt-border);
+    background: #fff;
+    color: var(--tt-text);
+    padding: 4px 8px;
+}
+.tt-period-body input:focus { outline: 2px solid var(--tt-selection-border); outline-offset: 1px; background: var(--tt-focus); }
+.tt-period-error { grid-column: 1 / -1; margin: 2px 0 0; color: var(--tt-danger); font-weight: 700; }
+.status-period { color: #d9e6f4; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.erp-lookup-empty { padding: 8px; color: var(--tt-muted); }
+
+.component-lookup-panel { bottom: auto; }
+
+.master-menu-group { border-bottom: 1px solid #dde4eb; }
+
+.master-menu-group-button { width:100%; min-height:32px; display:flex; align-items:center; justify-content:space-between; border:0; background:#edf2f7; padding:6px 9px; font-weight:700; cursor:pointer; }
+
+.master-menu-group-button.keyboard-selected,
+.master-menu-group-button:focus-visible { background:var(--tt-primary-2); color:#fff; outline:none; }
+
+.master-menu-group-button:hover:not(.keyboard-selected) { background:#e4edf6; color:var(--tt-primary); outline:none; }
+
+.master-menu-children { display:block; padding-left:14px; background:#fffdf8; border-left:3px solid #c7d4e2; }
+
+.master-menu-children .menu-link { min-height:28px; }
+
+.exit-confirm-note { color:var(--tt-danger); font-weight:700; }
+
+/* Build 2.0.4 menu reliability */
+
+.dropdown-menu [data-tt-menu-item="true"] { text-decoration:none; color:inherit; }
+
+.dropdown-menu [data-tt-menu-item="true"]:focus-visible { outline:2px solid #b7791f; outline-offset:-2px; }
+
+.master-menu-group-button[aria-expanded="true"] { background:#dfe8f2; color:var(--tt-primary); }
+
+.master-menu-group-button[aria-expanded="true"].keyboard-selected,
+.master-menu-group-button[aria-expanded="true"]:focus-visible { background:var(--tt-primary-2); color:#fff; }
+
+/* TexTrack native confirmation dialog */
+
+.tt-dialog-overlay,
+.tt-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 140;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    background: rgba(16, 26, 40, .52);
+}
+
+.tt-dialog {
+    width: min(430px, calc(100vw - 36px));
+    background: var(--tt-paper);
+    border: 2px solid var(--tt-deep);
+    box-shadow: 0 18px 46px rgba(11, 22, 36, .42);
+    outline: none;
+}
+
+.tt-dialog-titlebar {
+    padding: 9px 13px;
+    background: var(--tt-primary-2);
+    color: #fff;
+    border-bottom: 1px solid var(--tt-deep);
+    font-size: 14px;
+}
+
+.tt-dialog-body {
+    padding: 18px 18px 12px;
+    color: var(--tt-text);
+    font-size: 13px;
+}
+
+.tt-dialog-body p { margin: 0 0 7px; }
+
+.tt-dialog-warning { font-weight: 700; color: #8b2b24; }
+
+.tt-dialog-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 7px 18px 15px;
+}
+
+.tt-dialog-actions button {
+    min-width: 82px;
+    min-height: 31px;
+    border: 1px solid #7f8d9c;
+    background: #fff;
+    color: var(--tt-text);
+    font-weight: 700;
+}
+
+.tt-dialog-actions button.dialog-selected,
+.tt-dialog-actions button:focus {
+    border-color: var(--tt-deep);
+    background: var(--tt-primary-2);
+    color: #fff;
+    outline: 2px solid rgba(43, 91, 132, .24);
+    outline-offset: 1px;
+}
+
+.tt-dialog-hint {
+    padding: 6px 10px;
+    border-top: 1px solid #c5ced7;
+    background: #eef2f5;
+    color: var(--tt-muted);
+    text-align: center;
+    font-size: 11px;
+}
+
+/* v0.5 Build 1.1 - compact Tally-like Material Out voucher */
+
+.mo-voucher-page { max-width: 1120px; }
+
+.mo-entry-surface { min-height: 590px; background: #f4fae9; }
+
+.mo-title-line { display: grid; grid-template-columns: 1fr 190px 190px; align-items: end; gap: 12px; padding: 8px 10px; border-bottom: 1px solid #9eac95; }
+
+.mo-title-line > strong { font-size: 1.05rem; }
+
+.mo-title-line label,
+.mo-party-block label { display: grid; grid-template-columns: 130px minmax(0, 1fr); align-items: center; gap: 8px; margin: 0; }
+
+.mo-party-block { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; padding: 12px 10px; }
+
+.mo-party-block input,
+.mo-party-block select,
+.mo-title-line input { min-height: 30px; padding: 4px 7px; }
+
+.mo-lines-wrap { min-height: 285px; border-top: 1px solid #9eac95; border-bottom: 1px solid #9eac95; }
+
+.mo-lines-grid { width: 100%; }
+
+.mo-lines-grid th:nth-child(1) { width: 31%; }
+
+.mo-lines-grid th:nth-child(2) { width: 18%; }
+
+.mo-lines-grid th:nth-child(3),
+.mo-lines-grid th:nth-child(4) { width: 11%; }
+
+.mo-lines-grid th:nth-child(5),
+.mo-lines-grid th:nth-child(7) { width: 11%; }
+
+.mo-lines-grid th:nth-child(6) { width: 7%; }
+
+.mo-lines-grid td:nth-child(n/**/+3) { text-align: right; }
+
+.mo-fg-row td { background: #dfe9d7; text-align: left !important; }
+
+.mo-fg-row span { margin-left: 14px; font-size: .82rem; font-weight: 400; }
+
+.mo-qty-input { width: 100%; min-width: 90px; text-align: right; padding: 4px 6px; }
+
+.mo-footer-fields { padding: 14px 10px; display: grid; gap: 10px; }
+
+.mo-footer-fields label { display: grid; grid-template-columns: 210px minmax(0, 1fr); align-items: start; gap: 10px; }
+
+.mo-footer-fields textarea { min-height: 52px; resize: vertical; }
+
+.mo-order-selector { width: min(760px, 92vw); }
+
+.mo-order-selector .selected-row { background: #285f9e; color: #fff; }
+
+.keyboard-hint { font-size: .78rem; opacity: .9; }
+
+.empty-cell { height: 180px; text-align: center !important; vertical-align: middle; color: #667; }
+
+/* v0.5 Build 1.3 — Material Out header and editable prefill fields */
+
+.mo-title-line { grid-template-columns: minmax(260px, 1fr) 210px 250px; }
+
+.mo-title-line .mo-date-label { grid-template-columns: 52px minmax(165px, 1fr); }
+
+.mo-title-line .mo-date-input { width: 100%; min-width: 165px; }
+
+.mo-party-block .lookup-field { position: relative; }
+
+.mo-party-block .erp-lookup-panel { left: 138px; right: 0; top: calc(100% + 2px); }
+
+@media (max-width: 900px) {
+.mo-title-line { grid-template-columns: 1fr; }
+
+.mo-party-block { grid-template-columns: 1fr; }
+}
+
+/* v0.5 Build 1.6 — Material Out balanced field widths and contained lookups */
+
+.mo-voucher-page {
+    max-width: 1320px;
+    width: min(1320px, calc(100vw - 28px));
+    height: calc(100vh - 94px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.mo-voucher-page .page-header { flex: 0 0 auto; }
+
+.mo-entry-form {
+    min-height: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    margin: 0 -12px -12px;
+    overflow: hidden;
+    background: #f2f5f8;
+}
+
+.mo-form-heading {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 20px;
+    min-height: 62px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--tt-border);
+    background: #e1e8ef;
+}
+
+.mo-form-heading > div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 220px;
+}
+
+.mo-form-heading > div:first-child strong {
+    color: var(--tt-primary);
+    font-size: 16px;
+}
+
+.mo-form-heading > div:first-child span {
+    color: var(--tt-muted);
+    font-size: 12px;
+}
+
+.mo-heading-fields {
+    display: grid;
+    grid-template-columns: 180px 220px;
+    gap: 14px;
+}
+
+.mo-heading-fields label,
+.mo-master-fields label,
+.mo-footer-fields label {
+    color: #33465a;
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.mo-heading-fields input,
+.mo-master-fields input,
+.mo-master-fields select,
+.mo-footer-fields input,
+.mo-footer-fields select,
+.mo-footer-fields textarea {
+    display: block;
+    width: 100%;
+    min-height: 31px;
+    margin-top: 4px;
+    border: 1px solid #9aa8b6;
+    border-radius: 0;
+    background: #fff;
+    color: var(--tt-text);
+    padding: 4px 7px;
+    font-size: 13px;
+}
+
+.mo-heading-fields input[readonly] {
+    background: #e8edf2;
+    color: #5f6e7d;
+}
+
+.mo-heading-fields input:focus,
+.mo-master-fields input:focus,
+.mo-master-fields select:focus,
+.mo-footer-fields input:focus,
+.mo-footer-fields select:focus,
+.mo-footer-fields textarea:focus,
+.mo-qty-input:focus {
+    background: var(--tt-focus);
+    outline: 1px solid #b7791f;
+    outline-offset: 0;
+}
+
+.mo-master-fields {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: minmax(390px, 500px) minmax(320px, 390px);
+    justify-content: center;
+    gap: 10px 28px;
+    padding: 10px 12px 11px;
+    border-bottom: 1px solid var(--tt-border);
+    background: var(--tt-paper);
+}
+
+.mo-master-fields label { min-width: 0; max-width: 390px; width: 100%; }
+
+.mo-master-fields .mo-party-field { max-width: 480px; }
+
+.mo-master-fields .mo-order-field { max-width: 370px; }
+
+.mo-master-fields label b { color: #ad2f2f; }
+
+.mo-party-field,
+.mo-order-field,
+.mo-master-fields .lookup-field { position: relative; }
+
+.mo-field-lookup-panel {
+    top: calc(100% + 2px) !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: none !important;
+}
+
+.mo-field-lookup-panel button { min-width: 100%; }
+
+.mo-order-lookup-panel {
+    top: calc(100% + 2px) !important;
+    left: auto !important;
+    right: 0 !important;
+    width: min(500px, calc(100vw - 96px)) !important;
+    min-width: 100% !important;
+    max-width: 500px !important;
+    padding: 0 !important;
+}
+
+.mo-order-lookup-head,
+.mo-order-option {
+    display: grid !important;
+    grid-template-columns: minmax(145px, 1.1fr) 125px minmax(120px, .9fr) 105px;
+    gap: 10px !important;
+    align-items: center !important;
+}
+
+.mo-order-lookup-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    min-height: 29px;
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--tt-border);
+    background: var(--tt-grid-head);
+    color: var(--tt-primary);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.mo-order-option {
+    min-width: 100% !important;
+    min-height: 32px !important;
+    padding: 5px 8px !important;
+}
+
+.mo-order-option strong,
+.mo-order-option span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.mo-order-option span:last-child { text-align: right; }
+
+.mo-message {
+    flex: 0 0 auto;
+    margin: 0;
+    border-width: 0 0 1px;
+}
+
+.mo-lines-workspace {
+    min-height: 0;
+    flex: 1;
+    overflow: auto;
+    background: #fff;
+}
+
+.mo-lines-grid { width: 100%; }
+
+.mo-lines-grid th { position: sticky; top: 0; z-index: 1; }
+
+.mo-lines-grid th:nth-child(1) { width: 29%; }
+
+.mo-lines-grid th:nth-child(2) { width: 19%; }
+
+.mo-lines-grid th:nth-child(3) { width: 11%; }
+
+.mo-lines-grid th:nth-child(4) { width: 12%; }
+
+.mo-lines-grid th:nth-child(5) { width: 10%; }
+
+.mo-lines-grid th:nth-child(6) { width: 7%; }
+
+.mo-lines-grid th:nth-child(7) { width: 12%; }
+
+.mo-lines-grid td:nth-child(n/**/+3) { text-align: right; }
+
+.mo-lines-grid td { min-height: 31px; }
+
+.mo-fg-row td {
+    background: #e8edf2;
+    color: var(--tt-primary);
+    text-align: left !important;
+}
+
+.mo-fg-row span {
+    margin-left: 14px;
+    color: var(--tt-muted);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.mo-qty-input {
+    width: 100%;
+    min-width: 105px;
+    min-height: 27px;
+    margin: 0;
+    border: 1px solid #9aa8b6;
+    border-radius: 0;
+    padding: 3px 6px;
+    background: #fff;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+}
+
+.mo-footer-fields {
+    flex: 0 0 auto;
+    display: grid;
+    gap: 9px;
+    padding: 9px 12px;
+    border-top: 1px solid var(--tt-border);
+    background: var(--tt-paper);
+}
+
+.mo-footer-fields label {
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+}
+
+.mo-footer-fields label > input,
+.mo-footer-fields label > select,
+.mo-footer-fields label > textarea { margin-top: 0; }
+
+.mo-footer-fields select { max-width: 180px; }
+
+.mo-footer-fields textarea { min-height: 54px; resize: vertical; }
+
+.mo-save-actions {
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 7px 12px;
+    border-top: 1px solid var(--tt-border);
+    background: #dfe6ed;
+}
+
+.mo-save-actions span {
+    margin-left: auto;
+    color: var(--tt-muted);
+    font-size: 12px;
+}
+
+@media (max-width: 920px) {
+.mo-form-heading { align-items: stretch; flex-direction: column; }
+
+.mo-heading-fields,
+.mo-master-fields { grid-template-columns: 1fr; }
+
+.mo-order-lookup-panel { width: 100% !important; }
+
+.mo-order-lookup-head,
+.mo-order-option { grid-template-columns: minmax(120px, 1fr) 105px minmax(100px, .8fr) 90px; }
+}
+
+/* v0.5 Build 1.6 — Material Out wider canvas and GST/e-Way Bill modal */
+
+.mo-eway-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(19, 32, 45, .58);
+}
+
+.mo-eway-dialog {
+    width: min(980px, calc(100vw - 48px));
+    max-height: calc(100vh - 48px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.mo-eway-body {
+    overflow: auto;
+    padding: 12px 16px 16px;
+    background: #f7f5ec;
+}
+
+.mo-eway-section {
+    margin-bottom: 12px;
+    padding: 10px 12px 12px;
+    border: 1px solid #b7c1ca;
+    background: #fff;
+}
+
+.mo-eway-section h3 {
+    margin: 0 0 9px;
+    color: var(--tt-primary);
+    text-align: center;
+    font-size: 13px;
+}
+
+.mo-eway-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 7px 14px;
+}
+
+.mo-eway-grid.two-column { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.mo-eway-party-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.mo-eway-grid label {
+    display: grid;
+    grid-template-columns: minmax(135px, 42%) minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    color: #33465a;
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.mo-eway-grid input,
+.mo-eway-grid select {
+    width: 100%;
+    min-height: 29px;
+    border: 1px solid #9aa8b6;
+    border-radius: 0;
+    padding: 4px 6px;
+    background: #fff;
+}
+
+.mo-eway-grid input:focus,
+.mo-eway-grid select:focus {
+    background: var(--tt-focus);
+    outline: 1px solid #b7791f;
+}
+
+@media (max-width: 820px) {
+.mo-eway-party-columns,
+.mo-eway-grid.two-column { grid-template-columns: 1fr; }
+}
+
+/* v0.5 Build 1.8: editable Material Out rate */
+
+.mo-rate-input {
+    width: 100%;
+    min-width: 84px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* v0.5 Build 1.9 — Material Out list and modal stabilization */
+
+.mo-list-grid { flex: 1; min-height: 0; overflow: auto; margin: 0 -12px; }
+
+.mo-list-grid table { min-width: 1120px; }
+
+.mo-list-grid .selected { background: var(--tt-selection, #2b5b84); color: #fff; }
+
+.mo-list-grid .selected td,
+.mo-list-grid .selected strong { color: #fff; }
+
+/* v0.5 Build 2.1 — JWO component valuation and JWO-style Material Out proportions */
+
+.mo-voucher-page { max-width: 1180px; width: min(1180px, calc(100vw - 28px)); }
+
+.mo-form-heading { min-height: 54px; padding: 7px 11px; }
+
+.mo-heading-fields { grid-template-columns: 145px 185px; gap: 12px; }
+
+.mo-master-fields {
+    grid-template-columns: minmax(330px, 430px) minmax(300px, 355px);
+    gap: 8px 24px;
+    padding: 9px 11px 10px;
+}
+
+.mo-master-fields label { max-width: 355px; }
+
+.mo-master-fields .mo-party-field { max-width: 430px; }
+
+.mo-master-fields .mo-order-field { max-width: 330px; }
+
+.mo-order-lookup-panel { width: min(470px, calc(100vw - 90px)) !important; max-width: 470px !important; }
+.master-pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .75rem;
+    padding: .4rem;
+    white-space: nowrap;
+}
+
+/* v0.5.3 — Modern shared voucher workspace
+   Inspired by the calm document hierarchy used by mature ERP form screens,
+   while retaining TexTrack's compact keyboard-first layout and navy identity. */
+.voucher-shell {
+    --voucher-modern-canvas: #f3f6fa;
+    --voucher-modern-paper: #ffffff;
+    --voucher-modern-border: #d6dee8;
+    --voucher-modern-border-strong: #b7c3d1;
+    --voucher-modern-head: #eaf0f7;
+    --voucher-modern-text: #172033;
+    --voucher-modern-muted: #627086;
+    --voucher-modern-blue: #173b67;
+    --voucher-modern-focus: #fff3c4;
+    --voucher-modern-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px rgba(15, 23, 42, .06);
+}
+
+.voucher-shell .tt-voucher-entry {
+    background: var(--voucher-modern-canvas) !important;
+    color: var(--voucher-modern-text) !important;
+}
+
+.voucher-shell .tt-voucher-entry > .tt-voucher-titlebar,
+.voucher-shell .tt-voucher-entry > .jwo-form-heading,
+.voucher-shell .tt-voucher-entry > .mo-form-heading {
+    min-height: 44px !important;
+    height: 44px !important;
+    padding: 7px 18px !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--voucher-modern-border) !important;
+    background: var(--voucher-modern-paper) !important;
+    box-shadow: 0 1px 0 rgba(15, 23, 42, .03);
+}
+
+.voucher-shell .tt-voucher-entry .tt-voucher-title,
+.voucher-shell .tt-voucher-entry .jwo-form-heading strong,
+.voucher-shell .tt-voucher-entry .mo-form-heading strong {
+    color: var(--tt-deep) !important;
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    letter-spacing: -.01em !important;
+    text-transform: none !important;
+}
+
+.voucher-shell .tt-voucher-entry .tt-voucher-day,
+.voucher-shell .tt-voucher-entry .jwo-form-heading span,
+.voucher-shell .tt-voucher-entry .mo-form-heading span {
+    color: var(--voucher-modern-muted) !important;
+}
+
+.voucher-shell .tt-voucher-entry .tally-master-fields,
+.voucher-shell .tt-voucher-entry .panel-light {
+    margin: 10px 14px 8px !important;
+    padding: 10px 14px !important;
+    border: 1px solid var(--voucher-modern-border) !important;
+    border-radius: 7px !important;
+    background: var(--voucher-modern-paper) !important;
+    box-shadow: var(--voucher-modern-shadow) !important;
+}
+
+.voucher-shell .tt-voucher-entry .tally-field,
+.voucher-shell .tt-voucher-entry .tt-voucher-field {
+    min-height: 30px;
+}
+
+.voucher-shell .tt-voucher-entry .tally-field > span,
+.voucher-shell .tt-voucher-entry .tt-voucher-field > label {
+    color: var(--voucher-modern-muted) !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    letter-spacing: .01em;
+}
+
+.voucher-shell .tt-voucher-entry input:not([type="checkbox"]):not([type="radio"]),
+.voucher-shell .tt-voucher-entry select,
+.voucher-shell .tt-voucher-entry textarea {
+    min-height: 27px !important;
+    border: 1px solid var(--voucher-modern-border-strong) !important;
+    border-radius: 5px !important;
+    background: #fff !important;
+    color: var(--voucher-modern-text) !important;
+    box-shadow: inset 0 1px 1px rgba(15, 23, 42, .025);
+}
+
+.voucher-shell .tt-voucher-entry input[readonly],
+.voucher-shell .tt-voucher-entry input:disabled,
+.voucher-shell .tt-voucher-entry select:disabled,
+.voucher-shell .tt-voucher-entry textarea:disabled {
+    border-color: #dbe2ea !important;
+    background: #f1f4f8 !important;
+    color: #526176 !important;
+    box-shadow: none;
+}
+
+.voucher-shell .tt-voucher-entry input:focus,
+.voucher-shell .tt-voucher-entry select:focus,
+.voucher-shell .tt-voucher-entry textarea:focus {
+    border-color: var(--voucher-modern-blue) !important;
+    outline: 2px solid rgba(23, 59, 103, .18) !important;
+    outline-offset: 0 !important;
+    background: var(--voucher-modern-focus) !important;
+    color: #111827 !important;
+    box-shadow: 0 0 0 1px rgba(23, 59, 103, .06) !important;
+}
+
+.voucher-shell .tt-voucher-entry .jwo-lines-workspace,
+.voucher-shell .tt-voucher-entry .mo-lines-workspace,
+.voucher-shell .tt-voucher-entry .mi-workspace,
+.voucher-shell .tt-voucher-entry .mi-empty-state,
+.voucher-shell .tt-voucher-entry .tally-grid,
+.voucher-shell .tt-voucher-entry .erp-table {
+    border-color: var(--voucher-modern-border) !important;
+    background: var(--voucher-modern-paper) !important;
+}
+
+.voucher-shell .tt-voucher-entry .jwo-lines-workspace,
+.voucher-shell .tt-voucher-entry .mo-lines-workspace,
+.voucher-shell .tt-voucher-entry .mi-workspace,
+.voucher-shell .tt-voucher-entry .mi-empty-state {
+    margin-right: 14px !important;
+    margin-left: 14px !important;
+    overflow: auto;
+    border: 1px solid var(--voucher-modern-border) !important;
+    border-radius: 7px !important;
+    box-shadow: var(--voucher-modern-shadow);
+}
+
+.voucher-shell .tt-voucher-entry table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+}
+
+.voucher-shell .tt-voucher-entry table th {
+    height: 31px !important;
+    padding: 5px 9px !important;
+    border-color: #d5dee9 !important;
+    background: var(--voucher-modern-head) !important;
+    color: #34445a !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    letter-spacing: .025em;
+}
+
+.voucher-shell .tt-voucher-entry table td {
+    padding: 4px 8px !important;
+    border-color: #e1e7ef !important;
+    background: #fff !important;
+    color: var(--voucher-modern-text) !important;
+}
+
+.voucher-shell .tt-voucher-entry table tbody tr:hover td,
+.voucher-shell .tt-voucher-entry table tbody tr:focus-within td {
+    background: #f7faff !important;
+}
+
+.voucher-shell .tt-voucher-entry .erp-lookup-panel {
+    overflow: hidden;
+    border: 1px solid #8fa0b4 !important;
+    border-radius: 6px !important;
+    background: #fff !important;
+    box-shadow: 0 12px 30px rgba(9, 20, 38, .20) !important;
+}
+
+.voucher-shell .tt-voucher-entry .erp-lookup-panel button {
+    min-height: 32px;
+    padding: 6px 10px !important;
+    border-bottom-color: #e2e8f0 !important;
+    background: #fff !important;
+    color: var(--voucher-modern-text) !important;
+}
+
+.voucher-shell .tt-voucher-entry .erp-lookup-panel button:focus,
+.voucher-shell .tt-voucher-entry .erp-lookup-panel button.keyboard-selected,
+.voucher-shell .tt-voucher-entry .erp-lookup-panel button.lookup-selected {
+    background: var(--voucher-modern-blue) !important;
+    color: #fff !important;
+}
+
+.voucher-shell .tt-voucher-entry .erp-lookup-panel button:focus *,
+.voucher-shell .tt-voucher-entry .erp-lookup-panel button.keyboard-selected *,
+.voucher-shell .tt-voucher-entry .erp-lookup-panel button.lookup-selected * {
+    color: #fff !important;
+}
+
+.voucher-shell .tt-voucher-entry .form-message {
+    margin: 8px 14px 0 !important;
+    padding: 7px 10px !important;
+    border-radius: 6px !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+
+.voucher-shell .tt-voucher-entry .jwo-narration-section,
+.voucher-shell .tt-voucher-entry .mi-narration-section,
+.voucher-shell .tt-voucher-entry .mo-narration-section {
+    margin-right: 14px !important;
+    margin-left: 14px !important;
+    border-color: var(--voucher-modern-border) !important;
+    background: var(--voucher-modern-paper) !important;
+}
+
+.voucher-shell .tt-voucher-entry .jwo-footer-command,
+.voucher-shell .tt-voucher-entry .mi-footer-command,
+.voucher-shell .tt-voucher-entry .mo-footer-command,
+.voucher-shell .tt-voucher-entry .tt-voucher-actionbar button {
+    border-radius: 5px !important;
+}
+
+.voucher-shell .tt-dialog,
+.voucher-shell .component-allocation-window {
+    overflow: hidden;
+    border: 1px solid #9aa9ba !important;
+    border-radius: 8px !important;
+    background: #fff;
+    box-shadow: 0 22px 60px rgba(9, 20, 38, .28) !important;
+}
+
+@media (max-width: 900px) {
+    .voucher-shell .tt-voucher-entry .tally-master-fields,
+    .voucher-shell .tt-voucher-entry .panel-light,
+    .voucher-shell .tt-voucher-entry .jwo-lines-workspace,
+    .voucher-shell .tt-voucher-entry .mo-lines-workspace,
+    .voucher-shell .tt-voucher-entry .mi-workspace,
+    .voucher-shell .tt-voucher-entry .mi-empty-state {
+        margin-right: 8px !important;
+        margin-left: 8px !important;
+    }
+}

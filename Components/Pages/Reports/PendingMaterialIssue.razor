@@ -1,0 +1,253 @@
+@page "/reports/job-work/pending-material-issue"
+@attribute [Authorize(Policy = SecurityPolicies.ViewReports)]
+@inject OperationalReportingService Reporting
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject GlobalOperationState GlobalOperations
+
+<PageTitle>Pending Material Issue</PageTitle>
+
+<div id="pending-material-issue-root" class="pmi-page page-card tt-report-natural-flow" tabindex="0" data-keyboard-list-root="true"
+     @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="pending-material-issue" RootElementId="pending-material-issue-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="false" InitialFocusTarget="@(showReport ? "pending-material-report" : "pending-material-jobber")" />
+
+    <header class="pmi-titlebar">
+        <div><p>JOB WORK REPORTS</p><h1>Pending Material Issue Report</h1><small>Outstanding component requirements from Job Work Out Orders</small></div>
+        @if (showReport)
+        { <button type="button" @onclick="OpenFilters">F4 Filters</button> }
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    { <p class="notice notice-error">@message</p> }
+
+    @if (!showReport)
+    {
+        <section class="pmi-filter-page" data-enter-navigation="true" aria-label="Pending Material Issue filters">
+            <h2>Report Filters</h2>
+            <label><span>Search by Jobber</span>
+                <div class="lookup-field">
+                    <input id="pending-material-jobber" data-erp-lookup="true" data-tt-related-master="/masters/ledgers" data-tt-filter-input="true" autocomplete="off"
+                           value="@jobWorkerText" @onfocus='() => OpenLookup("jobber")' @onblur="CloseLookup"
+                           @oninput="JobWorkerChanged" placeholder="Leave blank for all Jobbers" />
+                    @if (activeLookupKey == "jobber")
+                    {
+                        <div class="erp-lookup-panel">
+                            @foreach (var row in FilterJobWorkers())
+                            { <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectJobWorker(row)"><strong>@row.Name</strong></button> }
+                            @if (!FilterJobWorkers().Any()) { <div class="erp-lookup-empty">No matching Jobber</div> }
+                        </div>
+                    }
+                </div>
+            </label>
+            <label><span>Issue Status</span>
+                <div class="lookup-field">
+                    <input id="pending-material-status" data-erp-lookup="true" data-tt-filter-input="true" autocomplete="off"
+                           value="@statusText" @onfocus='() => OpenLookup("status")' @onblur="CloseLookup"
+                           @oninput="StatusChanged" placeholder="Leave blank for all outstanding" />
+                    @if (activeLookupKey == "status")
+                    {
+                        <div class="erp-lookup-panel">
+                            @foreach (var option in FilterStatuses())
+                            { <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectStatus(option.Value)"><strong>@option.Text</strong></button> }
+                            @if (!FilterStatuses().Any()) { <div class="erp-lookup-empty">No matching status</div> }
+                        </div>
+                    }
+                </div>
+            </label>
+            <p class="pmi-filter-note">No filter shows every fully pending and partially issued material requirement.</p>
+            <div class="pmi-filter-actions">
+                <button type="button" @onclick="ClearFilters">Clear</button>
+                <button id="pending-material-show-report" type="button" class="primary" data-enter-save="true" @onclick="ApplyFilters" disabled="@loading"><span>Alt+S</span> Show Report</button>
+            </div>
+        </section>
+        <p class="pmi-help">Enter Next Field · Alt+S Show Report · Esc Back</p>
+    }
+    else
+    {
+        <div id="pending-material-report" class="pmi-report-root" tabindex="-1">
+            <div class="pmi-summary">
+                Jobber: @JobWorkerSummary · Status: @StatusSummary · @report.Orders.Count outstanding order(s)
+            </div>
+
+            @if (loading) { <p class="pmi-empty">Loading pending material issues…</p> }
+            else if (report.Orders.Count == 0) { <p class="pmi-empty">No outstanding material requirements match the selected filters.</p> }
+            else
+            {
+                <div class="pmi-order-page">
+                    @foreach (var order in VisibleOrders)
+                    {
+                        <section id="@order.RowKey" tabindex="-1" @key="order.RowKey"
+                                 class="pmi-order @(selectedOrderId == order.JwoVoucherId ? "selected" : null)"
+                                 @onclick="() => SelectOrder(order.JwoVoucherId)" @ondblclick="OpenSelectedOrder">
+                            <header>
+                                <a href="@VoucherUrl(order.JwoVoucherId)">JWO @order.JwoNumber</a>
+                                <span>@order.JwoDate.ToString("dd-MM-yyyy")</span>
+                                <span>BATCH @Display(order.Batch)</span>
+                                <span>JOBBER @Display(order.JobWorkerName)</span>
+                            </header>
+                            <table class="data-grid" data-tt-filter-key="pending-material-@order.JwoVoucherId">
+                                <thead><tr><th>Finished Good</th><th>Component Item</th><th>Required Qty</th><th>Issued Qty</th><th>Pending Qty</th><th>UQC</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    @foreach (var component in order.Components)
+                                    {
+                                        <tr><td>@component.FinishedGoodName</td><td><strong>@component.ComponentName</strong></td>
+                                            <td>@Qty(component.RequiredQuantity)</td><td>@Qty(component.IssuedQuantity)</td><td>@Qty(component.PendingQuantity)</td>
+                                            <td>@component.UqcName</td><td><span class="pmi-status @(component.IssuedQuantity <= 0 ? "fully" : "partial")">@component.IssueStatus</span></td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                            <footer><span>Required <b>@RequiredTotals(order.Components)</b></span><span>Issued <b>@IssuedTotals(order.Components)</b></span><span>Pending <b>@PendingTotals(order.Components)</b></span></footer>
+                        </section>
+                    }
+                </div>
+                <footer class="pmi-grand-totals"><span>Total Required <b>@RequiredTotals(AllComponents)</b></span><span>Total Issued <b>@IssuedTotals(AllComponents)</b></span><span>Total Pending <b>@PendingTotals(AllComponents)</b></span></footer>
+                @if (TotalPages > 1)
+                {
+                    <nav class="pmi-pagination">
+                        <button type="button" @onclick="PreviousPage" disabled="@(pageIndex == 0)">Previous</button>
+                        <span>Page @(pageIndex + 1) of @TotalPages</span>
+                        <button type="button" @onclick="NextPage" disabled="@(pageIndex >= TotalPages - 1)">Next</button>
+                    </nav>
+                }
+            }
+            <p class="pmi-help">↑/↓ Select · Enter Open JWO · PgUp/PgDn Page · F4 Filters · Esc Filters</p>
+        </div>
+    }
+</div>
+
+@code {
+    private const int PageSize = 7;
+    private static readonly (PendingMaterialIssueStatusFilter Value, string Text)[] StatusOptions =
+    {
+        (PendingMaterialIssueStatusFilter.All, "All Outstanding"),
+        (PendingMaterialIssueStatusFilter.PartiallyIssued, "Partially Issued"),
+        (PendingMaterialIssueStatusFilter.FullyPending, "Fully Pending")
+    };
+
+    [SupplyParameterFromQuery(Name = "view")] public string? InitialView { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? InitialPage { get; set; }
+    [SupplyParameterFromQuery(Name = "jobWorkerId")] public long? InitialJobWorkerId { get; set; }
+    [SupplyParameterFromQuery(Name = "jobWorker")] public string? InitialJobWorker { get; set; }
+    [SupplyParameterFromQuery(Name = "status")] public string? InitialStatus { get; set; }
+
+    private OperationalReportLookups lookups = new();
+    private PendingMaterialIssueFilter filter = new();
+    private PendingMaterialIssueReport report = new();
+    private bool showReport, loading;
+    private string message = string.Empty;
+    private string jobWorkerText = string.Empty;
+    private string statusText = string.Empty;
+    private string? activeLookupKey;
+    private string? pendingFocusId;
+    private long? selectedOrderId;
+    private int pageIndex;
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(report.Orders.Count / (decimal)PageSize));
+    private IReadOnlyList<PendingMaterialIssueOrderRow> VisibleOrders => report.Orders.Skip(pageIndex * PageSize).Take(PageSize).ToList();
+    private IEnumerable<PendingMaterialIssueComponentRow> AllComponents => report.Orders.SelectMany(x => x.Components);
+    private string JobWorkerSummary => filter.JobWorkerId is null ? (string.IsNullOrWhiteSpace(filter.JobWorker) ? "All" : filter.JobWorker) : lookups.JobWorkers.FirstOrDefault(x => x.Id == filter.JobWorkerId)?.Name ?? "All";
+    private string StatusSummary => StatusOptions.First(x => x.Value == filter.Status).Text;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var operation = GlobalOperations.Begin("Opening Pending Material Issue report…");
+        lookups = await Reporting.GetLookupsAsync();
+        if (!string.Equals(InitialView, "report", StringComparison.OrdinalIgnoreCase)) return;
+        filter.JobWorkerId = InitialJobWorkerId;
+        filter.JobWorker = InitialJobWorker ?? string.Empty;
+        if (Enum.TryParse<PendingMaterialIssueStatusFilter>(InitialStatus, true, out var status)) filter.Status = status;
+        SyncFilterTexts();
+        await ApplyFilters();
+        pageIndex = Math.Clamp(InitialPage ?? 0, 0, TotalPages - 1);
+        RestoreSelection();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (pendingFocusId is null) return;
+        var id = pendingFocusId;
+        pendingFocusId = null;
+        await JS.InvokeVoidAsync("texTrackFocusById", id);
+    }
+
+    private async Task ApplyFilters()
+    {
+        using var operation = GlobalOperations.Begin("Opening Pending Material Issue report…");
+        loading = true; message = string.Empty; activeLookupKey = null;
+        try
+        {
+            report = await Reporting.GetPendingMaterialIssuesAsync(filter);
+            pageIndex = 0; showReport = true; RestoreSelection();
+        }
+        catch (Exception ex) { message = ex.GetBaseException().Message; report = new(); }
+        finally { loading = false; }
+        pendingFocusId = "pending-material-report";
+    }
+
+    private void OpenFilters() { showReport = false; activeLookupKey = null; SyncFilterTexts(); pendingFocusId = "pending-material-jobber"; }
+    private void ClearFilters() { filter = new(); jobWorkerText = string.Empty; statusText = string.Empty; activeLookupKey = null; pendingFocusId = "pending-material-jobber"; }
+    private void OpenLookup(string key) => activeLookupKey = key;
+    private void CloseLookup(FocusEventArgs _) => activeLookupKey = null;
+    private IEnumerable<LookupItem> FilterJobWorkers() => lookups.JobWorkers.Where(x => string.IsNullOrWhiteSpace(jobWorkerText) || x.Name.Contains(jobWorkerText.Trim(), StringComparison.OrdinalIgnoreCase)).Take(15);
+    private IEnumerable<(PendingMaterialIssueStatusFilter Value, string Text)> FilterStatuses() => StatusOptions.Where(x => string.IsNullOrWhiteSpace(statusText) || x.Text.Contains(statusText.Trim(), StringComparison.OrdinalIgnoreCase));
+    private void JobWorkerChanged(ChangeEventArgs e) { jobWorkerText = Convert.ToString(e.Value) ?? string.Empty; filter.JobWorkerId = null; filter.JobWorker = jobWorkerText; activeLookupKey = "jobber"; }
+    private void StatusChanged(ChangeEventArgs e) { statusText = Convert.ToString(e.Value) ?? string.Empty; if (string.IsNullOrWhiteSpace(statusText)) filter.Status = PendingMaterialIssueStatusFilter.All; activeLookupKey = "status"; }
+    private void SelectJobWorker(LookupItem row) { filter.JobWorkerId = row.Id; filter.JobWorker = string.Empty; jobWorkerText = row.Name; CloseLookupAndFocus("pending-material-status"); }
+    private void SelectStatus(PendingMaterialIssueStatusFilter status) { filter.Status = status; statusText = status == PendingMaterialIssueStatusFilter.All ? string.Empty : StatusOptions.First(x => x.Value == status).Text; CloseLookupAndFocus("pending-material-show-report"); }
+    private void CloseLookupAndFocus(string id) { activeLookupKey = null; pendingFocusId = id; }
+    private void SyncFilterTexts() { jobWorkerText = filter.JobWorkerId is null ? filter.JobWorker : lookups.JobWorkers.FirstOrDefault(x => x.Id == filter.JobWorkerId)?.Name ?? string.Empty; statusText = filter.Status == PendingMaterialIssueStatusFilter.All ? string.Empty : StatusOptions.First(x => x.Value == filter.Status).Text; }
+
+    private void RestoreSelection() { var ids = VisibleOrders.Select(x => x.JwoVoucherId).ToList(); if (selectedOrderId is null || !ids.Contains(selectedOrderId.Value)) selectedOrderId = ids.FirstOrDefault(); }
+    private void SelectOrder(long id) => selectedOrderId = id;
+    private async Task Move(int delta)
+    {
+        var ids = VisibleOrders.Select(x => x.JwoVoucherId).ToList(); if (ids.Count == 0) return;
+        var index = selectedOrderId is null ? -1 : ids.IndexOf(selectedOrderId.Value);
+        var next = index < 0 ? (delta > 0 ? 0 : ids.Count - 1) : Math.Clamp(index + delta, 0, ids.Count - 1);
+        if (next == index) return; selectedOrderId = ids[next];
+        await JS.InvokeVoidAsync("texTrackScrollRowIntoView", $"pending-material-order-{selectedOrderId}", "pending-material-report");
+    }
+    private void PreviousPage() { pageIndex = Math.Max(0, pageIndex - 1); RestoreSelection(); }
+    private void NextPage() { pageIndex = Math.Min(TotalPages - 1, pageIndex + 1); RestoreSelection(); }
+    private void OpenSelectedOrder() { if (selectedOrderId is not null) Navigation.NavigateTo(VoucherUrl(selectedOrderId.Value)); }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (!showReport)
+        {
+            if (e.Key == "Escape" && activeLookupKey is not null) { activeLookupKey = null; return; }
+            if (e.AltKey && string.Equals(e.Key, "s", StringComparison.OrdinalIgnoreCase)) { await ApplyFilters(); return; }
+            if (e.Key == "Escape") await JS.InvokeVoidAsync("texTrackLeaveCurrentPage", "reports", "reports-child-0-5");
+            return;
+        }
+        if (e.Key is "ArrowDown" or "Down") { await Move(1); return; }
+        if (e.Key is "ArrowUp" or "Up") { await Move(-1); return; }
+        if (e.Key == "Enter") { OpenSelectedOrder(); return; }
+        if (e.Key == "PageDown") { NextPage(); return; }
+        if (e.Key == "PageUp") { PreviousPage(); return; }
+        if (e.Key == "Home") { pageIndex = 0; RestoreSelection(); return; }
+        if (e.Key == "End") { pageIndex = TotalPages - 1; RestoreSelection(); return; }
+        if (e.Key is "F4" or "Escape") OpenFilters();
+    }
+
+    private string VoucherUrl(long voucherId) => $"/vouchers/job-work-out-order?voucherId={voucherId}&returnUrl={Uri.EscapeDataString(BuildReturnUrl())}";
+    private string BuildReturnUrl()
+    {
+        var values = new List<string> { "view=report", $"page={pageIndex}", $"status={filter.Status}" };
+        if (filter.JobWorkerId is not null) values.Add($"jobWorkerId={filter.JobWorkerId}");
+        else if (!string.IsNullOrWhiteSpace(filter.JobWorker)) values.Add($"jobWorker={Uri.EscapeDataString(filter.JobWorker)}");
+        return $"/reports/job-work/pending-material-issue?{string.Join("&", values)}";
+    }
+    private static string UqcTotals(IEnumerable<PendingMaterialIssueComponentRow> rows, Func<PendingMaterialIssueComponentRow, decimal> selector)
+    {
+        var totals = rows.GroupBy(x => x.UqcName, StringComparer.OrdinalIgnoreCase).Select(x => $"{x.Sum(selector):0.####} {x.Key}".Trim()).ToList();
+        return totals.Count == 0 ? "—" : string.Join(" · ", totals);
+    }
+    private static string RequiredTotals(IEnumerable<PendingMaterialIssueComponentRow> rows) => UqcTotals(rows, x => x.RequiredQuantity);
+    private static string IssuedTotals(IEnumerable<PendingMaterialIssueComponentRow> rows) => UqcTotals(rows, x => x.IssuedQuantity);
+    private static string PendingTotals(IEnumerable<PendingMaterialIssueComponentRow> rows) => UqcTotals(rows, x => x.PendingQuantity);
+    private static string Qty(decimal value) => value.ToString("0.####");
+    private static string Display(string value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+}

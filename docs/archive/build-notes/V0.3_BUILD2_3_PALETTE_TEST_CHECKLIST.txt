@@ -1,0 +1,18 @@
+TEXTRACK ERP v0.3 BUILD 2.3 - PROFESSIONAL NAVY PALETTE TEST
+================================================================
+
+No database migration is included. Existing data must remain unchanged.
+
+1. Start TexTrack and confirm footer: v0.3 Build 2.3 Professional Navy.
+2. Confirm the top application shell is deep navy and does not wrap or overlap.
+3. Open Masters with Alt+M and verify the selected menu row has strong contrast.
+4. Open Ledger Groups and navigate using Up/Down, Page Up/Down, Home and End.
+5. Confirm selected rows remain visible and use the blue selection colour.
+6. Create or edit a Ledger and press Enter through every field to the Save button.
+7. Open Stock Items and confirm HSN remains optional.
+8. Confirm focused fields show the amber highlight and remain clearly readable.
+9. Confirm success, warning and error messages remain readable.
+10. Restart TexTrack and verify saved data is unchanged.
+
+Acceptance rule: only colours may differ from Build 2.2. Layout, spacing,
+keyboard flow, database behavior and business rules must remain identical.

@@ -1,0 +1,132 @@
+TexTrack ERP v0.5 Build 2.7 — Production Reporting Foundation
+================================================================
+
+AUTHORITATIVE BASE
+------------------
+TexTrack_ERP_v0.5_Build2_6B1_MATERIAL_IN_AUTO_CONSUMPTION_FULL.zip
+Base size: 9,975,297 bytes
+Base SHA-256: 101CFC680554A0B9D59F89482B6A253048687BBD6FDA514C6D5397CB2848C069
+
+SOURCE INSPECTION AND RELATION MAP
+----------------------------------
+The reporting layer uses the existing ID-based production chain:
+- vouchers.party_ledger_id -> ledgers.id (Job Worker)
+- job_work_order_finished_goods.voucher_id -> vouchers.id
+- job_work_order_size_allocations.finished_good_id -> job_work_order_finished_goods.id
+- job_work_order_size_allocations.stock_item_variant_id -> stock_item_variants.id
+- job_work_order_components.finished_good_id -> job_work_order_finished_goods.id
+- material_out_lines.jwo_voucher_id / jwo_finished_good_id / jwo_component_id
+- material_in_details.jwo_voucher_id
+- material_in_finished_goods.jwo_finished_good_id
+- material_in_fg_allocations.finished_good_line_id / stock_item_variant_id
+- material_in_consumptions.jwo_component_id
+- material_in_mo_allocations.consumption_line_id / material_out_line_id
+- stock_movements link actual MI/MO lines, but reports do not substitute current stock for historical production facts.
+
+A valid source voucher is one whose Status is not Cancelled. Deleted rows are absent.
+Job Worker and item names are projected at query time from stable IDs, so renames preserve history.
+
+REPORT FORMULAS
+---------------
+1. Pending Finished Goods
+   JWO variant allocation ordered quantity - valid MI variant allocation received quantity.
+   For a JWO FG without size allocations, JWO FG ordered quantity - valid MI FG received quantity.
+
+2. Material Dispatch Outstanding
+   Exact JWO component required quantity - sum of valid MO lines linked by jwo_component_id.
+   Negative pending is retained and labelled Excess Issued.
+
+3. Material Consumption Balance
+   Sum of valid MO issued quantity/value - sum of valid MI-to-MO allocation quantity/value snapshots.
+   Current stock balance is never used as a substitute.
+
+4. Job Worker T-Format
+   Left side reconciles to Report 3.
+   Right side reconciles to Report 1 and expands every JWO FG/variant row.
+   Stored MI process charge, material value and final FG value are aggregated once per JWO FG.
+
+QUERY/PERFORMANCE DESIGN
+------------------------
+- One shared ProductionReportingService and shared filter/DTO layer.
+- EF Core AsNoTracking projections; no row-by-row repository calls and no N+1 master lookups.
+- Server-side date/master/text filters and server-side pagination (default 100, bounded 25–200).
+- Stale UI loads are cancelled with CancellationTokenSource.
+- Default report range is 90 days.
+- Pending FG and dispatch default to pending-only.
+- Consumption and T-format include zero/reconciled balances.
+- Exact JWO ID is used for drill-down, avoiding contains-match ambiguity.
+- Active company and financial year scope is applied to list and movement queries.
+
+MIGRATIONS AND INDEXES
+----------------------
+No migration was added. The actual highest source migration is 013_material_in_foundation.sql.
+Existing indexes already cover the report joins and primary filters, including:
+- vouchers(company_id, voucher_date)
+- vouchers(company_id, party_ledger_id, status)
+- material_out_lines(jwo_voucher_id, jwo_component_id, voucher_id)
+- material_in_details(jwo_voucher_id, voucher_id)
+- material_in_finished_goods(jwo_finished_good_id, voucher_id)
+- material_in_fg_allocations(stock_item_variant_id, finished_good_line_id)
+- material_in_consumptions(jwo_component_id, voucher_id)
+- material_in_mo_allocations(material_out_line_id, consumption_line_id)
+No speculative index or schema change was justified.
+
+UI AND KEYBOARD
+---------------
+Routes:
+- /reports/pending-finished-goods
+- /reports/material-dispatch-outstanding
+- /reports/material-consumption-balance
+- /reports/job-worker-t-format
+
+All four routes use one shared Razor component and the frozen KeyboardContextScope.
+No page-specific JavaScript listener was added.
+Up/Down, PgUp/PgDn, Home/End, Enter, Esc and F4 are implemented.
+Enter opens an in-report read-only linked JWO or movement drill-down.
+Esc restores the exact originating row and scroll target.
+Alt+D remains globally consumed with no report delete action.
+Reports menu supports mouse, arrows, Enter and Alt+R.
+No global CSS was changed.
+
+EXACT CHANGED FILES
+-------------------
+Changed:
+- Program.cs
+- Components/Layout/MainLayout.razor
+- Tests/TexTrack.Web.IntegrationTests/StockItemUqcImmutabilityTests.cs
+
+Added:
+- Models/ProductionReportingModels.cs
+- Services/ProductionReportingService.cs
+- Components/Pages/Reports/ProductionReports.razor
+- Tests/TexTrack.Web.IntegrationTests/ProductionReportingTests.cs
+- Tests/JavaScript/production-reports.test.cjs
+- Tests/JavaScript/production-reports.browser.cjs
+- BUILD_2_7_PRODUCTION_REPORTING_FOUNDATION.txt
+- BUILD_2_7_TEST_CHECKLIST.txt
+
+FROZEN AREAS
+------------
+No changes were made to JWO/MO/MI save or posting code, automatic consumption,
+voucher numbering, repositories (other than adding the new read-only reporting service),
+stock posting, global keyboard JavaScript/framework, existing migrations, UQC,
+master business rules, CSS, .NET version, or NuGet versions.
+
+KNOWN LIMITATIONS / DEFERRED ITEMS
+----------------------------------
+- The current schema has no component variant/colour/size ID on JWO component,
+  Material Out line or Material In consumption. Component colour and size therefore
+  display N/A; the report does not invent name-based variant matches. FG colour/size
+  remains exact through stock_item_variant_id.
+- Linked JWO drill-down is a read-only in-report view because the frozen one-page JWO
+  screen has no safe ID-addressable navigation route.
+- T-format displays the newest matching JWO when filters are broad; use the JWO filter
+  to select a specific order.
+- Date range filters the originating JWO date.
+- CSV/Excel export is deferred because no approved shared export service exists.
+- The known Material Out deletion foreign-key message remains deferred and unchanged.
+- Material In alteration/deletion/cancellation/accounting posting remain deferred.
+
+FINAL VERIFICATION
+------------------
+See BUILD_2_7_TEST_CHECKLIST.txt for executed commands and results.

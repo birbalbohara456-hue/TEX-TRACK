@@ -1,0 +1,13 @@
+TexTrack ERP v0.5 Build 2.2 — Material Out Final Stabilization
+
+Scope
+- Fix JWO Component Allocation Rate typing/caret regression.
+- Preserve raw Rate text while typing; format only on blur/Enter/save validation.
+- Select the complete Rate value when the field receives focus.
+- Apply the same select-on-focus behaviour to Material Out Quantity and Rate fields.
+- Preserve JWO rate snapshot, Material Out rate prefill/editing, Amount calculation, posting, alteration, deletion and cancellation logic.
+
+Expected Rate flow
+0.00 -> focus selects all -> type 92 -> field remains 92 while typing -> Enter/blur -> 92.00.
+
+No database migration is required.

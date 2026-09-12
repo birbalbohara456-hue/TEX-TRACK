@@ -1,0 +1,115 @@
+@using TexTrack.Web.Models
+@inject TexTrackAssistant Assistant
+
+<button type="button" class="assistant-launcher" title="Open TexTrack AI (Ctrl+Space)" @onclick="ToggleAsync">AI</button>
+
+@if (open)
+{
+    <div class="assistant-shade" @onclick="Close"></div>
+    <aside class="assistant-panel" role="dialog" aria-modal="true" aria-label="TexTrack AI assistant"
+           @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+        <header>
+            <div><strong>TexTrack AI</strong><small>Read-only ERP assistant</small></div>
+            <button type="button" title="Close" @onclick="Close">×</button>
+        </header>
+        <div class="assistant-safety">Uses approved, company-scoped TexTrack data. It cannot save, alter, cancel or delete.</div>
+        <section class="assistant-thread" aria-live="polite">
+            @if (messages.Count == 0)
+            {
+                <div class="assistant-empty">
+                    Ask about stock, vouchers, pending material issues, masters or Tally XML exceptions.
+                </div>
+            }
+            @foreach (var message in messages)
+            {
+                <article class="assistant-message @message.Role">
+                    <span>@(message.Role == "user" ? "You" : "TexTrack AI")</span>
+                    <p>@message.Content</p>
+                    @if (message.Sources.Count > 0)
+                    {
+                        <nav aria-label="TexTrack sources">
+                            @foreach (var source in message.Sources)
+                            {
+                                <a href="@source.Url">@source.Label</a>
+                            }
+                        </nav>
+                    }
+                </article>
+            }
+            @if (asking) { <div class="assistant-thinking">Checking TexTrack data…</div> }
+        </section>
+        <footer>
+            <textarea @ref="questionInput" @bind="question" @bind:event="oninput" rows="3"
+                      placeholder="Ask a read-only ERP question…" disabled="@asking"></textarea>
+            <div><small>Ctrl+Enter Ask · Ctrl+Space Close</small><button type="button" @onclick="AskAsync" disabled="@(asking || string.IsNullOrWhiteSpace(question))">Ask</button></div>
+        </footer>
+    </aside>
+}
+
+@code {
+    private readonly List<PanelMessage> messages = [];
+    private ElementReference questionInput;
+    private bool open;
+    private bool asking;
+    private bool focusQuestionAfterRender;
+    private string question = string.Empty;
+
+    public async Task ToggleAsync()
+    {
+        open = !open;
+        focusQuestionAfterRender = open;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!open || !focusQuestionAfterRender) return;
+
+        focusQuestionAfterRender = false;
+        try
+        {
+            await questionInput.FocusAsync(preventScroll: true);
+        }
+        catch (InvalidOperationException)
+        {
+            // The panel may have been closed or disconnected between render
+            // and focus. Losing focus must never terminate the Blazor circuit.
+        }
+    }
+
+    private void Close()
+    {
+        focusQuestionAfterRender = false;
+        open = false;
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.CtrlKey && (e.Key == " " || e.Code == "Space")) { Close(); return; }
+        if (e.CtrlKey && e.Key == "Enter") await AskAsync();
+        else if (e.Key == "Escape") Close();
+    }
+
+    private async Task AskAsync()
+    {
+        var prompt = question.Trim();
+        if (asking || prompt.Length == 0) return;
+        messages.Add(new("user", prompt, []));
+        question = string.Empty;
+        asking = true;
+        try
+        {
+            var history = messages.TakeLast(7).Select(x => new AssistantChatMessage(x.Role, x.Content)).ToArray();
+            var answer = await Assistant.AskAsync(prompt, history);
+            messages.Add(new("assistant", answer.Content, answer.Sources));
+        }
+        finally
+        {
+            asking = false;
+            focusQuestionAfterRender = open;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private sealed record PanelMessage(string Role, string Content, IReadOnlyList<AssistantSourceLink> Sources);
+}

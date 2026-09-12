@@ -1,0 +1,15 @@
+@namespace TexTrack.Web.Components.Vouchers.Shared
+
+<footer class="tt-voucher-actionbar @Class">
+    @if (!string.IsNullOrWhiteSpace(Note))
+    {
+        <span class="tt-voucher-action-note">@Note</span>
+    }
+    <div class="tt-voucher-action-buttons">@ChildContent</div>
+</footer>
+
+@code {
+    [Parameter] public string? Note { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

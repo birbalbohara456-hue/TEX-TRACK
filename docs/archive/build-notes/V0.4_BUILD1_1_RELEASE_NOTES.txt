@@ -1,0 +1,20 @@
+TexTrack ERP v0.4 Build 1.1.1 — Razor Hotfix
+================================================
+
+This build preserves the v0.4 Build 1 voucher/database engine and refines the approved JWO workflow.
+
+CHANGES
+- Normal operating text increased to an approximately 12px baseline throughout the application.
+- New JWO Due Date defaults to Voucher Date.
+- Due Date follows Voucher Date until the user manually overrides it.
+- Job Worker, Finished Good, Colour and Component lookups are now typeable.
+- A unique partial typed match is accepted when focus advances.
+- Component entry now uses a Tally-style allocation window.
+- Enter on the final FG quantity opens Component Allocation.
+- Enter moves Component Item -> Required Quantity -> next Component line.
+- Enter on a completely blank Component line closes the allocation window.
+- Existing component allocations remain visible as a compact summary under each Finished Good.
+- Esc closes only the component allocation window first.
+
+NO DATABASE MIGRATION IS REQUIRED.
+Existing masters, Stock Items and JWO data are preserved.

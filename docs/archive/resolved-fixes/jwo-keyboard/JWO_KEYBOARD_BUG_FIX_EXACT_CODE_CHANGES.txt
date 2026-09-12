@@ -1,0 +1,336 @@
+================================================================================
+JWO COMPONENT ALLOCATION KEYBOARD BUG FIX - EXACT CODE CHANGES
+================================================================================
+
+This document contains the EXACT changes made to fix the bug.
+All files listed show the line numbers and exact modifications.
+
+================================================================================
+FILE 1: Components/App.razor
+================================================================================
+
+LOCATION: Line 353 (in the global Enter key handler)
+CHANGE TYPE: Add empty input validation check
+
+BEFORE (BUGGY):
+──────────────
+351:                // Real ERP lookup: Enter selects the keyboard-highlighted match or first visible match.
+352:                if (current.matches('[data-erp-lookup="true"]') && lookupButtons.length > 0) {
+353:                    event.preventDefault();
+354:                    event.stopPropagation();
+
+AFTER (FIXED):
+──────────────
+351:                // Real ERP lookup: Enter selects the keyboard-highlighted match or first visible match.
+352:                // But only if the input is not empty. Empty lookups should not auto-select.
+353:                if (current.matches('[data-erp-lookup="true"]') && lookupButtons.length > 0 && current.value.trim() !== '') {
+354:                    event.preventDefault();
+355:                    event.stopPropagation();
+
+EXPLANATION:
+The condition now requires THREE things to be true before auto-selecting a lookup:
+1. current.matches('[data-erp-lookup="true"]')  - Field is marked as lookup
+2. lookupButtons.length > 0                     - Lookup has visible options
+3. current.value.trim() !== ''                  - Input is NOT empty (NEW)
+
+When the input IS empty, this condition fails and execution falls through to
+the data-enter-empty-action handler (lines 340-349), which triggers the close.
+
+================================================================================
+FILE 2: Components/Pages/Vouchers/JobWorkOutOrder.razor
+================================================================================
+
+CHANGE 1: Add data-enter-empty-action to Component Stock Item Input
+───────────────────────────────────────────────────────────────────
+
+LOCATION: Lines 360-368 (Component Stock Item input markup)
+CHANGE TYPE: Add HTML attribute
+
+BEFORE (INCOMPLETE):
+────────────────────
+360:                                    <input id="jwo-component-@component.ClientKey" data-erp-lookup="true"
+361:                                           autocomplete="new-password" name="jwo-component-@component.ClientKey"
+362:                                           placeholder="Type to search Component"
+363:                                           value="@component.StockItemText"
+364:                                           data-enter-action="jwo-component-item-action-@component.ClientKey"
+365:                                           @onfocus="() => OpenComponentLookup(component)"
+366:                                           @oninput="e => ComponentItemTextChanged(component, e)"
+367:                                           @onchange="e => ComponentItemTextCommitted(component, e)" />
+
+AFTER (COMPLETE):
+─────────────────
+360:                                    <input id="jwo-component-@component.ClientKey" data-erp-lookup="true"
+361:                                           autocomplete="new-password" name="jwo-component-@component.ClientKey"
+362:                                           placeholder="Type to search Component"
+363:                                           value="@component.StockItemText"
+364:                                           data-enter-action="jwo-component-item-action-@component.ClientKey"
+365:                                           data-enter-empty-action="jwo-component-empty-action-@component.ClientKey"
+366:                                           @onfocus="() => OpenComponentLookup(component)"
+367:                                           @oninput="e => ComponentItemTextChanged(component, e)"
+368:                                           @onchange="e => ComponentItemTextCommitted(component, e)" />
+
+EXPLANATION:
+Added line 365: data-enter-empty-action="jwo-component-empty-action-@component.ClientKey"
+
+This tells App.razor's Enter handler: "When this field is EMPTY and Enter is
+pressed, click the button with ID jwo-component-empty-action-[key]"
+
+The button will be defined later (Change 3 below).
+
+────────────────────────────────────────────────────────────────────────────────
+
+CHANGE 2: Add data-enter-action to Component Godown Input
+──────────────────────────────────────────────────────────
+
+LOCATION: Lines 380-384 (Component Godown input markup)
+CHANGE TYPE: Add HTML attribute + Modify data-enter-action
+
+BEFORE (NO KEYBOARD ACTION):
+──────────────────────────────
+380:                                    <input id="jwo-component-godown-@component.ClientKey" data-erp-lookup="true" 
+381:                                           autocomplete="new-password" name="jwo-component-godown-@component.ClientKey"
+382:                                           placeholder="Select Godown" value="@component.ComponentGodownText"
+383:                                           @onfocus="() => OpenComponentGodownLookup(component)"
+384:                                           @oninput="e => ComponentGodownTextChanged(component, e)" />
+
+AFTER (WITH KEYBOARD ACTION):
+──────────────────────────────
+380:                                    <input id="jwo-component-godown-@component.ClientKey" data-erp-lookup="true" 
+381:                                           autocomplete="new-password" name="jwo-component-godown-@component.ClientKey"
+382:                                           placeholder="Select Godown" value="@component.ComponentGodownText"
+383:                                           data-enter-action="jwo-component-qty-focus-@component.ClientKey"
+384:                                           @onfocus="() => OpenComponentGodownLookup(component)"
+385:                                           @oninput="e => ComponentGodownTextChanged(component, e)" />
+
+EXPLANATION:
+Added line 382 (now line 383): data-enter-action="jwo-component-qty-focus-@component.ClientKey"
+
+This enables keyboard navigation from Godown → Quantity.
+When Enter is pressed in Godown field, it will click the hidden button
+jwo-component-qty-focus-[key], which calls FocusComponentQuantity().
+
+────────────────────────────────────────────────────────────────────────────────
+
+CHANGE 3: Add New Hidden Proxy Buttons
+───────────────────────────────────────
+
+LOCATION: Lines 407-430 (hidden keyboard action proxy buttons)
+CHANGE TYPE: Add two new buttons + Keep existing two buttons
+
+BEFORE (TWO BUTTONS):
+─────────────────────
+407:                                    <button id="jwo-component-item-action-@component.ClientKey"
+408:                                            type="button"
+409:                                            tabindex="-1"
+410:                                            aria-hidden="true"
+411:                                            class="keyboard-action-proxy"
+412:                                            @onclick="() => AdvanceComponentItem(component)"></button>
+413:                                    <button id="jwo-component-line-action-@component.ClientKey"
+414:                                            type="button"
+415:                                            tabindex="-1"
+416:                                            aria-hidden="true"
+417:                                            class="keyboard-action-proxy"
+418:                                            @onclick="() => CompleteComponentLine(component)"></button>
+
+AFTER (FOUR BUTTONS):
+─────────────────────
+407:                                    <button id="jwo-component-item-action-@component.ClientKey"
+408:                                            type="button"
+409:                                            tabindex="-1"
+410:                                            aria-hidden="true"
+411:                                            class="keyboard-action-proxy"
+412:                                            @onclick="() => AdvanceComponentItem(component)"></button>
+413:                                    <button id="jwo-component-empty-action-@component.ClientKey"
+414:                                            type="button"
+415:                                            tabindex="-1"
+416:                                            aria-hidden="true"
+417:                                            class="keyboard-action-proxy"
+418:                                            @onclick="CloseComponentAllocation"></button>
+419:                                    <button id="jwo-component-qty-focus-@component.ClientKey"
+420:                                            type="button"
+421:                                            tabindex="-1"
+422:                                            aria-hidden="true"
+423:                                            class="keyboard-action-proxy"
+424:                                            @onclick="() => FocusComponentQuantity(component)"></button>
+425:                                    <button id="jwo-component-line-action-@component.ClientKey"
+426:                                            type="button"
+427:                                            tabindex="-1"
+428:                                            aria-hidden="true"
+429:                                            class="keyboard-action-proxy"
+430:                                            @onclick="() => CompleteComponentLine(component)"></button>
+
+EXPLANATION:
+Added NEW BUTTON 1 (Lines 413-418):
+  ID: jwo-component-empty-action-@component.ClientKey
+  Action: @onclick="CloseComponentAllocation"
+  Purpose: Called when Enter is pressed on EMPTY Component Stock Item field
+
+Added NEW BUTTON 2 (Lines 419-424):
+  ID: jwo-component-qty-focus-@component.ClientKey
+  Action: @onclick="() => FocusComponentQuantity(component)"
+  Purpose: Called when Enter is pressed on Component Godown field
+
+These buttons are:
+  - tabindex="-1": Not focusable by Tab key (hidden from navigation)
+  - aria-hidden="true": Hidden from screen readers
+  - class="keyboard-action-proxy": CSS class for identification
+  - NOT displayed on screen (only clicked via JavaScript)
+
+────────────────────────────────────────────────────────────────────────────────
+
+CHANGE 4: Add FocusComponentQuantity() Method
+──────────────────────────────────────────────
+
+LOCATION: Lines 1252-1267 (new method in code-behind)
+CHANGE TYPE: Add new C# method
+
+BEFORE (METHOD DIDN'T EXIST):
+──────────────────────────────
+[Method did not exist in file]
+
+AFTER (METHOD ADDED):
+─────────────────────
+1252:     private void FocusComponentQuantity(JobWorkComponentEditModel component)
+1253:     {
+1254:         if (activeComponentFg is null) return;
+1255:
+1256:         ResolveComponentGodown(component);
+1257:         if (component.ComponentGodownId is null)
+1258:         {
+1259:             componentPopupMessage = "Select a valid Component Godown.";
+1260:             pendingFocusId = $"jwo-component-qty-{component.ClientKey}";
+1261:             return;
+1262:         }
+1263:
+1264:         componentPopupMessage = string.Empty;
+1265:         activeLookupKey = null;
+1266:         pendingFocusId = $"jwo-component-qty-{component.ClientKey}";
+1267:     }
+
+EXPLANATION:
+New method called when Enter is pressed in Component Godown field.
+
+Steps:
+  1. Line 1254: Guard clause - ensure allocation window is open
+  2. Line 1256: Resolve the godown text to lookup ID (convert text to ID)
+  3. Line 1257-1262: Validate godown was selected
+	 - If not: Show error message and re-focus Godown field
+	 - If yes: Continue to next step
+  4. Line 1264: Clear any previous error messages
+  5. Line 1265: Close lookup panel if open
+  6. Line 1266: Queue focus for Quantity field (after Blazor re-renders)
+
+This method ensures Godown is validated BEFORE moving to Quantity.
+
+================================================================================
+SUMMARY OF ALL CHANGES
+================================================================================
+
+Files Changed: 2
+
+1. Components/App.razor
+   └─ 1 line modified: Add && current.value.trim() !== '' to line 353
+   └─ 1 comment added: Explanation on line 352
+
+2. Components/Pages/Vouchers/JobWorkOutOrder.razor
+   └─ 1 attribute added: data-enter-empty-action on line 365
+   └─ 1 attribute added: data-enter-action on line 382
+   └─ 2 buttons added: Lines 413-424 (empty-action and qty-focus)
+   └─ 1 method added: FocusComponentQuantity() on lines 1252-1267
+
+Total Lines Added: ~25
+Total Lines Modified: 1
+Total Attributes Added: 2
+Total Methods Added: 1
+
+Build Status: ✓ SUCCESSFUL
+
+================================================================================
+HOW THE FIX WORKS
+================================================================================
+
+EXECUTION FLOW - Empty Component Stock Item + Enter:
+
+1. User presses Enter on Component Stock Item field (empty)
+2. Browser fires keydown event
+3. App.razor global handler (line 308+) intercepts event
+4. Line 330: Event.key = "Enter" check passes
+5. Line 341-349: data-enter-empty-action block:
+   a) Line 340: Gets emptyActionId = "jwo-component-empty-action-[key]"
+   b) Line 341: Checks three conditions:
+	  ✓ emptyActionId exists
+	  ✓ current is HTMLInputElement
+	  ✓ current.value.trim() === '' (EMPTY)
+   c) Line 342: Gets button element with that ID
+   d) Line 346: Clicks the button
+   e) Line 347: return (exits handler)
+6. Button click triggers: @onclick="CloseComponentAllocation"
+7. JobWorkOutOrder.razor method CloseComponentAllocation() runs
+8. Result: Allocation window closes, no component saved
+
+────────────────────────────────────────────────────────────────────────────────
+
+EXECUTION FLOW - Component Stock Item with text + Enter:
+
+1. User presses Enter on Component Stock Item field (with text)
+2. Browser fires keydown event
+3. App.razor global handler (line 308+) intercepts event
+4. Line 330: Event.key = "Enter" check passes
+5. Line 341-349: data-enter-empty-action block:
+   a) Line 341: Checks conditions:
+	  ✓ emptyActionId exists
+	  ✗ current.value.trim() === '' (NOT EMPTY - FAILS)
+   b) Block skipped, execution continues
+6. Line 353: Lookup selection block:
+   a) Checks three conditions:
+	  ✓ current matches [data-erp-lookup="true"]
+	  ✓ lookupButtons.length > 0 (lookup visible)
+	  ✓ current.value.trim() !== '' (HAS TEXT - NEW CHECK)
+   b) Line 358: Clicks the lookup button (first match)
+   c) Line 359: return (exits handler)
+7. Button click triggers: @onclick="() => SelectComponent(component, choice)"
+8. JobWorkOutOrder.razor method SelectComponent() runs
+9. Result: Component selected, focus moves to Godown field
+
+────────────────────────────────────────────────────────────────────────────────
+
+EXECUTION FLOW - Component Godown + Enter:
+
+1. User presses Enter on Component Godown field
+2. Browser fires keydown event
+3. App.razor global handler (line 308+) intercepts event
+4. Line 330: Event.key = "Enter" check passes
+5. Line 341-349: data-enter-empty-action block (N/A - Godown doesn't have it)
+6. Line 353: Lookup selection block:
+   a) Checks conditions:
+	  ✓ current matches [data-erp-lookup="true"]
+	  ✗ But if lookup is NOT visible OR input IS empty
+   b) Block skipped or selects lookup item depending on dropdown state
+7. Line 363-371: data-enter-action block:
+   a) Line 363: Gets enterActionId = "jwo-component-qty-focus-[key]"
+   b) Line 365: Gets button element with that ID
+   c) Line 369: Clicks the button
+   d) Line 370: return (exits handler)
+8. Button click triggers: @onclick="() => FocusComponentQuantity(component)"
+9. JobWorkOutOrder.razor method FocusComponentQuantity() runs
+   a) Resolves godown text to lookup ID
+   b) Validates godown is selected
+   c) Sets focus to Quantity field
+10. Result: Focus moves to Quantity field
+
+================================================================================
+TESTING THE FIX
+================================================================================
+
+See JWO_KEYBOARD_BUG_FIX_MANUAL_TEST_SCRIPT.txt for detailed testing procedures.
+
+Quick Verification:
+  1. Run: dotnet build (must succeed)
+  2. Run: dotnet run
+  3. Navigate to Job Work Out Order
+  4. Create order, open Component Allocation
+  5. Test: Press Enter on empty Component Stock Item → Should close
+  6. Test: Type component name, press Enter → Should select
+  7. Test: Press Enter on Godown → Should move to Quantity
+
+================================================================================

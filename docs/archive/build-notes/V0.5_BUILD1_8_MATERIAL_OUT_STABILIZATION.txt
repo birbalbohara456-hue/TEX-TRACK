@@ -1,0 +1,11 @@
+TexTrack ERP v0.5 Build 1.8 — Material Out Stabilization
+
+Fixes:
+1. Material Out Esc now opens a local native TexTrack exit modal and does not navigate until Yes is explicitly chosen.
+2. No/Esc closes the modal and keeps the voucher open.
+3. Material Out page key events no longer bubble into the layout and trigger a second Escape action.
+4. Rate is prefilled from the selected JWO component rate, displayed as an editable field, and retained as a Material Out voucher snapshot.
+5. Quantity Enter moves to Rate; Rate Enter moves to the next component quantity or GST/e-Way Bill selector.
+6. Amount recalculates from Issue Quantity × Rate.
+
+No database migration or repository posting architecture was changed.

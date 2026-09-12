@@ -1,0 +1,18 @@
+TexTrack ERP v0.5 Build 1.4 — Test Checklist
+================================================
+[ ] Date displays fully.
+[ ] Voucher No. is full-size and locked in automatic modes.
+[ ] Party field is wide and accepts typing.
+[ ] Party lookup is anchored directly below Party field.
+[ ] Arrow navigation + Enter selects Party.
+[ ] JWO dropdown opens below JWO / Order No., not at page bottom.
+[ ] JWO dropdown shows Order No., Date, Batch and Pending.
+[ ] Arrow navigation + Enter selects JWO.
+[ ] Destination Godown, Reference and Batch prefill and remain editable.
+[ ] Quantity accepts direct typing without mouse.
+[ ] MTS with 2 decimals shows 250.00.
+[ ] Quantity Enter moves to next line / GST selector.
+[ ] GST/e-Way Bill selector is editable with keyboard.
+[ ] Narration is reachable by keyboard.
+[ ] Esc closes an open lookup once; next Esc returns to Dashboard.
+[ ] Existing JWO screens and keyboard flow remain unaffected.

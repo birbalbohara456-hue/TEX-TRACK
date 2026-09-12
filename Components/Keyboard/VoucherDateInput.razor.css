@@ -1,0 +1,34 @@
+input {
+    display: block;
+    width: 100%;
+    height: 24px;
+    min-height: 22px;
+    border: none;
+    border-bottom: 1px dotted #8797a8;
+    border-radius: 0;
+    background: transparent;
+    color: #1d2835;
+    padding: 2px 4px;
+    outline: none;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+input:focus {
+    background: #ffedaa;
+    border-bottom-color: #1d3554;
+}
+
+input:disabled {
+    color: #657487;
+    border-bottom-color: transparent;
+}
+
+input.header-date {
+    height: 26px;
+    margin-top: 2px;
+    border: 1px solid #94a3b8;
+    border-radius: 2px;
+    background: #ffffff;
+    color: #0f172a;
+}

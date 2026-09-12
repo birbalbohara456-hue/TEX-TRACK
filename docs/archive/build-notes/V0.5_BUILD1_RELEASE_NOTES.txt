@@ -1,0 +1,39 @@
+TexTrack ERP v0.5 Build 1
+Universal Voucher Numbering + Material Out Foundation
+
+BASE
+- Built from the user-confirmed stable v0.4 Build 2.0.15.
+- Stable JWO keyboard and focus behavior preserved.
+
+UNIVERSAL VOUCHER NUMBERING
+- Added three numbering modes for every permanent and custom Voucher Type:
+  1. Auto
+  2. Auto with Manual Prefix & Suffix
+  3. Completely Manual
+- Added Prefix, Suffix, Starting Number, Number Width and Reset Period settings.
+- Permanent Voucher Types remain protected from structural edits but their numbering settings can be changed.
+- JWO Voucher Number is now editable before saving in every numbering mode.
+- Manual mode starts with a blank mandatory Voucher Number.
+- Auto modes prefill a number, but the user may replace it before saving.
+- Duplicate voucher-number protection remains enforced per company, financial year and voucher type.
+- Added voucher_sequences foundation table and seeded it from existing vouchers.
+
+MATERIAL OUT FOUNDATION
+- Replaced the Material Out placeholder.
+- Job Worker selection added.
+- Loads only pending JWO components for the selected Job Worker.
+- Preserves JWO -> Finished Good -> Component linkage in the view model.
+- Displays Required, Previously Issued and Pending quantity.
+- Allows Issue Now quantity preparation for the next build.
+- Added material_out_lines database foundation with immutable JWO/FG/component references.
+
+INTENTIONALLY NOT INCLUDED YET
+- Material Out save/posting.
+- Stock movement or negative-stock validation.
+- Material Out edit/delete/Material In locks.
+- Tally XML export.
+These belong to the next controlled Material Out transaction build.
+
+COMPILATION
+- The .NET SDK is not installed in the packaging environment.
+- Compilation was not performed or claimed.

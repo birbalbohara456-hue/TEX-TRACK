@@ -1,0 +1,303 @@
+@page "/vouchers/master-job-order"
+@implements IAsyncDisposable
+@attribute [Authorize(Policy = SecurityPolicies.OperateVouchers)]
+@inject MasterJobOrderRepository Repository
+@inject DatabaseStatus Database
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject GlobalOperationState GlobalOperations
+
+<PageTitle>Master Job Order</PageTitle>
+
+<div id="mjo-form-root" class="mjo-entry-form tt-voucher-entry" tabindex="0" data-voucher-profile="master-job-order"
+     data-enter-navigation="true" data-tt-voucher-form-root="true" @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="mjo-form" RootElementId="mjo-form-root" ContextType="KeyboardContextType.Form"
+                          Mode="@(model.Id == 0 ? KeyboardContextMode.Create : KeyboardContextMode.Alteration)"
+                          IsVoucherEntry="true" AcceptAsync="Save" EscapeAsync="RequestExit"
+                          CanDelete="@(model.Id != 0 && !busy)" DeleteAsync="DeleteCurrent"
+                          CanCancel="@(model.Id != 0 && model.Status != "Cancelled" && !busy)" CancelAsync="PromptCancel" />
+
+    <header class="mjo-heading"><strong>Master Job Order</strong></header>
+    <div class="mjo-context-date" aria-label="Voucher date">
+        <VoucherDateInput Id="mjo-date" Class="mjo-header-date-input" Value="model.VoucherDate" ValueChanged="DateChanged" />
+        <span>@model.VoucherDate.ToString("dddd")</span>
+    </div>
+
+    @if (!Database.IsConnected) { <div class="form-message error">@Database.Message</div> }
+    @if (!string.IsNullOrWhiteSpace(message)) { <div class="form-message @(messageIsError ? "error" : "success")">@message</div> }
+
+    <section class="mjo-master-fields">
+        <div class="mjo-col">
+            <label><span>Voucher Type <b>*</b></span><input id="mjo-voucher-type" readonly tabindex="-1" value="@model.VoucherTypeText" /></label>
+            <label><span>Party A/c Name <b>*</b></span>
+                <div class="lookup-field">
+                    <input id="mjo-party" data-erp-lookup="true" data-tt-related-master="/masters/ledgers" autocomplete="off" placeholder="Type to search Party"
+                           value="@model.PartyText" @onfocus="OpenPartyLookup" @oninput="PartyChanged" @onchange="PartyCommitted" />
+                    @if (lookupKey == "party")
+                    {
+                        <div class="erp-lookup-panel">
+                            @foreach (var party in FilterParties().Take(12)) { <button type="button" @onmousedown:preventDefault="true" @onclick="() => SelectParty(party)"><strong>@party.Name</strong><span>@party.SecondaryText</span></button> }
+                        </div>
+                    }
+                </div>
+            </label>
+            <label><span>Reference</span><input id="mjo-reference" maxlength="100" @bind="model.ReferenceNumber" @bind:event="oninput" /></label>
+        </div>
+        <div class="mjo-col">
+            <label><span>Voucher No.</span><input id="mjo-number" readonly="@(!AllowManualNumbering)" tabindex="@(AllowManualNumbering ? 0 : -1)" @bind="model.VoucherNumber" /></label>
+            <label><span>Due Date</span><FlexibleDateInput Id="mjo-due-date" @bind-Value="model.DueDate" BasisDate="model.VoucherDate" /></label>
+            <label><span>Status</span><input readonly tabindex="-1" value="@model.Status" /></label>
+        </div>
+    </section>
+
+    <section class="mjo-link-orders">
+        <label><span>Link Existing Job Orders <b>*</b></span>
+            <div class="lookup-field">
+                <input id="mjo-job-order" data-erp-lookup="true" autocomplete="off"
+                       placeholder="Type JWO number, batch, job worker or finished item"
+                       value="@jobOrderSearch" @onfocus="OpenJobOrderLookup" @oninput="JobOrderSearchChanged" />
+                @if (lookupKey == "job-order")
+                {
+                    <div class="erp-lookup-panel mjo-job-order-lookup">
+                        @foreach (var order in FilterJobOrders().Take(12))
+                        {
+                            <button type="button" @onmousedown:preventDefault="true" @onclick="() => LinkJobOrder(order)">
+                                <strong>@order.VoucherNumber · @order.Batch</strong>
+                                <span>@order.JobWorkerName · @order.FinishedGoodsSummary · @order.TotalQuantity.ToString("0.####")</span>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </label>
+        <div class="mjo-linked-orders">
+            @foreach (var order in model.LinkedJobOrders)
+            {
+                <div class="mjo-linked-order" @key="order.Id">
+                    <strong>JWO @order.VoucherNumber</strong><span>@order.VoucherDate.ToString("dd-MM-yyyy")</span>
+                    <span>@order.JobWorkerName</span><span>Batch @order.Batch</span><span>@order.FinishedGoodsSummary</span>
+                    <strong>@order.TotalQuantity.ToString("0.####")</strong>
+                    <button type="button" tabindex="-1" title="Unlink Job Work Out Order" @onclick="() => UnlinkJobOrder(order.Id)">×</button>
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="mjo-lines mjo-linked-plan">
+        <div class="mjo-grid-head"><span>#</span><span>NAME OF FINISHED GOOD</span><span>COLOUR / SIZE DETAILS</span><span>UQC</span><span>QTY</span><span></span></div>
+        @for (var itemIndex = 0; itemIndex < model.FinishedGoods.Count; itemIndex++)
+        {
+            var line = model.FinishedGoods[itemIndex];
+            <article class="mjo-item" @key="line.ClientKey">
+                <div class="mjo-item-row">
+                    <span class="mjo-number">@(itemIndex + 1)</span><strong>@line.StockItemText</strong>
+                    <div class="mjo-colour-stack">
+                        @foreach (var colour in line.Colours)
+                        {
+                            <div class="mjo-colour-row" @key="colour.ClientKey">
+                                <em class="mjo-colour-name">@(string.IsNullOrWhiteSpace(colour.ColourText) ? "N/A" : colour.ColourText)</em>
+                                <div class="mjo-size-list">
+                                    @foreach (var size in colour.Sizes.OrderBy(x => x.DisplayOrder).ThenBy(x => x.SizeName))
+                                    { <span class="mjo-distinct"><em>@size.SizeName</em> @size.Quantity.ToString("0.####")</span> }
+                                </div>
+                                <strong class="mjo-subtotal">@colour.TotalQuantity.ToString("0.####")</strong>
+                            </div>
+                        }
+                    </div>
+                    <strong>@line.UqcShortName</strong><strong class="mjo-total">@line.TotalQuantity.ToString("0.####")</strong><span></span>
+                </div>
+            </article>
+        }
+        <div class="mjo-grand-total"><strong>Total Qty</strong><strong>@model.FinishedGoods.Sum(x => x.TotalQuantity).ToString("0.####")</strong></div>
+    </section>
+
+    <VoucherAuditStamp VoucherId="@model.Id" />
+    <section class="mjo-narration"><label for="mjo-narration">Narration <span>:</span></label><textarea id="mjo-narration" rows="2" maxlength="1000" @bind="model.Narration" @bind:event="oninput"></textarea></section>
+    <footer class="mjo-footer">
+        <button type="button" @onclick="RequestExit"><b>Esc</b> Quit</button>
+        <button id="mjo-save" type="button" data-enter-save="true" data-voucher-save-action="true" class="accept" @onclick="Save" disabled="@busy"><b>Alt+A</b> Accept</button>
+        <span>Enter: Next field · Backspace: Previous field · F2: Date</span>
+        @if (model.Id != 0) { <button type="button" class="danger" @onclick="DeleteCurrent"><b>Alt+D</b> Delete</button><button type="button" @onclick="PromptCancel"><b>Alt+X</b> Cancel</button> }
+    </footer>
+</div>
+
+@if (showExit)
+{
+    <KeyboardContextScope ContextId="mjo-exit-modal" RootElementId="mjo-exit-dialog" ContextType="KeyboardContextType.Modal" Mode="KeyboardContextMode.Modal" />
+    <div class="tt-dialog-overlay"><section id="mjo-exit-dialog" class="tt-dialog" role="dialog" aria-modal="true" tabindex="-1" @onkeydown="HandleExitKeyDown" @onkeydown:stopPropagation="true"><header class="tt-dialog-titlebar"><strong>Quit?</strong></header><div class="tt-dialog-body">Discard unsaved changes?</div><footer class="tt-dialog-actions"><button id="mjo-exit-yes" data-tt-modal-accept="true" @onclick="ExitNow">Yes</button><button @onclick="CancelExit">No</button></footer></section></div>
+}
+@if (showCancel)
+{
+    <KeyboardContextScope ContextId="mjo-cancel-modal" RootElementId="mjo-cancel-dialog" ContextType="KeyboardContextType.Modal" Mode="KeyboardContextMode.Modal" />
+    <div class="tt-dialog-overlay"><section id="mjo-cancel-dialog" class="tt-dialog" role="dialog" aria-modal="true" tabindex="-1"><header class="tt-dialog-titlebar"><strong>Cancel Master Job Order?</strong></header><div class="tt-dialog-body"><label>Reason <b>*</b><textarea id="mjo-cancel-reason" @bind="cancelReason"></textarea></label></div><footer class="tt-dialog-actions"><button data-tt-modal-accept="true" class="action-danger" @onclick="CancelCurrent">Alt+X Cancel</button><button @onclick="() => showCancel = false">Return</button></footer></section></div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name="voucherId")] public long? VoucherId { get; set; }
+    [SupplyParameterFromQuery(Name="returnUrl")] public string? ReturnUrl { get; set; }
+    private MasterJobOrderEditModel model = new();
+    private MasterJobOrderLookupData lookups = new();
+    private DotNetObjectReference<MasterJobOrder>? relatedMasterRefreshReference;
+    private string? lookupKey;
+    private string jobOrderSearch = string.Empty;
+    private string message = string.Empty;
+    private bool messageIsError, busy, showExit, showCancel;
+    private string? exitReturnFocusId;
+    private string cancelReason = string.Empty;
+    private bool AllowManualNumbering => lookups.VoucherTypes.FirstOrDefault(x => x.Id == model.VoucherTypeId)?.AllowManualNumbering == true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var operation = GlobalOperations.Begin("Preparing Master Job Order…");
+        lookups = await Repository.GetLookupsAsync();
+        model = VoucherId is > 0 ? await Repository.GetForEditAsync(VoucherId.Value) ?? await Repository.CreateNewModelAsync() : await Repository.CreateNewModelAsync();
+        Hydrate();
+    }
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (!first) return;
+        relatedMasterRefreshReference = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("texTrackRegisterRelatedMasterRefresh", relatedMasterRefreshReference);
+        await JS.InvokeVoidAsync("texTrackFocusById", "mjo-party");
+    }
+
+    [JSInvokable]
+    public async Task RefreshRelatedMasterLookupsAsync(string returnFocusId)
+    {
+        lookups = await Repository.GetLookupsAsync();
+        await InvokeAsync(StateHasChanged);
+        await JS.InvokeVoidAsync("texTrackFocusById", string.IsNullOrWhiteSpace(returnFocusId) ? "mjo-party" : returnFocusId);
+    }
+
+    // Reuses the same registered reference as RefreshRelatedMasterLookupsAsync above -
+    // called by the shared closeLookupOnBlur JS whenever a data-erp-lookup field loses
+    // focus with its dropdown open, so lookupKey genuinely clears server-side instead of
+    // relying only on the client-side hide, which a later unrelated re-render would
+    // otherwise undo (see JobWorkOutOrder.razor's identical handler for the full
+    // explanation). Only clears when it still matches the exact field that blurred.
+    [JSInvokable]
+    public Task ClearLookupOnBlurAsync(string fieldId)
+    {
+        var key = fieldId switch
+        {
+            "mjo-party" => "party",
+            "mjo-job-order" => "job-order",
+            _ => null
+        };
+        if (key is not null && lookupKey == key)
+        {
+            lookupKey = null;
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("texTrackUnregisterRelatedMasterRefresh", relatedMasterRefreshReference); }
+        catch (JSDisconnectedException) { }
+        relatedMasterRefreshReference?.Dispose();
+    }
+    private void Hydrate()
+    {
+        foreach (var line in model.FinishedGoods)
+        {
+            var item = FindItem(line.StockItemId); if (item is null) continue; line.StockItemText = item.Name; line.UqcShortName = item.UqcShortName;
+            foreach (var colour in line.Colours) { colour.ColourText = item.Colours.FirstOrDefault(x => x.Id == colour.ColourId)?.Name ?? colour.ColourText; RebuildSizes(line, colour, true); }
+        }
+    }
+    private void OpenLookup(string key) => lookupKey = key;
+    private void OpenPartyLookup() => OpenLookup("party");
+    private void OpenJobOrderLookup() => OpenLookup("job-order");
+    private void OpenItemLookup(MasterJobOrderFinishedGoodEditModel line) => OpenLookup($"item:{line.ClientKey}");
+    private void OpenColourLookup(MasterJobOrderColourEditModel colour) => OpenLookup($"colour:{colour.ClientKey}");
+    private IEnumerable<LookupItem> FilterParties() { var t=model.PartyText.Trim(); return lookups.Parties.Where(x => t.Length==0 || x.Name.Contains(t,StringComparison.OrdinalIgnoreCase)); }
+    private void PartyChanged(ChangeEventArgs e) { model.PartyText=e.Value?.ToString()??""; model.PartyLedgerId=null; lookupKey="party"; }
+    private void PartyCommitted(ChangeEventArgs e) { PartyChanged(e); var rows=FilterParties().ToList(); if(rows.Count==1) SelectParty(rows[0]); }
+    private void SelectParty(LookupItem row) { model.PartyLedgerId=row.Id; model.PartyText=row.Name; lookupKey=null; }
+    private void JobOrderSearchChanged(ChangeEventArgs e) { jobOrderSearch=e.Value?.ToString()??""; lookupKey="job-order"; }
+    private IEnumerable<MasterJobOrderLinkedJwoModel> FilterJobOrders()
+    {
+        var text=jobOrderSearch.Trim();
+        return lookups.JobWorkOrders.Where(x =>
+            (x.MasterJobOrderId is null || x.MasterJobOrderId == model.Id) &&
+            !model.LinkedJobOrderIds.Contains(x.Id) &&
+            (x.VoucherNumber.Contains(text,StringComparison.OrdinalIgnoreCase) || x.Batch.Contains(text,StringComparison.OrdinalIgnoreCase) ||
+             x.JobWorkerName.Contains(text,StringComparison.OrdinalIgnoreCase) || x.FinishedGoodsSummary.Contains(text,StringComparison.OrdinalIgnoreCase)));
+    }
+    private void LinkJobOrder(MasterJobOrderLinkedJwoModel order)
+    {
+        if(!model.LinkedJobOrderIds.Contains(order.Id)) model.LinkedJobOrderIds.Add(order.Id);
+        if(model.LinkedJobOrders.All(x=>x.Id!=order.Id)) model.LinkedJobOrders.Add(order);
+        jobOrderSearch=""; lookupKey=null; RebuildLinkedPlan();
+    }
+    private void UnlinkJobOrder(long id)
+    {
+        model.LinkedJobOrderIds.Remove(id); model.LinkedJobOrders.RemoveAll(x=>x.Id==id); RebuildLinkedPlan();
+    }
+    private void RebuildLinkedPlan()
+    {
+        model.FinishedGoods=model.LinkedJobOrders.SelectMany(x=>x.FinishedGoods).GroupBy(x=>x.StockItemId).Select(itemGroup=>
+        {
+            var first=itemGroup.First();
+            return new MasterJobOrderFinishedGoodEditModel
+            {
+                StockItemId=first.StockItemId,StockItemText=first.StockItemText,UqcShortName=first.UqcShortName,
+                Colours=itemGroup.SelectMany(x=>x.Colours).GroupBy(x=>new{x.ColourId,x.ColourText}).Select(colourGroup=>new MasterJobOrderColourEditModel
+                {
+                    ColourId=colourGroup.Key.ColourId,ColourText=colourGroup.Key.ColourText,
+                    Sizes=colourGroup.SelectMany(x=>x.Sizes).GroupBy(x=>new{x.StockItemVariantId,x.SizeId,x.SizeName,x.DisplayOrder})
+                        .Select(sizeGroup=>new MasterJobOrderSizeEditModel{StockItemVariantId=sizeGroup.Key.StockItemVariantId,SizeId=sizeGroup.Key.SizeId,SizeName=sizeGroup.Key.SizeName,DisplayOrder=sizeGroup.Key.DisplayOrder,Quantity=sizeGroup.Sum(x=>x.Quantity)})
+                        .OrderBy(x=>x.DisplayOrder).ThenBy(x=>x.SizeName).ToList()
+                }).OrderBy(x=>x.ColourText).ToList()
+            };
+        }).OrderBy(x=>x.StockItemText).ToList();
+    }
+    private IEnumerable<JobWorkStockItemLookup> FilterItems(MasterJobOrderFinishedGoodEditModel line) { var t=line.StockItemText.Trim(); return lookups.FinishedGoods.Where(x=>t.Length==0||x.Name.Contains(t,StringComparison.OrdinalIgnoreCase)); }
+    private void ItemChanged(MasterJobOrderFinishedGoodEditModel line, ChangeEventArgs e) { line.StockItemText=e.Value?.ToString()??""; if(string.IsNullOrWhiteSpace(line.StockItemText)) lookupKey=null; }
+    private void ItemCommitted(MasterJobOrderFinishedGoodEditModel line, ChangeEventArgs e) { ItemChanged(line,e); var rows=FilterItems(line).ToList(); if(rows.Count==1) SelectItem(line,rows[0]); }
+    private void SelectItem(MasterJobOrderFinishedGoodEditModel line, JobWorkStockItemLookup item) { line.StockItemId=item.Id; line.StockItemText=item.Name; line.UqcShortName=item.UqcShortName; line.Colours.Clear(); AddColour(line); lookupKey=null; }
+    private IEnumerable<JobWorkColourLookup> FilterColours(MasterJobOrderFinishedGoodEditModel line, MasterJobOrderColourEditModel colour) { var item=FindItem(line.StockItemId); if(item is null)return []; var t=colour.ColourText.Trim(); return item.Colours.Where(x=>t.Length==0||x.Name.Contains(t,StringComparison.OrdinalIgnoreCase)); }
+    private void ColourChanged(MasterJobOrderFinishedGoodEditModel line, MasterJobOrderColourEditModel colour, ChangeEventArgs e) { colour.ColourText=e.Value?.ToString()??""; colour.ColourId=null; colour.Sizes.Clear(); if(string.IsNullOrWhiteSpace(colour.ColourText)) lookupKey=null; }
+    private void ColourCommitted(MasterJobOrderFinishedGoodEditModel line, MasterJobOrderColourEditModel colour, ChangeEventArgs e) { ColourChanged(line,colour,e); var rows=FilterColours(line,colour).ToList(); if(rows.Count==1) SelectColour(line,colour,rows[0]); }
+    private void SelectColour(MasterJobOrderFinishedGoodEditModel line, MasterJobOrderColourEditModel colour, JobWorkColourLookup option) { colour.ColourId=option.Id; colour.ColourText=option.Name; RebuildSizes(line,colour,false); lookupKey=null; }
+    private void RebuildSizes(MasterJobOrderFinishedGoodEditModel line, MasterJobOrderColourEditModel colour, bool preserve)
+    {
+        var item=FindItem(line.StockItemId); if(item is null)return; var old=preserve?colour.Sizes.ToDictionary(x=>x.StockItemVariantId):new(); var result=new List<MasterJobOrderSizeEditModel>();
+        var sizes=item.Sizes.Count==0 ? new[]{new JobWorkSizeLookup{Name="Quantity"}} : item.Sizes.OrderBy(x=>x.DisplayOrder).ToArray();
+        foreach(var size in sizes) { var variant=item.Variants.FirstOrDefault(x=>x.ColourId==colour.ColourId&&x.SizeId==(item.Sizes.Count==0?null:size.Id)); if(variant is null)continue; var prior=old.GetValueOrDefault(variant.Id); result.Add(new(){Id=prior?.Id??0,StockItemVariantId=variant.Id,SizeId=item.Sizes.Count==0?null:size.Id,SizeName=size.Name,DisplayOrder=size.DisplayOrder,Quantity=prior?.Quantity??0}); }
+        colour.Sizes=result;
+    }
+    private JobWorkStockItemLookup? FindItem(long id)=>lookups.FinishedGoods.FirstOrDefault(x=>x.Id==id);
+    private void AddItem(){var line=new MasterJobOrderFinishedGoodEditModel();line.Colours.Add(new());model.FinishedGoods.Add(line);}
+    private void RemoveItem(int index){if(index>=0&&index<model.FinishedGoods.Count)model.FinishedGoods.RemoveAt(index);if(model.FinishedGoods.Count==0)AddItem();}
+    private void AddColour(MasterJobOrderFinishedGoodEditModel line){var c=new MasterJobOrderColourEditModel();var item=FindItem(line.StockItemId);if(item?.Colours.Count==1){c.ColourId=item.Colours[0].Id;c.ColourText=item.Colours[0].Name;RebuildSizes(line,c,false);}line.Colours.Add(c);}
+    private void RemoveColour(MasterJobOrderFinishedGoodEditModel line,int index){if(index>=0&&index<line.Colours.Count)line.Colours.RemoveAt(index);if(line.Colours.Count==0)AddColour(line);}
+    private void DateChanged(DateOnly date){var old=model.VoucherDate;model.VoucherDate=date;if(model.DueDate==old)model.DueDate=date;}
+    private async Task Save(){busy=true;var result=await Repository.SaveAsync(model);busy=false;message=result.Message;messageIsError=!result.Success;if(result.Success&&result.EntityId is long id){model=await Repository.GetForEditAsync(id)??model;Hydrate();}}
+    private async Task RequestExit()
+    {
+        exitReturnFocusId = await JS.InvokeAsync<string?>("texTrackKeyboardContexts.getActiveElementId");
+        if (!await JS.InvokeAsync<bool>("texTrackKeyboardContexts.isVoucherDirty", "mjo-form")) { ExitNow(); return; }
+        showExit = true;
+        await InvokeAsync(StateHasChanged);
+        await JS.InvokeVoidAsync("texTrackFocusById", "mjo-exit-yes");
+    }
+    private void ExitNow()=>Navigation.NavigateTo(string.IsNullOrWhiteSpace(ReturnUrl)?"/":ReturnUrl);
+    private async Task CancelExit()
+    {
+        showExit = false;
+        await InvokeAsync(StateHasChanged);
+        if (!string.IsNullOrWhiteSpace(exitReturnFocusId)) await JS.InvokeVoidAsync("texTrackFocusById", exitReturnFocusId);
+        exitReturnFocusId = null;
+    }
+    private async Task HandleExitKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" || e.Key.Equals("y", StringComparison.OrdinalIgnoreCase)) ExitNow();
+        else if (e.Key == "Escape" || e.Key.Equals("n", StringComparison.OrdinalIgnoreCase)) await CancelExit();
+    }
+    private async Task DeleteCurrent(){if(model.Id==0)return;var r=await Repository.DeleteAsync(model.Id);message=r.Message;messageIsError=!r.Success;if(r.Success)ExitNow();}
+    private void PromptCancel()=>showCancel=true;
+    private async Task CancelCurrent(){var r=await Repository.CancelAsync(model.Id,cancelReason);message=r.Message;messageIsError=!r.Success;showCancel=!r.Success;if(r.Success)model.Status="Cancelled";}
+    private async Task HandleKeyDown(KeyboardEventArgs e){if(e.Key=="Escape")await RequestExit();else if(e.AltKey&&e.Key.Equals("a",StringComparison.OrdinalIgnoreCase))await Save();}
+}

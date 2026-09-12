@@ -1,0 +1,237 @@
+/*
+ * TexTrack ERP — shared Purchase Order / Purchase / Purchase Return entry
+ * form. Adapted from the three (byte-identical modulo prefix) page-level
+ * .razor.css files it replaces - now scoped to this one shared component
+ * instead of duplicated per page. Each wrapper page's own .razor.css keeps
+ * only its page-shell sizing block (::deep .pf-entry-form-frame below is
+ * this component's equivalent of that former per-page ".po-entry-form" etc.
+ * selector root).
+ *
+ * Visual language: approved Figma "Material" pass (2026-09-12) — soft
+ * rounded corners, elevated white card connecting header/table/narration
+ * into one continuous surface (no dead gaps). No bottom action bar — Quit/
+ * Accept-Update/Delete/Cancel live in the titlebar instead (per spec).
+ */
+
+/*
+ * NOTE: .pf-entry-form-frame itself (and everything VoucherEntryFrame.razor
+ * renders directly - titlebar, date block, tt-voucher-body) is NOT reliably
+ * reachable from THIS file. Blazor CSS isolation only attaches this
+ * component's scope attribute to elements it authors directly; the frame's
+ * root <section> belongs to VoucherEntryFrame.razor, and none of ITS
+ * ancestors carry PurchaseFamilyEntryForm's scope attribute (confirmed via
+ * live DOM inspection - `::deep .pf-entry-form-frame` compiles to
+ * `[this-scope] .pf-entry-form-frame`, which can never match since no
+ * ancestor of that element carries [this-scope]). That styling instead lives
+ * in each wrapper page's own PurchaseOrder/Purchase/PurchaseReturn.razor.css,
+ * anchored to that page's own root class (e.g. `.pu-voucher-page ::deep
+ * .pf-entry-form-frame`), which DOES carry a working scope attribute and is
+ * a genuine ancestor. The --pf-* custom properties set there cascade down
+ * through the real DOM to every rule below, same as any CSS variable.
+ */
+.voucher-paper-surface.pf-body { min-height: 0; flex: 1 1 auto !important; display: flex !important; flex-direction: column !important; gap: 0 !important; padding: 0 !important; overflow: hidden; border: 0 !important; background: var(--pf-page) !important; box-shadow: none !important; }
+
+/* ---- Header panel (top segment of the merged card) ---- */
+::deep .pf-header-panel.pf-header-panel.pf-header-panel {
+    display: flex !important;
+    align-items: stretch !important;
+    flex: 0 0 auto;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-bottom: 1px solid #eef0f4 !important;
+    border-radius: 0 !important;
+    background: var(--pf-paper) !important;
+    box-shadow: none !important;
+}
+::deep .pf-header-fields { display: flex !important; flex-direction: column !important; gap: 9px !important; flex: 1; min-width: 0; padding: 14px 18px; }
+::deep .pf-header-row-pair { display: flex !important; align-items: center !important; gap: 20px !important; }
+::deep .pf-header-row-pair .tt-field-reference { flex: 0 0 300px; }
+::deep .pf-header-row-pair .tt-field-discount { grid-template-columns: auto 74px !important; margin-left: auto; }
+::deep .tt-field-party { width: 51%; }
+::deep .tt-voucher-field { display: grid !important; grid-template-columns: 132px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 25px; }
+::deep .tt-voucher-field > label { color: var(--pf-muted) !important; font-size: 10.5px !important; font-weight: 700 !important; letter-spacing: .04em; line-height: 14px; text-transform: uppercase !important; }
+::deep .tt-voucher-field > label::after { content: none; }
+::deep .tt-voucher-field input,
+::deep .tt-voucher-field select { width: 100% !important; min-height: 30px !important; padding: 0 12px !important; border: 1px solid #c8cfd8 !important; border-radius: 10px !important; background: #fff !important; color: var(--pf-text) !important; font-size: 12px !important; font-weight: 600 !important; }
+::deep .tt-voucher-field input:focus,
+::deep .tt-voucher-field select:focus,
+::deep textarea:focus { outline: 2px solid var(--pf-navy) !important; outline-offset: -1px; background: var(--pf-focus) !important; color: #000 !important; }
+::deep .lookup-field:focus-within { z-index: 500; }
+::deep .erp-lookup-panel { top: calc(100% + 3px) !important; z-index: 99999 !important; max-height: min(280px, 42vh) !important; border: 1px solid #2490ef !important; border-radius: 10px !important; box-shadow: 0 8px 20px rgba(9,20,38,.22) !important; }
+::deep .erp-lookup-panel button:focus,
+::deep .erp-lookup-panel button.keyboard-selected { background: #eaf4fe !important; color: #0f5fa8 !important; }
+::deep .erp-lookup-panel button:focus *,
+::deep .erp-lookup-panel button.keyboard-selected * { color: #0f5fa8 !important; }
+::deep .erp-lookup-panel button span { display: block; color: #687789; font-size: 10px; font-weight: 600; }
+::deep .erp-lookup-empty { padding: 8px 12px; color: #687789; font-size: 11px; }
+::deep .pf-upstream-chips { margin-top: 2px; color: #687789; font-size: 10.5px; font-weight: 600; }
+
+::deep .pf-voucher-summary { flex: 0 0 260px; display: flex !important; flex-direction: column !important; justify-content: center !important; align-items: flex-end !important; gap: 6px; padding: 14px 20px !important; border: 0 !important; border-left: 1px solid #eef0f4 !important; background: #fafbfd !important; }
+::deep .pf-voucher-number-field { width: 100%; display: flex !important; flex-direction: column !important; align-items: flex-end !important; gap: 6px; }
+::deep .pf-voucher-number-field span { color: var(--pf-muted) !important; font-size: 9.5px !important; font-weight: 700 !important; letter-spacing: .06em; text-transform: uppercase; }
+::deep .pf-voucher-number-field span::after { content: none; }
+::deep .pf-voucher-number-field input { width: auto; min-width: 150px; min-height: 34px; padding: 6px 18px; border: 1.5px solid #2563eb; border-radius: 10px; background: #f0f4ff; color: var(--pf-navy); font-family: Consolas, monospace; font-size: 13.5px; font-weight: 700; letter-spacing: .03em; text-align: left; }
+::deep .pf-voucher-line-count { color: #9aaabb; font-size: 10.5px; }
+
+/* ---- Table (middle segment of the merged card — fills remaining height) ---- */
+::deep .pf-workspace { min-height: 0; flex: 1 1 auto; display: flex !important; flex-direction: column !important; margin: 0 !important; overflow: hidden; border: 0 !important; border-radius: 0 !important; background: var(--pf-paper) !important; box-shadow: none !important; }
+/*
+ * The Total row lives in its OWN table, outside the scrolling area, so it
+ * always sits flush against the narration border instead of leaving blank
+ * space beneath a short tbody (a plain `overflow:auto` wrapper around one
+ * table can't do this — the table's natural height stays short, and
+ * `position: sticky` on a <tfoot> does not reliably pin to the bottom of a
+ * non-flex scroll container either, confirmed empirically). The footer
+ * table's <colgroup> repeats the same pf-col-* width classes so its columns
+ * stay pixel-aligned with the scrolling table above it.
+ */
+/* 9px left inset so "Item" lines up with the Supplier/Reference labels above (those sit in .pf-header-fields' 18px padding; th text-padding alone only gives 9px). Right edge stays untouched, so the table is still flush edge-to-edge there. */
+::deep .pf-table-scroll { min-height: 0; flex: 1 1 auto; overflow: auto; padding-left: 9px; }
+::deep .pf-table-footer { flex: 0 0 auto; padding-left: 9px; }
+::deep .erp-table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 0 !important; box-shadow: none !important; font-size: 11px; }
+/*
+ * .erp-table.erp-table (class repeated) beats the pre-existing global
+ * `.voucher-shell .tt-voucher-entry table th/td` rules in app.css, which
+ * otherwise silently win on specificity ([hash].erp-table th is (0,2,1),
+ * the global rule is (0,2,2)) and were overriding this navy header design
+ * with a plain light background - which is also why the empty pf-col-remove
+ * header cell stood out as a visibly bordered, oddly-colored box instead of
+ * blending into the header bar.
+ */
+::deep .erp-table.erp-table th { height: 34px !important; padding: 0 9px !important; border: 0 !important; border-right: 1px solid rgba(255,255,255,.08) !important; background: var(--pf-navy) !important; color: #c8d8ee !important; font-size: 10px !important; font-weight: 700 !important; letter-spacing: .05em; text-transform: uppercase; line-height: 34px; }
+/* Thin page-colored sliver so the navy header doesn't look like it's bleeding off the screen's right edge. */
+::deep .erp-table.erp-table th.pf-col-remove { border-right: 3px solid var(--pf-page) !important; }
+::deep .erp-table.erp-table td { min-height: 34px !important; padding: 6px 9px !important; border: 0 !important; border-bottom: 1px solid #eaecf2 !important; background: #fff !important; color: var(--pf-text) !important; font-size: 11.5px !important; }
+::deep .erp-table tbody tr:nth-child(even) td { background: #fafbfd !important; }
+::deep .erp-table tfoot td { background: #eef3f8 !important; border-top: 1px solid #d5dee8 !important; font-weight: 800; }
+::deep .erp-table tr:focus-within td { background: var(--pf-focus) !important; }
+::deep .erp-table tr.pf-row-active td { background: #edf2fc !important; }
+::deep .erp-table tr.pf-row-active td:first-child { box-shadow: inset 3px 0 0 #2563eb; }
+::deep .erp-table input[type="number"] { width: 100% !important; height: 26px !important; padding: 1px 5px !important; }
+::deep .erp-table input:disabled { background: #eef1f4 !important; color: #9aa5b1 !important; }
+/*
+ * .compact-action/.action-danger are never actually defined anywhere globally
+ * (every other page that uses them duplicates its own scoped copy) - without
+ * one here the remove-row button rendered at the browser's default button
+ * size, wider than the narrow pf-col-remove column and forcing the table to
+ * scroll sideways to reveal it.
+ */
+::deep .erp-table tbody td:last-child { padding: 2px !important; text-align: center; }
+::deep .compact-action.action-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid #c94f4f;
+    border-radius: 5px;
+    background: #fff;
+    color: #a33a3a;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+}
+::deep .compact-action.action-danger:hover { background: #fdf0f0; }
+
+::deep .pf-col-item { width: 40%; } ::deep .pf-col-godown { width: 19%; } ::deep .pf-col-qty { width: 8%; }
+::deep .pf-col-uqc { width: 6%; } ::deep .pf-col-rate { width: 9%; } ::deep .pf-col-discount { width: 7%; }
+::deep .pf-col-amount { width: 9%; } ::deep .pf-col-remove { width: 2%; }
+
+::deep .pf-qty-reopen { width: 100%; padding: 3px 6px; border: 1px solid #b9c6d4; border-radius: 8px; background: #eaf4fe; color: #0f5fa8; font-family: Consolas, monospace; font-weight: 700; font-size: 11.5px; text-align: right; cursor: pointer; }
+::deep .pf-qty-reopen:hover { background: #d9ebfc; }
+::deep .pf-qty-empty { color: #b7c0ca; }
+
+/* ---- Narration (bottom segment of the merged card) ---- */
+/*
+ * Taller + a dedicated right-hand column reserved for a future per-voucher-type
+ * ledger/tax panel (see CLAUDE_UI_OVERHAUL_CHANGELOG_2026-09-08.md §28) - the
+ * extra height/width comes from growing this section into space that would
+ * otherwise sit unused, not by shrinking .pf-workspace and leaving a gap.
+ */
+::deep .mi-narration-section.mi-narration-section.mi-narration-section { display: grid; grid-template-columns: 86px minmax(0,5fr) minmax(150px, 3fr); align-items: center; gap: 10px; flex: 0 0 176px; margin: 0 !important; padding: 9px 18px; border: 0; border-top: 1px solid #eef0f4; border-radius: 0 !important; background: #fff; box-shadow: none !important; }
+::deep .mi-narration-section label { color: var(--pf-muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+::deep .mi-narration-section label span { display: none; }
+::deep .mi-narration-section textarea { width: 100% !important; height: 158px !important; min-height: 158px !important; max-height: 158px !important; padding: 8px 12px !important; resize: none; border: 1px solid #dde1ea !important; border-radius: 10px !important; background: #fafbfd !important; }
+::deep .pf-ledger-panel-placeholder { align-self: stretch; width: 100%; height: 158px; display: flex; flex-direction: column; border: 1px dashed #d5dee8; border-radius: 10px; background: #fafbfd; padding: 3px; overflow: hidden; }
+::deep .pf-ledger-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+::deep .pf-ledger-grid { display: flex; flex-direction: column; gap: 0; }
+::deep .pf-ledger-grid-row { flex: 0 0 21.3px; height: 21.3px; display: grid; grid-template-columns: 1fr 30px 68px; gap: 6px; align-items: center; overflow: hidden; }
+::deep .pf-ledger-panel-placeholder .pf-ledger-grid .pf-ledger-grid-row .pf-ledger-name-input,
+::deep .pf-ledger-panel-placeholder .pf-ledger-grid .pf-ledger-grid-row .pf-ledger-sign-input,
+::deep .pf-ledger-panel-placeholder .pf-ledger-grid .pf-ledger-grid-row .pf-ledger-amount-input {
+    width: 100%; height: 21.3px !important; min-height: 21.3px !important; max-height: 21.3px !important;
+    padding: 0 7px !important; border: 1px solid #e3e8ee !important; border-radius: 4px !important;
+    background: #fff !important; color: #9aaabb !important; font-size: 10px !important; line-height: 19.3px; box-sizing: border-box;
+}
+::deep .pf-ledger-panel-placeholder .pf-ledger-grid .pf-ledger-grid-row .pf-ledger-sign-input { padding: 0 1px !important; text-align: center; }
+::deep .pf-ledger-panel-placeholder .pf-ledger-grid .pf-ledger-grid-row .pf-ledger-amount-input { text-align: right; font-family: Consolas, monospace; }
+::deep .pf-ledger-panel-placeholder .pf-ledger-name-input:disabled, ::deep .pf-ledger-panel-placeholder .pf-ledger-sign-input:disabled, ::deep .pf-ledger-panel-placeholder .pf-ledger-amount-input:disabled {
+    background: #fff !important; border-color: #e3e8ee !important; color: #9aaabb !important; opacity: 1; cursor: default;
+}
+::deep .pf-ledger-total-row { border-top: 1px solid #d5dee8; padding-top: 1px; }
+::deep .pf-ledger-total-label { font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #1a3254; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; padding: 0 8px; box-sizing: border-box; }
+::deep .pf-ledger-total-amount { font-family: Consolas, monospace; font-size: 11px; font-weight: 700; color: #1a3254; text-align: right; padding: 0 8px; box-sizing: border-box; }
+
+/*
+ * ---- Titlebar actions (Quit / Accept-Update / Delete / Cancel) ----
+ * Rendered inside VoucherEntryFrame's titlebar via TitlebarActionsContent,
+ * but this markup is authored HERE, so it carries THIS component's own
+ * scope attribute directly - .pf-titlebar-actions is still the topmost
+ * element in this component's own authored fragment (its DOM parent belongs
+ * to VoucherEntryFrame), so it needs a plain selector, same as .pf-body
+ * above; .pf-titlebar-btn is a genuine descendant of it and reachable via a
+ * bare ::deep.
+ */
+.pf-titlebar-actions { display: flex; align-items: center; gap: 8px; }
+::deep .pf-titlebar-btn { display: inline-flex; min-height: 27px; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid rgba(0,0,0,.15); border-radius: 8px; background: rgba(0,0,0,.04); color: #42526b; font-size: 10px; cursor: pointer; }
+::deep .pf-titlebar-btn b { color: #5a6b80; }
+::deep .pf-titlebar-btn.is-accept { min-height: 30px; padding: 0 16px; border: none; border-radius: 16px; background: linear-gradient(160deg, #f59e0b 0%, #d97706 100%); box-shadow: 0 3px 10px rgba(217,119,6,.4), 0 1px 3px rgba(0,0,0,.15); }
+::deep .pf-titlebar-btn.is-accept b { color: #3b1c00; font-weight: 800; }
+::deep .pf-titlebar-btn.is-danger b { color: #dc2626; }
+
+/*
+ * Quit/Cancel dialogs are siblings of .pf-entry-form-frame in the real DOM
+ * (rendered directly by this component, not nested inside VoucherEntryFrame's
+ * ChildContent), so they never inherit the --pf-* custom properties defined
+ * on .pf-entry-form-frame by the wrapper page - var(--pf-navy) silently
+ * resolved to nothing here, leaving white title text on a transparent/white
+ * titlebar. Matches JobWorkOutOrder.razor.css's own (already-correct)
+ * .tt-dialog styling exactly, including its literal navy hex instead of a
+ * variable, for this reason.
+ */
+.tt-dialog-overlay { backdrop-filter: blur(1.5px); }
+::deep .tt-dialog { overflow: hidden; border: 0; border-radius: 16px; box-shadow: 0 24px 60px rgba(9, 20, 38, .32); }
+::deep .tt-dialog-titlebar { min-height: 40px; padding: 10px 16px; background: #1a3254; color: #fff; }
+::deep .tt-dialog-body { padding: 18px; color: #111827; background: #fff; }
+::deep .tt-dialog-actions { padding: 12px 16px; background: #f7f9fc; display: flex; gap: 8px; justify-content: flex-end; }
+::deep .tt-dialog-actions button { min-width: 104px; min-height: 34px; border: 1px solid #718096; border-radius: 10px; background: #fff; color: #111827; }
+::deep .tt-dialog-actions button.dialog-selected,
+::deep .tt-dialog-actions button:focus-visible { outline: 2px solid #ffd66b; outline-offset: -3px; border-color: #1a3254; background: #fff0b7; color: #111827; }
+.tally-modal-overlay { position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; background: rgba(23, 31, 43, 0.6); }
+::deep .tally-modal-window { width: min(430px, 95vw); background: #fff; border: 0; box-shadow: 0 24px 60px rgba(0,0,0,0.35); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; }
+::deep .tally-modal-titlebar { padding: 10px 16px; background: #1a3254 !important; color: #fff !important; border-bottom: 0 !important; }
+::deep .tt-cancel-reason { display: flex; flex-direction: column; gap: 4px; color: #1b1b1d; font-size: 11px; font-weight: 800; }
+::deep .tt-cancel-reason b { color: #a33a3a; }
+::deep .tt-cancel-reason textarea { width: 100%; resize: vertical; border: 1px solid #c8cfd8; border-radius: 10px; padding: 8px; }
+::deep .form-message { padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+::deep .form-message.success { background: #EDF7F1; color: #2F6B4B; }
+::deep .form-message.error { background: #FFF2F2; color: #A33A3A; }
+
+::deep .pf-attachments-row { display: flex; justify-content: flex-end; }
+::deep .pf-attachments-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 27px; padding: 4px 12px; border: 1px solid #c8cfd8; border-radius: 8px; background: #fff; color: #42526b; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; cursor: pointer; }
+::deep .pf-attachments-btn:hover { background: #f5f7fa; }
+::deep .pf-attachments-count { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #2563eb; color: #fff; font-size: 9.5px; font-weight: 700; }
+
+::deep .pf-attachments-modal { width: min(640px, 95vw); min-height: auto; }
+::deep .pf-attachments-body { display: flex; flex-direction: column; gap: 10px; padding: 15px; max-height: 60vh; overflow-y: auto; }
+::deep .pf-attachments-empty { padding: 20px; text-align: center; color: #9aaabb; font-size: 11.5px; }
+::deep .pf-attachment-row { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid #eef0f4; border-radius: 10px; background: #fafbfd; }
+::deep .pf-attachment-preview { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+::deep .pf-attachment-preview img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid #dde1ea; }
+::deep .pf-attachment-file-icon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 8px; border: 1px solid #dde1ea; background: #fff; font-size: 9px; font-weight: 700; letter-spacing: .02em; color: #9aaabb; }
+::deep .pf-attachment-filename { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: #6b7789; }
+::deep .pf-attachment-add { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border: 1px dashed #c8cfd8; border-radius: 10px; background: #fff; color: #2563eb; font-size: 11px; font-weight: 700; cursor: pointer; }
+::deep .pf-attachment-add input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }

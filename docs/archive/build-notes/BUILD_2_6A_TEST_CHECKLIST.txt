@@ -1,0 +1,24 @@
+TexTrack ERP v0.5 Build 2.6A — First Test Checklist
+===================================================
+
+1. Stop the previous TexTrack instance.
+2. Keep a PostgreSQL backup before first start.
+3. Extract this ZIP to a new folder.
+4. Run START_TEXTRACK.bat.
+5. Confirm startup completes without a migration error.
+6. Confirm existing Ledger Group, Ledger, UQC, Stock Group, Stock Category,
+   Stock Item, Godown, Voucher Type and Job Worker screens open.
+7. Confirm JWO list/create/alter still opens.
+8. Confirm Material Out list/create/alter still opens.
+9. Material In is expected to remain a placeholder in Build 2.6A.
+
+DATABASE CHECK (optional, using pgAdmin)
+----------------------------------------
+Confirm schema_migrations contains version 13 and these tables exist:
+- material_in_details
+- material_in_finished_goods
+- material_in_fg_allocations
+- material_in_consumptions
+- material_in_mo_allocations
+
+Do not manually insert test rows into these tables.

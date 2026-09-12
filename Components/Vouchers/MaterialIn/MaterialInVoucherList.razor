@@ -1,0 +1,36 @@
+<div class="list-toolbar">
+    <input id="mi-search" placeholder="Voucher, JWO, Batch or Job Worker" value="@SearchText"
+           @oninput="SearchChanged" @onkeydown="SearchKeyDown" />
+    <button type="button" class="primary-button" @onclick="CreateRequested">Alt+C Create</button>
+</div>
+<div id="mi-grid" class="grid-wrap">
+    <table class="data-grid selectable-grid mi-list-grid">
+        <thead><tr><th>Voucher</th><th>Date</th><th>Job Worker</th><th>JWO</th><th>Batch</th><th>Consumption Godown</th><th>Finished Goods Godown</th><th>FG Qty</th><th>Consumed Material Value</th><th>Process Charge</th><th>FG Value</th><th>Status</th></tr></thead>
+        <tbody>
+        @if (Rows.Count == 0) { <tr><td colspan="12" class="empty-cell">No Material In vouchers found.</td></tr> }
+        @for (var i = 0; i < Rows.Count; i++)
+        {
+            var index = i; var row = Rows[i];
+            <tr id="@($"mi-row-{row.VoucherId}")" tabindex="-1" class="@(index == SelectedIndex ? "selected-row" : null)"
+                @onclick="() => SelectRequested.InvokeAsync(index)" @ondblclick="OpenRequested">
+                <td><strong>@row.VoucherNumber</strong></td><td>@row.VoucherDate.ToString("dd-MM-yyyy")</td><td>@row.JobWorkerName</td><td>@row.JwoVoucherNumber</td><td>@row.Batch</td>
+                <td>@row.ConsumptionGodownName</td><td>@row.ReceivingGodownName</td><td>@row.ReceivedQuantity.ToString("0.###")</td>
+                <td>@row.ConsumedMaterialValue.ToString("0.00")</td><td>@row.ProcessCharge.ToString("0.00")</td><td>@row.FinishedGoodsValue.ToString("0.00")</td><td>@row.Status</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+<p class="master-help">Arrow keys select · Enter opens alteration · Alt+C creates · F4 searches · Esc returns</p>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<MaterialInListItem> Rows { get; set; } = Array.Empty<MaterialInListItem>();
+    [Parameter] public int SelectedIndex { get; set; }
+    [Parameter] public string SearchText { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SearchTextChanged { get; set; }
+    [Parameter] public EventCallback<KeyboardEventArgs> SearchKeyDown { get; set; }
+    [Parameter] public EventCallback CreateRequested { get; set; }
+    [Parameter] public EventCallback<int> SelectRequested { get; set; }
+    [Parameter] public EventCallback OpenRequested { get; set; }
+    private Task SearchChanged(ChangeEventArgs e) => SearchTextChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+}

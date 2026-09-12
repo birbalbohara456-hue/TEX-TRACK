@@ -1,0 +1,342 @@
+@page "/masters/bill-of-materials"
+@inject BillOfMaterialRepository Repository
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+@attribute [Authorize(Policy = SecurityPolicies.ManageMasters)]
+<PageTitle>Bill of Materials</PageTitle>
+
+<div id="bom-page-root" class="page-card master-page bom-master-page" tabindex="0"
+     data-keyboard-list-root="true" data-fast-row-navigation="true" @onkeydown="HandleKeyDown">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">PRODUCTION MASTER</p>
+            <h1>Bill of Materials</h1>
+        </div>
+        <div class="header-actions">
+            <button class="primary-button" type="button" @onclick="Create" disabled="@busy">Alt+C Create</button>
+            <button type="button" @onclick="EditSelected" disabled="@(SelectedRow is null || busy)">Enter Edit</button>
+            <button class="danger-button" type="button" @onclick="DeleteSelected" disabled="@(SelectedRow is null || busy)">Alt+D Delete</button>
+        </div>
+    </div>
+
+    <div class="database-ok">● Optional, versioned multi-level BOM · Child BOM cycles are rejected · JWO saves a transactional snapshot</div>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <p class="notice @(messageIsError ? "notice-error" : "notice-success")">@message</p>
+    }
+
+    @if (showForm)
+    {
+        <div class="stock-item-edit-form" data-enter-navigation="true">
+            <div class="form-heading">
+                <strong>@(model.Id == 0 ? "Create Bill of Materials" : "Edit Bill of Materials")</strong>
+                <span>Alt+S Save · Esc Cancel</span>
+            </div>
+            <section class="form-section">
+                <h2>BOM identity</h2>
+                <div class="stock-item-form-grid">
+                    <label>
+                        Output Stock Item <b>*</b>
+                        <div class="lookup-field">
+                            <input id="bom-output-item" data-erp-lookup="true" data-tt-related-master="/masters/stock-items" value="@model.StockItemText"
+                                   @onfocus='() => OpenLookup("output")' @oninput="OutputTextChanged" autocomplete="off" />
+                            @if (activeLookup == "output")
+                            {
+                                <div class="erp-lookup-panel bom-lookup-panel">
+                                    @foreach (var item in FilterStockItems(model.StockItemText).Take(20))
+                                    {
+                                        <button type="button" @onmousedown:preventDefault="true" @onclick="() => SelectOutputItem(item)"><strong>@item.Name</strong><span>@item.UqcShortName</span></button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </label>
+                    <label>
+                        BOM Name <b>*</b>
+                        <input maxlength="200" @bind="model.Name" @bind:event="oninput" />
+                    </label>
+                    <label>
+                        Output Quantity <b>*</b>
+                        <input type="number" min="0.0001" step="0.0001" @bind="model.OutputQuantity" />
+                    </label>
+                    <label>
+                        Current Revision
+                        <input type="number" value="@model.VersionNumber" disabled title="Revision numbers are assigned automatically" />
+                    </label>
+                    @if (model.Id != 0)
+                    {
+                        <label>
+                            Revision Reason
+                            <input maxlength="500" placeholder="Optional: explain what changed" @bind="model.ChangeReason" @bind:event="oninput" />
+                        </label>
+                    }
+                    <label class="form-check"><input type="checkbox" @bind="model.IsDefault" /> Default BOM for this item</label>
+                    <label class="form-check"><input type="checkbox" @bind="model.IsActive" /> Active</label>
+                </div>
+            </section>
+            @if (model.Id != 0 && revisionHistory.Count > 0)
+            {
+                <section class="form-section">
+                    <div class="variant-heading"><strong>Revision history</strong><span>Select two revisions to compare side by side</span></div>
+                    <div class="bom-compare-controls">
+                        <label>Older revision
+                            <select @bind="olderRevisionId">@foreach (var revision in revisionHistory.OrderBy(x => x.RevisionNumber)) { <option value="@revision.Id">v@revision.RevisionNumber · @revision.Name</option> }</select>
+                        </label>
+                        <label>Newer revision
+                            <select @bind="newerRevisionId">@foreach (var revision in revisionHistory.OrderByDescending(x => x.RevisionNumber)) { <option value="@revision.Id">v@revision.RevisionNumber · @revision.Name</option> }</select>
+                        </label>
+                        <button type="button" @onclick="CompareRevisions" disabled="@(olderRevisionId == 0 || newerRevisionId == 0 || olderRevisionId == newerRevisionId)">Compare</button>
+                    </div>
+                    <div class="table-scroll-shell">
+                        <table class="data-table">
+                            <thead><tr><th>Revision</th><th>Saved</th><th>By</th><th>Reason</th><th>Components</th><th>Status</th></tr></thead>
+                            <tbody>
+                                @foreach (var revision in revisionHistory)
+                                {
+                                    <tr>
+                                        <td>v@revision.RevisionNumber @(revision.IsCurrent ? "(Current)" : string.Empty)</td>
+                                        <td>@revision.CreatedAtUtc.ToLocalTime().ToString("dd-MMM-yyyy HH:mm")</td>
+                                        <td>@revision.CreatedBy</td>
+                                        <td>@revision.ChangeReason</td>
+                                        <td>@revision.ComponentCount</td>
+                                        <td>@revision.Status</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (revisionComparison is not null)
+                    {
+                        <div class="bom-comparison" aria-label="BOM revision comparison">
+                            @foreach (var revision in new[] { revisionComparison.Older, revisionComparison.Newer })
+                            {
+                                <article>
+                                    <h3>v@revision.RevisionNumber · @revision.Name</h3>
+                                    <p>@revision.StockItemName · @revision.OutputQuantity.ToString("0.####") @revision.UqcShortName</p>
+                                    <p>@revision.CreatedAtUtc.ToLocalTime().ToString("dd-MMM-yyyy HH:mm") · @revision.CreatedBy</p>
+                                    <p><strong>Reason:</strong> @revision.ChangeReason</p>
+                                    <table class="data-table">
+                                        <thead><tr><th>#</th><th>Component</th><th>Qty</th><th>Child BOM</th><th>Process</th><th>Notes</th></tr></thead>
+                                        <tbody>@foreach (var line in revision.Lines) { <tr><td>@line.LineNumber</td><td>@line.ComponentStockItemName @(!string.IsNullOrWhiteSpace(line.VariantName) ? $"· {line.VariantName}" : string.Empty)</td><td>@line.RequiredQuantity.ToString("0.####") @line.UqcShortName</td><td>@line.ChildBomName @(line.ChildBomRevisionNumber is int childRevision ? $"v{childRevision}" : string.Empty)</td><td>@line.ProcessName</td><td>@line.Notes</td></tr> }</tbody>
+                                    </table>
+                                </article>
+                            }
+                        </div>
+                    }
+                </section>
+            }
+
+            <section class="form-section">
+                <div class="variant-heading"><strong>Components</strong><button type="button" @onclick="AddLine">Add Component</button></div>
+                <div class="table-scroll-shell">
+                    <table class="data-table">
+                        <thead><tr><th>#</th><th>Component Stock Item</th><th>Required Qty</th><th>UQC</th><th>Child BOM (optional)</th><th>Process</th><th>Notes</th><th></th></tr></thead>
+                        <tbody>
+                            @for (var index = 0; index < model.Lines.Count; index++)
+                            {
+                                var rowIndex = index;
+                                var line = model.Lines[rowIndex];
+                                <tr>
+                                    <td>@(rowIndex + 1)</td>
+                                    <td><div class="lookup-field">
+                                        <input data-erp-lookup="true" data-tt-related-master="/masters/stock-items" value="@line.ComponentStockItemText"
+                                               @onfocus='() => OpenLookup($"component:{rowIndex}")'
+                                               @oninput="e => ComponentTextChanged(rowIndex, e.Value?.ToString())" autocomplete="off" />
+                                        @if (activeLookup == $"component:{rowIndex}")
+                                        {
+                                            <div class="erp-lookup-panel bom-lookup-panel">
+                                                @foreach (var item in FilterStockItems(line.ComponentStockItemText).Take(20))
+                                                {
+                                                    <button type="button" @onmousedown:preventDefault="true" @onclick="() => SelectComponent(rowIndex, item)"><strong>@item.Name</strong><span>@item.UqcShortName</span></button>
+                                                }
+                                            </div>
+                                        }
+                                    </div></td>
+                                    <td><input type="number" min="0" step="0.0001" @bind="line.RequiredQuantity" /></td>
+                                    <td>@(string.IsNullOrWhiteSpace(line.UqcShortName) ? "—" : line.UqcShortName)</td>
+                                    <td><div class="lookup-field">
+                                        <input data-erp-lookup="true" data-tt-related-master="/masters/bill-of-materials" value="@line.ChildBomText" placeholder="Optional"
+                                               @onfocus='() => OpenLookup($"child:{rowIndex}")'
+                                               @oninput="e => ChildBomTextChanged(rowIndex, e.Value?.ToString())" autocomplete="off" />
+                                        @if (activeLookup == $"child:{rowIndex}")
+                                        {
+                                            <div class="erp-lookup-panel bom-lookup-panel">
+                                                @{ var childBoms = FilterChildBoms(line).Take(20).ToList(); }
+                                                @if (childBoms.Count == 0)
+                                                {
+                                                    <div class="erp-lookup-empty">@(line.ComponentStockItemId == 0 ? "Select the component first." : "No active BOM exists for this component.")</div>
+                                                }
+                                                @foreach (var bom in childBoms)
+                                                {
+                                                    <button type="button" @onmousedown:preventDefault="true" @onclick="() => SelectChildBom(rowIndex, bom)"><strong>@bom.Name</strong><span>v@bom.VersionNumber · @bom.OutputQuantity.ToString("0.####") @bom.UqcShortName</span></button>
+                                                }
+                                                @if (line.ChildBomId is not null || !string.IsNullOrWhiteSpace(line.ChildBomText))
+                                                {
+                                                    <button type="button" @onmousedown:preventDefault="true" @onclick="() => ClearChildBom(rowIndex)"><strong>— No Child BOM —</strong><span>Normal material issue</span></button>
+                                                }
+                                            </div>
+                                        }
+                                    </div></td>
+                                    <td><select @bind="line.ProcessId"><option value="">—</option>@foreach (var process in lookups.Processes) { <option value="@process.Id">@process.Name</option> }</select></td>
+                                    <td><input maxlength="500" @bind="line.Notes" @bind:event="oninput" /></td>
+                                    <td><button type="button" class="danger-button" title="Remove component" @onclick="() => RemoveLine(rowIndex)">×</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="section-note">A Child BOM means this component is produced as an intermediate stage. Leaving it blank keeps the component as a normal material issue.</p>
+            </section>
+            <div class="form-actions sticky-form-actions">
+                <button class="primary-button" type="button" data-enter-save="true" @onclick="Save" disabled="@busy">Alt+S Save</button>
+                <button type="button" @onclick="CloseForm" disabled="@busy">Esc Cancel</button>
+            </div>
+        </div>
+    }
+    else if (loading)
+    {
+        <p class="muted">Loading Bill of Materials…</p>
+    }
+    else
+    {
+        <div id="bom-list-grid" class="table-scroll-shell grid-wrap tt-contained-scroll bom-list-grid">
+            <table class="data-table data-grid selectable-grid">
+                <thead><tr><th>Output Item</th><th>BOM Name</th><th>Version</th><th>Output Qty</th><th>UQC</th><th>Components</th><th>Default</th><th>Status</th></tr></thead>
+                <tbody>
+                    @for (var index = 0; index < PagedRows.Count; index++)
+                    {
+                        var rowIndex = index; var row = PagedRows[index];
+                        <tr id="bom-list-row-@row.Id" class="@(selectedIndex == rowIndex ? "selected selected-row" : null)"
+                            @onclick="() => SelectRow(rowIndex)" @ondblclick="EditSelected">
+                            <td>@row.StockItemName</td><td>@row.Name</td><td>@row.VersionNumber</td><td>@row.OutputQuantity</td><td>@row.UqcShortName</td><td>@row.ComponentCount</td><td>@(row.IsDefault ? "Yes" : "No")</td><td>@(row.IsActive ? "Active" : "Inactive")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="list-pager" aria-label="Bill of Materials pages">
+            <button type="button" @onclick="PreviousPage" disabled="@(pageIndex == 0)">PgUp Previous</button>
+            <span>Page @(pageIndex + 1) of @PageCount</span>
+            <button type="button" @onclick="NextPage" disabled="@(pageIndex >= PageCount - 1)">PgDn Next</button>
+        </div>
+        <p class="keyboard-hint">↑/↓ Select · Enter Edit · Alt+C Create · Alt+D Delete · Esc Back</p>
+    }
+</div>
+
+@code {
+    private readonly List<BillOfMaterialListItem> rows = new();
+    private readonly List<BillOfMaterialRevisionListItem> revisionHistory = new();
+    private BillOfMaterialLookupData lookups = new();
+    private BillOfMaterialEditModel model = NewModel();
+    private int selectedIndex = -1;
+    private bool loading = true, busy, showForm, messageIsError;
+    private string message = string.Empty;
+    private string? activeLookup;
+    private long olderRevisionId, newerRevisionId;
+    private BillOfMaterialRevisionComparison? revisionComparison;
+    private int pageIndex;
+    private const int PageSize = 25;
+    private List<BillOfMaterialListItem> PagedRows => rows.Skip(pageIndex * PageSize).Take(PageSize).ToList();
+    private int PageCount => Math.Max(1, (int)Math.Ceiling(rows.Count / (double)PageSize));
+    private BillOfMaterialListItem? SelectedRow => selectedIndex >= 0 && selectedIndex < PagedRows.Count ? PagedRows[selectedIndex] : null;
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        loading = true;
+        rows.Clear(); rows.AddRange(await Repository.GetListAsync());
+        lookups = await Repository.GetLookupsAsync();
+        pageIndex = Math.Clamp(pageIndex, 0, PageCount - 1);
+        selectedIndex = PagedRows.Count == 0 ? -1 : Math.Clamp(selectedIndex, 0, PagedRows.Count - 1);
+        loading = false;
+    }
+    private void Create() { model = NewModel(); revisionHistory.Clear(); showForm = true; message = string.Empty; }
+    private async Task EditSelected()
+    {
+        if (SelectedRow is null) return;
+        model = await Repository.GetForEditAsync(SelectedRow.Id) ?? NewModel();
+        revisionHistory.Clear();
+        revisionHistory.AddRange(await Repository.GetRevisionHistoryAsync(SelectedRow.Id));
+        newerRevisionId = revisionHistory.FirstOrDefault()?.Id ?? 0;
+        olderRevisionId = revisionHistory.Skip(1).FirstOrDefault()?.Id ?? newerRevisionId;
+        revisionComparison = null;
+        showForm = true; message = string.Empty;
+    }
+    private async Task CompareRevisions()
+    {
+        if (model.Id == 0 || olderRevisionId == newerRevisionId) return;
+        revisionComparison = await Repository.GetRevisionComparisonAsync(model.Id, olderRevisionId, newerRevisionId);
+    }
+    private async Task Save()
+    {
+        if (busy) return; busy = true;
+        try { ResolveOutputItem(); for (var i = 0; i < model.Lines.Count; i++) { ResolveComponent(i); ResolveChildBom(i); } var result = await Repository.SaveAsync(model); message = result.Message; messageIsError = !result.Success; if (result.Success) { showForm = false; await Reload(); } }
+        finally { busy = false; }
+    }
+    private async Task DeleteSelected()
+    {
+        if (SelectedRow is null || busy) return; busy = true;
+        try { var result = await Repository.DeleteAsync(SelectedRow.Id); message = result.Message; messageIsError = !result.Success; if (result.Success) await Reload(); }
+        finally { busy = false; }
+    }
+    private void CloseForm() { showForm = false; model = NewModel(); activeLookup = null; }
+    private void AddLine() => model.Lines.Add(new BillOfMaterialLineEditModel { LineNumber = model.Lines.Count + 1 });
+    private void RemoveLine(int index) { if (index >= 0 && index < model.Lines.Count) model.Lines.RemoveAt(index); if (model.Lines.Count == 0) AddLine(); }
+    private void OpenLookup(string key) => activeLookup = key;
+    private IEnumerable<BomStockItemLookup> FilterStockItems(string? text)
+    {
+        var term = text?.Trim() ?? string.Empty;
+        return lookups.StockItems.Where(x => term.Length == 0 || x.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+    private void OutputTextChanged(ChangeEventArgs e) { model.StockItemText = e.Value?.ToString() ?? string.Empty; model.StockItemId = 0; activeLookup = "output"; }
+    private void SelectOutputItem(BomStockItemLookup item) { model.StockItemId = item.Id; model.StockItemText = item.Name; activeLookup = null; }
+    private void ResolveOutputItem() { var item = lookups.StockItems.FirstOrDefault(x => x.Name.Equals(model.StockItemText.Trim(), StringComparison.OrdinalIgnoreCase)); model.StockItemId = item?.Id ?? 0; if (item is not null) model.StockItemText = item.Name; }
+    private void ComponentTextChanged(int index, string? value) { model.Lines[index].ComponentStockItemText = value ?? string.Empty; model.Lines[index].ComponentStockItemId = 0; model.Lines[index].ChildBomId = null; model.Lines[index].ChildBomText = string.Empty; activeLookup = $"component:{index}"; }
+    private void SelectComponent(int index, BomStockItemLookup item) { var line = model.Lines[index]; line.ComponentStockItemId = item.Id; line.ComponentStockItemText = item.Name; line.UqcId = item.UqcId; line.UqcShortName = item.UqcShortName; line.ChildBomId = null; line.ChildBomText = string.Empty; activeLookup = null; }
+    private void ResolveComponent(int index) { var line = model.Lines[index]; var item = lookups.StockItems.FirstOrDefault(x => x.Name.Equals(line.ComponentStockItemText.Trim(), StringComparison.OrdinalIgnoreCase)); line.ComponentStockItemId = item?.Id ?? 0; line.UqcId = item?.UqcId ?? 0; line.UqcShortName = item?.UqcShortName ?? string.Empty; if (item is not null) line.ComponentStockItemText = item.Name; }
+    private void ChildBomTextChanged(int index, string? value) { model.Lines[index].ChildBomText = value ?? string.Empty; model.Lines[index].ChildBomId = null; activeLookup = $"child:{index}"; }
+    private void ResolveChildBom(int index) { var line = model.Lines[index]; if (string.IsNullOrWhiteSpace(line.ChildBomText)) { line.ChildBomId = null; return; } var bom = ChildBomsFor(line).FirstOrDefault(x => BomText(x).Equals(line.ChildBomText.Trim(), StringComparison.OrdinalIgnoreCase)); line.ChildBomId = bom?.Id; line.ChildBomText = bom is null ? string.Empty : BomText(bom); }
+    private IEnumerable<BillOfMaterialListItem> ChildBomsFor(BillOfMaterialLineEditModel line) => lookups.Boms.Where(x => x.IsActive && x.StockItemId == line.ComponentStockItemId && x.Id != model.Id);
+    private IEnumerable<BillOfMaterialListItem> FilterChildBoms(BillOfMaterialLineEditModel line)
+    {
+        var term = line.ChildBomText.Trim();
+        return ChildBomsFor(line).Where(x => term.Length == 0 || BomText(x).Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+    private void SelectChildBom(int index, BillOfMaterialListItem bom) { var line = model.Lines[index]; line.ChildBomId = bom.Id; line.ChildBomText = BomText(bom); activeLookup = null; }
+    private void ClearChildBom(int index) { var line = model.Lines[index]; line.ChildBomId = null; line.ChildBomText = string.Empty; activeLookup = null; }
+    private static string BomText(BillOfMaterialListItem bom) => $"{bom.Name} · v{bom.VersionNumber}";
+    private static BillOfMaterialEditModel NewModel() => new() { OutputQuantity = 1, VersionNumber = 1, IsDefault = true, IsActive = true, Lines = new() { new() { LineNumber = 1 } } };
+    private async Task SelectRow(int index) { selectedIndex = index; await RevealSelectedRow(); }
+    private async Task RevealSelectedRow()
+    {
+        if (SelectedRow is not null)
+            await JS.InvokeVoidAsync("texTrackRevealRow", $"bom-list-row-{SelectedRow.Id}", "bom-list-grid");
+    }
+    private async Task PreviousPage()
+    {
+        if (pageIndex == 0) return;
+        pageIndex--; selectedIndex = PagedRows.Count == 0 ? -1 : 0;
+        await InvokeAsync(StateHasChanged); await RevealSelectedRow();
+    }
+    private async Task NextPage()
+    {
+        if (pageIndex >= PageCount - 1) return;
+        pageIndex++; selectedIndex = PagedRows.Count == 0 ? -1 : 0;
+        await InvokeAsync(StateHasChanged); await RevealSelectedRow();
+    }
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.AltKey && e.Key.Equals("c", StringComparison.OrdinalIgnoreCase)) Create();
+        else if (e.AltKey && e.Key.Equals("s", StringComparison.OrdinalIgnoreCase) && showForm) await Save();
+        else if (e.AltKey && e.Key.Equals("d", StringComparison.OrdinalIgnoreCase) && !showForm) await DeleteSelected();
+        else if (e.Key == "Escape") { if (showForm) CloseForm(); else Navigation.NavigateTo("/"); }
+        else if (!showForm && e.Key == "Enter") await EditSelected();
+        else if (!showForm && e.Key == "ArrowDown" && PagedRows.Count > 0) { selectedIndex = Math.Min(PagedRows.Count - 1, Math.Max(0, selectedIndex + 1)); await RevealSelectedRow(); }
+        else if (!showForm && e.Key == "ArrowUp" && PagedRows.Count > 0) { selectedIndex = Math.Max(0, selectedIndex); selectedIndex = Math.Max(0, selectedIndex - 1); await RevealSelectedRow(); }
+        else if (!showForm && e.Key == "PageDown") await NextPage();
+        else if (!showForm && e.Key == "PageUp") await PreviousPage();
+    }
+}

@@ -1,0 +1,21 @@
+TexTrack ERP v0.5 Build 2.5A — Migration Chain Repair
+
+Base:
+TexTrack_ERP_v0.5_Build2_5_JOB_WORKER_MASTER_STABLE_FULL
+
+Change:
+- Restored missing migration 011_stock_movement_kind_length.sql.
+- The migration widens stock_movements.movement_kind from varchar(30) to varchar(50).
+- This matches the accepted Build 2.1 release note and the existing EF mapping.
+- Existing databases that already record schema version 011 will skip it.
+- Databases with 012 applied but no 011 can safely apply 011 on next startup.
+
+No frozen master, JWO, Material Out, numbering, or keyboard behavior was changed.
+
+Next migration reserved for Material In:
+013_material_in_foundation.sql
+
+Verification performed in packaging environment:
+- Migration numbering uniqueness: passed (001 through 012 complete)
+- Migration 011 content check: passed
+- Source compile: not run because .NET SDK is unavailable in the packaging environment

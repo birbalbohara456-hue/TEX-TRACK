@@ -1,0 +1,486 @@
+@page "/masters/job-workers"
+@inject JobWorkerRepository Repository
+@inject DatabaseStatus Database
+@inject IJSRuntime JS
+
+@attribute [Authorize(Policy = SecurityPolicies.ManageMasters)]
+<PageTitle>Job Workers</PageTitle>
+
+<div id="job-worker-page-root" class="page-card master-page" tabindex="0" @ref="pageRoot"
+     @onkeydown="HandlePageKeyDown" @onkeydown:preventDefault="true">
+    <KeyboardContextScope ContextId="job-workers-list" RootElementId="job-worker-page-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="@(selectedIndex >= 0 && !busy)" DeleteAsync="DeleteSelected" />
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">PRODUCTION MASTER</p>
+            <h1>Job Workers</h1>
+        </div>
+        <div class="header-actions">
+            <button class="primary-button" type="button" @onclick="OpenCreate" disabled="@(!Database.IsConnected || busy)">Alt+C Create</button>
+            <button type="button" @onclick="OpenEdit" disabled="@(selectedIndex < 0 || busy)">Enter Edit</button>
+            <button type="button" class="danger-button" @onclick="DeleteSelected" disabled="@(selectedIndex < 0 || busy)">Alt+D Delete</button>
+        </div>
+    </div>
+
+    @if (!Database.IsConnected)
+    {
+        <div class="database-warning"><strong>PostgreSQL setup required</strong><p>@Database.Message</p></div>
+    }
+    else
+    {
+        <div class="database-ok">● PostgreSQL connected · Job Worker uses a stable Ledger ID</div>
+
+        @if (showForm)
+        {
+            <KeyboardContextScope ContextId="job-workers-form" RootElementId="job-worker-form-root"
+                                  ContextType="KeyboardContextType.Form"
+                                  Mode="@(editModel.Id == 0 ? KeyboardContextMode.Create : KeyboardContextMode.Alteration)"
+                                  CanDelete="@(editModel.Id != 0 && !busy)" DeleteAsync="DeleteCurrent"
+                                  InitialFocusTarget="job-worker-name-input" />
+            <div id="job-worker-form-root" class="ledger-edit-form" data-enter-navigation="true"
+                 @onkeydown="HandleFormKeyDown" @onkeydown:stopPropagation="true">
+                <div class="form-heading">
+                    <strong>@(editModel.Id == 0 ? "Create Job Worker" : "Alter Job Worker")</strong>
+                    <span>Alt+S Save · Esc Cancel</span>
+                </div>
+                <section class="form-section">
+                    <h2>Identity</h2>
+                    <div class="ledger-form-grid">
+                        <label>Job Worker Name <b>*</b>
+                            <input id="job-worker-name-input" maxlength="200" @bind="editModel.Name" @bind:event="oninput" />
+                        </label>
+                        <label>Alias
+                            <input maxlength="200" @bind="editModel.Alias" @bind:event="oninput" />
+                        </label>
+                        <label>Ledger Group <b>*</b>
+                            <select value="@GroupValue" @onchange="GroupChanged">
+                                <option value="">-- Select Ledger Group --</option>
+                                @foreach (var group in lookups.LedgerGroups)
+                                {
+                                    <option value="@group.Id">@group.Name</option>
+                                }
+                            </select>
+                        </label>
+                        <label>Tally Ledger Name
+                            <input maxlength="200" @bind="editModel.TallyLedgerName" @bind:event="oninput" />
+                        </label>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h2>Contact</h2>
+                    <div class="ledger-form-grid">
+                        <label>Contact Person
+                            <input maxlength="150" @bind="editModel.ContactPerson" @bind:event="oninput" />
+                        </label>
+                        <label>Mobile Number
+                            <input maxlength="50" @bind="editModel.Mobile" @bind:event="oninput" />
+                        </label>
+                        <label class="wide-field">Address Line 1
+                            <input maxlength="250" @bind="editModel.AddressLine1" @bind:event="oninput" />
+                        </label>
+                        <label class="wide-field">Address Line 2
+                            <input maxlength="250" @bind="editModel.AddressLine2" @bind:event="oninput" />
+                        </label>
+                        <label>City
+                            <input maxlength="100" @bind="editModel.City" @bind:event="oninput" />
+                        </label>
+                        <label>State
+                            <input maxlength="100" @bind="editModel.State" @bind:event="oninput" />
+                        </label>
+                        <label>GSTIN
+                            <input maxlength="15" @bind="editModel.Gstin" @bind:event="oninput" />
+                        </label>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h2>Jobber Godown Default</h2>
+                    <p class="muted">This is where material is sent to the jobber. Material In consumes it from the same godown.</p>
+                    <div class="ledger-form-grid">
+                        <label>Jobber Destination Godown
+                            <div class="lookup-field">
+                                <input id="job-worker-mo-godown" data-erp-lookup="true" data-tt-related-master="/masters/godowns"
+                                       autocomplete="new-password" name="job-worker-jobber-destination-godown"
+                                       value="@moGodownText" data-selected-id="@editModel.DefaultMaterialOutDestinationGodownId"
+                                       @onfocus="OpenJobberGodownLookup" @oninput="JobberGodownTextChanged" @onchange="JobberGodownTextCommitted"
+                                       placeholder="Type to search Jobber Destination Godown" />
+                                @if (activeLookupKey == "jobber-destination-godown")
+                                {
+                                    var godowns = FilterGodowns().Take(12).ToList();
+                                    <div class="erp-lookup-panel">
+                                        @foreach (var godown in godowns)
+                                        {
+                                            <button type="button" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => SelectJobberGodown(godown)"><strong>@godown.Name</strong></button>
+                                        }
+                                        @if (godowns.Count == 0) { <div class="erp-lookup-empty">No matching active Godown</div> }
+                                    </div>
+                                }
+                            </div>
+                        </label>
+                    </div>
+                </section>
+                <div class="form-actions">
+                    <button type="button" class="primary-button" data-enter-save="true" @onclick="SaveAsync" disabled="@busy">Alt+S Save</button>
+                    <button type="button" @onclick="CloseForm" disabled="@busy">Esc Cancel</button>
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p class="notice @(messageIsError ? "notice-error" : "notice-success")">@message</p>
+        }
+
+        @if (!showForm)
+        {
+        <div class="toolbar-row">
+            <input id="job-worker-search" data-tt-filter-input="true" placeholder="Search name, alias, Tally name, city, state, contact or mobile"
+                   @bind="searchText" @bind:event="oninput" @onkeydown="HandleSearchKeyDown" @onkeydown:stopPropagation="true" />
+            <button type="button" @onclick="ApplySearch" disabled="@busy">Search</button>
+            <button type="button" @onclick="ClearSearch" disabled="@busy">Clear</button>
+            <span>@totalCount job worker(s)</span>
+        </div>
+
+        @if (loading)
+        {
+            <p class="muted">Loading Job Workers…</p>
+        }
+        else
+        {
+            <div class="grid-wrap" id="job-worker-grid">
+                <table class="data-grid selectable-grid">
+                    <thead><tr><th>Name</th><th>Ledger Group</th><th>Contact</th><th>Location</th><th>Jobber Destination Godown</th></tr></thead>
+                    <tbody>
+                    @if (rows.Count == 0)
+                    {
+                        <tr><td colspan="5" class="empty-cell">No matching Job Workers.</td></tr>
+                    }
+                    else
+                    {
+                        @for (var i = 0; i < rows.Count; i++)
+                        {
+                            var index = i;
+                            var row = rows[index];
+                            <tr @key="row.Id" id="@RowId(row.Id)" tabindex="-1" class="@(index == selectedIndex ? "selected-row" : null)"
+                                @onclick="() => SelectRow(index)" @ondblclick="OpenEdit">
+                                <td><strong>@row.Name</strong><br /><span class="muted">@row.Alias</span></td>
+                                <td>@row.LedgerGroupName</td>
+                                <td>@ContactText(row)</td>
+                                <td>@LocationText(row)</td>
+                                <td>@DisplayOrDash(row.MaterialOutGodownName)</td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <div class="master-pager" aria-label="Job Worker pages">
+                <button type="button" @onclick="PreviousPage" disabled="@(busy || loading || pageNumber <= 1)">PgUp Previous</button>
+                <span>Page @pageNumber of @totalPages</span>
+                <button type="button" @onclick="NextPage" disabled="@(busy || loading || pageNumber >= totalPages)">PgDn Next</button>
+            </div>
+            <p class="master-help">↑/↓ Select · Enter Alter · Alt+C Create · Alt+D Delete · F4 Search · Esc Back</p>
+        }
+        }
+    }
+</div>
+
+@code {
+    private List<JobWorkerListItem> rows = new();
+    private JobWorkerMasterLookupData lookups = new();
+    private JobWorkerEditModel editModel = new();
+    private ElementReference pageRoot;
+    private int selectedIndex = -1;
+    private const int PageSize = 100;
+    private int pageNumber = 1;
+    private int totalPages = 1;
+    private int totalCount;
+    private bool loading = true;
+    private bool busy;
+    private bool showForm;
+    private bool pendingFormFocus;
+    private bool pendingRowScroll;
+    private bool pendingSearchFocus;
+    private string? pendingReturnFocusId;
+    private string searchText = string.Empty;
+    private string message = string.Empty;
+    private bool messageIsError;
+    private string moGodownText = string.Empty;
+    private string? activeLookupKey;
+
+    private string GroupValue => editModel.LedgerGroupId?.ToString() ?? string.Empty;
+    private static string RowId(long id) => $"job-worker-row-{id}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Database.IsConnected)
+        {
+            lookups = await Repository.GetLookupsAsync();
+            await LoadAsync();
+        }
+        else loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await pageRoot.FocusAsync();
+        if (showForm)
+        {
+            pendingSearchFocus = false;
+            pendingReturnFocusId = null;
+            pendingRowScroll = false;
+            if (pendingFormFocus)
+            {
+                pendingFormFocus = false;
+                await JS.InvokeVoidAsync("texTrackFocusById", "job-worker-name-input");
+            }
+            return;
+        }
+
+        pendingFormFocus = false;
+        if (pendingSearchFocus)
+        {
+            pendingSearchFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusById", "job-worker-search");
+        }
+        if (pendingReturnFocusId is not null)
+        {
+            var id = pendingReturnFocusId;
+            pendingReturnFocusId = null;
+            await JS.InvokeVoidAsync("texTrackFocusById", id);
+        }
+        if (pendingRowScroll && selectedIndex >= 0 && selectedIndex < rows.Count)
+        {
+            pendingRowScroll = false;
+            await JS.InvokeVoidAsync("texTrackScrollRowIntoView", RowId(rows[selectedIndex].Id), "job-worker-grid");
+        }
+    }
+
+    private async Task LoadAsync(long? selectId = null)
+    {
+        loading = true;
+        try
+        {
+            var result = await Repository.GetPageAsync(searchText, pageNumber, PageSize);
+            rows = result.Rows;
+            pageNumber = result.Page;
+            totalPages = result.TotalPages;
+            totalCount = result.TotalCount;
+            if (rows.Count == 0) selectedIndex = -1;
+            else if (selectId.HasValue)
+            {
+                selectedIndex = rows.FindIndex(x => x.Id == selectId);
+                if (selectedIndex < 0) selectedIndex = 0;
+            }
+            else if (selectedIndex < 0 || selectedIndex >= rows.Count) selectedIndex = 0;
+            pendingRowScroll = selectedIndex >= 0;
+        }
+        catch (Exception ex) { ShowError(ex.GetBaseException().Message); }
+        finally { loading = false; }
+    }
+
+    private void OpenCreate()
+    {
+        if (busy || !Database.IsConnected) return;
+        editModel = new JobWorkerEditModel { LedgerGroupId = lookups.PreferredLedgerGroupId };
+        moGodownText = string.Empty;
+        activeLookupKey = null;
+        showForm = true;
+        message = string.Empty;
+    }
+
+    private async Task OpenEdit()
+    {
+        if (busy || selectedIndex < 0 || selectedIndex >= rows.Count) return;
+        busy = true;
+        try
+        {
+            var loaded = await Repository.GetForEditAsync(rows[selectedIndex].Id);
+            if (loaded is null) { ShowError("The selected Job Worker no longer exists."); await LoadAsync(); return; }
+            editModel = loaded;
+            var jobberGodownId = loaded.DefaultMaterialOutDestinationGodownId ?? loaded.DefaultMaterialInConsumptionGodownId;
+            moGodownText = GodownName(jobberGodownId);
+            editModel.DefaultMaterialOutDestinationGodownId = jobberGodownId;
+            editModel.DefaultMaterialInConsumptionGodownId = jobberGodownId;
+            activeLookupKey = null;
+            showForm = true;
+            message = string.Empty;
+        }
+        catch (Exception ex) { ShowError(ex.GetBaseException().Message); }
+        finally { busy = false; }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (busy) return;
+        ResolveGodown(moGodownText, true);
+        if (!string.IsNullOrWhiteSpace(moGodownText) && editModel.DefaultMaterialOutDestinationGodownId is null)
+        {
+            ShowError("Select a valid Jobber Destination Godown from the lookup.");
+            activeLookupKey = "jobber-destination-godown";
+            await JS.InvokeVoidAsync("texTrackFocusById", "job-worker-mo-godown");
+            return;
+        }
+        editModel.DefaultMaterialInConsumptionGodownId = editModel.DefaultMaterialOutDestinationGodownId;
+        busy = true;
+        try
+        {
+            var result = await Repository.SaveAsync(editModel);
+            if (!result.Success) { ShowError(result.Message); pendingFormFocus = true; return; }
+            showForm = false;
+            ShowSuccess(result.Message);
+            await LoadAsync(result.EntityId);
+            pendingReturnFocusId = selectedIndex >= 0 ? RowId(rows[selectedIndex].Id) : "job-worker-page-root";
+        }
+        catch (Exception ex) { ShowError(ex.GetBaseException().Message); pendingFormFocus = true; }
+        finally { busy = false; }
+    }
+
+    private Task DeleteSelected() => DeleteCore(false);
+    private Task DeleteCurrent() => DeleteCore(true);
+
+    private async Task DeleteCore(bool fromForm)
+    {
+        var id = fromForm ? editModel.Id : selectedIndex >= 0 && selectedIndex < rows.Count ? rows[selectedIndex].Id : 0;
+        var name = fromForm ? editModel.Name : selectedIndex >= 0 && selectedIndex < rows.Count ? rows[selectedIndex].Name : string.Empty;
+        if (id <= 0 || busy) return;
+        var focusId = fromForm ? "job-worker-name-input" : RowId(id);
+        var confirmed = await JS.InvokeAsync<bool>("texTrackConfirmDelete", "Delete Job Worker?",
+            $"Delete '{name}'? This is allowed only while the Job Worker is completely unused.", focusId);
+        if (!confirmed) return;
+        busy = true;
+        try
+        {
+            var result = await Repository.DeleteAsync(id);
+            if (!result.Success) { ShowError(result.Message); if (fromForm) pendingFormFocus = true; return; }
+            showForm = false;
+            ShowSuccess(result.Message);
+            await LoadAsync();
+            pendingReturnFocusId = selectedIndex >= 0 ? RowId(rows[selectedIndex].Id) : "job-worker-page-root";
+        }
+        catch (Exception ex) { ShowError(ex.GetBaseException().Message); }
+        finally { busy = false; }
+    }
+
+    private async Task CloseForm()
+    {
+        showForm = false;
+        editModel = new();
+        activeLookupKey = null;
+        message = string.Empty;
+        pendingRowScroll = selectedIndex >= 0;
+        pendingReturnFocusId = selectedIndex >= 0 && selectedIndex < rows.Count ? RowId(rows[selectedIndex].Id) : "job-worker-page-root";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void SelectRow(int index) { selectedIndex = index; pendingRowScroll = true; }
+    private void GroupChanged(ChangeEventArgs e) => editModel.LedgerGroupId = long.TryParse(e.Value?.ToString(), out var id) ? id : null;
+    private void SearchChanged(ChangeEventArgs e) => searchText = e.Value?.ToString() ?? string.Empty;
+    private async Task ApplySearch()
+    {
+        pageNumber = 1;
+        pendingSearchFocus = false;
+        await LoadAsync();
+        pendingReturnFocusId = selectedIndex >= 0 && selectedIndex < rows.Count
+            ? RowId(rows[selectedIndex].Id)
+            : "job-worker-search";
+        await InvokeAsync(StateHasChanged);
+    }
+    private async Task ClearSearch() { searchText = string.Empty; pageNumber = 1; await LoadAsync(); pendingSearchFocus = true; }
+
+    private async Task PreviousPage()
+    {
+        if (busy || loading || pageNumber <= 1) return;
+        pageNumber--;
+        selectedIndex = 0;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private async Task NextPage()
+    {
+        if (busy || loading || pageNumber >= totalPages) return;
+        pageNumber++;
+        selectedIndex = 0;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ApplySearch();
+        else if (e.Key == "Escape")
+        {
+            if (searchText.Length > 0) await ClearSearch();
+            else await pageRoot.FocusAsync();
+        }
+    }
+
+    private async Task HandlePageKeyDown(KeyboardEventArgs e)
+    {
+        if (showForm) return;
+        if (e.AltKey && e.Key.Equals("c", StringComparison.OrdinalIgnoreCase)) { OpenCreate(); return; }
+        if (e.Key == "F4") { pendingSearchFocus = true; await InvokeAsync(StateHasChanged); return; }
+        if (rows.Count == 0) return;
+        var changed = false;
+        if (e.Key is "ArrowDown" or "Down") { selectedIndex = Math.Min(selectedIndex + 1, rows.Count - 1); changed = true; }
+        else if (e.Key is "ArrowUp" or "Up") { selectedIndex = Math.Max(selectedIndex - 1, 0); changed = true; }
+        else if (e.Key == "PageDown") { await NextPage(); return; }
+        else if (e.Key == "PageUp") { await PreviousPage(); return; }
+        else if (e.Key == "Home") { selectedIndex = 0; changed = true; }
+        else if (e.Key == "End") { selectedIndex = rows.Count - 1; changed = true; }
+        else if (e.Key == "Enter") await OpenEdit();
+        if (changed) { pendingRowScroll = true; await InvokeAsync(StateHasChanged); }
+    }
+
+    private async Task HandleFormKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && activeLookupKey is not null) activeLookupKey = null;
+        else if (e.Key == "Escape") await CloseForm();
+        else if (e.AltKey && e.Key.Equals("s", StringComparison.OrdinalIgnoreCase)) await SaveAsync();
+    }
+
+    private void OpenJobberGodownLookup() => activeLookupKey = "jobber-destination-godown";
+
+    private void JobberGodownTextChanged(ChangeEventArgs e)
+    {
+        moGodownText = e.Value?.ToString() ?? string.Empty;
+        ResolveGodown(moGodownText, true);
+        activeLookupKey = "jobber-destination-godown";
+    }
+    private void JobberGodownTextCommitted(ChangeEventArgs e)
+    {
+        moGodownText = e.Value?.ToString() ?? string.Empty;
+        ResolveGodown(moGodownText, true);
+    }
+
+    private IEnumerable<JobWorkGodownLookup> FilterGodowns() => string.IsNullOrWhiteSpace(moGodownText)
+        ? lookups.Godowns
+        : lookups.Godowns.Where(x => x.Name.Contains(moGodownText.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private void SelectJobberGodown(JobWorkGodownLookup godown)
+    {
+        moGodownText = godown.Name;
+        editModel.DefaultMaterialOutDestinationGodownId = godown.Id;
+        editModel.DefaultMaterialInConsumptionGodownId = godown.Id;
+        activeLookupKey = null;
+    }
+
+    private void ResolveGodown(string text, bool materialOut)
+    {
+        var match = lookups.Godowns.FirstOrDefault(x => string.Equals(x.Name, text.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (materialOut)
+        {
+            editModel.DefaultMaterialOutDestinationGodownId = match?.Id;
+            if (match is not null) moGodownText = match.Name;
+        }
+        else editModel.DefaultMaterialInConsumptionGodownId = match?.Id;
+    }
+
+    private string GodownName(long? id) => lookups.Godowns.FirstOrDefault(x => x.Id == id)?.Name ?? string.Empty;
+    private void ShowSuccess(string value) { message = value; messageIsError = false; }
+    private void ShowError(string value) { message = value; messageIsError = true; }
+    private static string DisplayOrDash(string value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string LocationText(JobWorkerListItem row) => DisplayOrDash(string.Join(", ", new[] { row.City, row.State }.Where(x => !string.IsNullOrWhiteSpace(x))));
+    private static string ContactText(JobWorkerListItem row) => DisplayOrDash(string.Join(" · ", new[] { row.ContactPerson, row.Mobile }.Where(x => !string.IsNullOrWhiteSpace(x))));
+}

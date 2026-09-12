@@ -1,0 +1,2397 @@
+@page "/vouchers/job-work-out-order"
+@implements IAsyncDisposable
+@attribute [Authorize(Policy = SecurityPolicies.OperateVouchers)]
+@using System.Globalization
+@inject JobWorkOrderRepository Repository
+@inject DatabaseStatus Database
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+<PageTitle>Job Work Out Order</PageTitle>
+
+<div id="jwo-page-root" class="page-card jwo-page" tabindex="0" @ref="pageRoot" @onkeydown="HandlePageKeyDown" @onkeydown:preventDefault="true">
+    <KeyboardContextScope ContextId="jwo-list" RootElementId="jwo-page-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="@(selectedIndex >= 0 && !busy)" DeleteAsync="DeleteSelected"
+                          HandlesEscape="true" EscapeAsync="ExitList" />
+
+    @if (!Database.IsConnected)
+    {
+        <div class="database-warning"><strong>PostgreSQL setup required</strong><p>@Database.Message</p></div>
+    }
+    else if (loading)
+    {
+        <div class="loading-state">Loading Job Work Out Orders…</div>
+    }
+    else if (showForm)
+    {
+        <!-- FORM VIEW -->
+        <KeyboardContextScope ContextId="jwo-form" RootElementId="jwo-form-root"
+                              ContextType="KeyboardContextType.Form"
+                              Mode="@(editModel.Id == 0 ? KeyboardContextMode.Create : KeyboardContextMode.Alteration)"
+                              CanDelete="@(editModel.Id != 0 && !busy)" DeleteAsync="DeleteCurrent"
+                              CanCancel="@(editModel.Id != 0 && !busy && !SelectedVoucherIsCancelled)" CancelAsync="RequestCancelSelected"
+                              IsVoucherEntry="true" EscapeAsync="RequestCloseForm" AcceptAsync="SaveAsync" />
+        <div id="jwo-form-root" class="jwo-entry-form tt-voucher-entry" tabindex="0" data-voucher-profile="job-work-out-order" data-enter-navigation="true" data-tt-voucher-form-root="true" @onkeydown="HandleFormKeyDown" @onkeydown:stopPropagation="true">
+            
+            <div class="jwo-topbar">
+                <div class="jwo-header-main">
+                    <div class="jwo-header-top">
+                        <h1 class="jwo-screen-title">Job Work Out Order</h1>
+                        <span class="jwo-order-badge">
+                            <input id="jwo-voucher-number" maxlength="100" readonly="@(!IsManualVoucherNumber)" tabindex="@(IsManualVoucherNumber ? 0 : -1)" @bind="editModel.VoucherNumber" @bind:event="oninput" />
+                        </span>
+                        <span class="jwo-status-chip @(editModel.Id == 0 ? "is-unsaved" : SelectedVoucherIsCancelled ? "is-cancelled" : "")">@(editModel.Id == 0 ? "Unsaved" : SelectedVoucherIsCancelled ? "Cancelled" : "Saved")</span>
+                    </div>
+                    <div class="jwo-subtitle">Issue finished-goods production to an external job worker</div>
+                </div>
+                <div class="jwo-toolbar">
+                    <button type="button" class="jwo-toolbar-btn" @onclick="RequestCloseForm" disabled="@busy"><b>Esc</b> Quit</button>
+                    @if (editModel.Id != 0)
+                    {
+                        <button accesskey="d" type="button" class="jwo-toolbar-btn is-danger" @onclick="DeleteCurrent" disabled="@busy"><b>Alt+D</b> Delete</button>
+                        <button accesskey="x" type="button" class="jwo-toolbar-btn" @onclick="RequestCancelSelected" disabled="@(busy || SelectedVoucherIsCancelled)"><b>Alt+X</b> Cancel</button>
+                    }
+                    <button id="jwo-save-button" data-enter-save="true" data-voucher-save-action="true"
+                            type="button" class="jwo-toolbar-btn is-accept" @onclick="SaveAsync" disabled="@busy"><b>Alt+A</b> Accept</button>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(message)) { <div class="form-message @(messageIsError ? "error" : "success")">@message</div> }
+
+            <section class="jwo-header-card">
+                <div class="jwo-field-grid">
+                    <label class="jwo-field jwo-field-voucher-type">
+                        <span>Voucher Type <b>*</b></span>
+                        <div class="lookup-field">
+                            <input id="jwo-voucher-type-input" data-erp-lookup="true" data-tt-related-master="/masters/voucher-types" autocomplete="new-password"
+                                   name="jwo-voucher-type-lookup" placeholder="Type to search Voucher Type"
+                                   readonly="@(editModel.Id != 0)" value="@editModel.VoucherTypeText"
+                                   @onfocus="OpenVoucherTypeLookup" @oninput="VoucherTypeTextChanged" />
+                            @if (activeLookupKey == "voucher-type" && editModel.Id == 0)
+                            {
+                                var voucherTypeMatches = FilterVoucherTypes().Take(12).ToList();
+                                <div class="erp-lookup-panel">
+                                    @if (voucherTypeMatches.Count == 0)
+                                    {
+                                        <div class="erp-lookup-empty">Nothing found</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var type in voucherTypeMatches)
+                                        {
+                                            <button type="button" @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" @onclick="() => SelectVoucherType(type)">
+                                                <strong>@type.Name</strong><span>@(type.IsSystem ? "Permanent" : "Custom")</span>
+                                            </button>
+                                        }
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </label>
+                    <label class="jwo-field jwo-field-batch">
+                        <span>Batch <b>*</b></span>
+                        <input id="jwo-batch-input" maxlength="100" @bind="editModel.Batch" @bind:event="oninput" />
+                    </label>
+                    <label class="jwo-field jwo-field-reference">
+                        <span>Reference</span>
+                        <input id="jwo-reference-input" maxlength="100" @bind="editModel.ReferenceNumber" @bind:event="oninput" />
+                    </label>
+                    <label class="jwo-field jwo-field-date">
+                        <span>Voucher Date</span>
+                        <VoucherDateInput Id="jwo-date-input" Class="jwo-date-field-input"
+                                          Value="editModel.VoucherDate" ValueChanged="VoucherDateChanged" />
+                    </label>
+                </div>
+            </section>
+
+            <div class="jwo-section-tabs"><span class="jwo-section-tab">Finished Goods</span></div>
+
+            <div class="jwo-lines-workspace">
+                <div class="tally-grid">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="text-align:center;">#</th>
+                                <th>Name of Finished Good</th>
+                                <th style="text-align:center;">UQC</th>
+                                <th style="text-align:right;">Qty</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var fgIndex = 0; fgIndex < editModel.FinishedGoods.Count; fgIndex++)
+                            {
+                                var lineIndex = fgIndex;
+                                var fg = editModel.FinishedGoods[lineIndex];
+                                var item = FindFinishedGood(fg.StockItemId);
+                                var groupOwner = GetGroupOwner(fg);
+                                var isGroupOwner = ReferenceEquals(groupOwner, fg);
+                                var isGroupLast = IsGroupLast(fg);
+
+                                <tr @key="fg.ClientKey" data-tt-line-item="true" data-tt-row-alt="@(GetGroupOrdinal(fg) % 2 == 0)">
+                                    <td class="text-center" style="font-weight:bold; color: #64748b;">
+                                        @if (isGroupOwner)
+                                        {
+                                            <button type="button" class="jwo-detail-toggle" tabindex="-1"
+                                                    title="Material Allocation" aria-label="Open Material Allocation"
+                                                    @onclick="() => OpenMaterialAllocation(groupOwner)">›</button>
+                                        }
+                                        @(isGroupOwner ? GetGroupOrdinal(fg).ToString() : string.Empty)
+                                    </td>
+                                    <td>
+                                        <div class="jwo-fg-item-row">
+                                        @if (isGroupOwner)
+                                        {
+                                        <div class="jwo-fg-header-line">
+                                        <div class="lookup-field jwo-fg-item-lookup">
+                                            <input id="jwo-fg-item-@fg.ClientKey" data-erp-lookup="true" data-tt-related-master="/masters/stock-items" autocomplete="new-password" name="jwo-fg-@fg.ClientKey"
+                                                   placeholder="Select Finished Good" value="@fg.StockItemText"
+                                                   data-enter-empty-action="jwo-grid-empty-action-@fg.ClientKey"
+                                                   @onfocus="() => OpenFinishedGoodLookup(fg)" @oninput="e => FinishedGoodItemTextChanged(fg, e)" @onchange="e => FinishedGoodItemTextCommitted(fg, e)" />
+                                            @if (activeLookupKey == $"fg:{fg.ClientKey}")
+                                            {
+                                                var fgMatches = FilterFinishedGoods(fg).Take(12).ToList();
+                                                <div class="erp-lookup-panel">
+                                                    @if (fgMatches.Count == 0)
+                                                    {
+                                                        <div class="erp-lookup-empty">Nothing found</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        @foreach (var choice in fgMatches) { <button type="button" @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" @onclick="() => SelectFinishedGood(fg, choice)"><strong>@choice.Name</strong></button> }
+                                                    }
+                                                </div>
+                                            }
+                                            <button id="jwo-grid-empty-action-@fg.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="() => DeclineBlankFinishedGoodItem(fg)"></button>
+                                        </div>
+                                        <div class="lookup-field jwo-fg-godown-field">
+                                            <input id="jwo-fg-godown-@fg.ClientKey" data-erp-lookup="true" data-tt-related-master="/masters/godowns" autocomplete="new-password" name="jwo-fg-godown-@fg.ClientKey"
+                                                   placeholder="Finished Goods Godown" value="@fg.FinishedGoodsGodownText"
+                                                   data-enter-action="jwo-godown-finish-action-@fg.ClientKey"
+                                                   @onfocus="() => OpenFinishedGoodsGodownLookup(fg)" @oninput="e => GodownTextChanged(fg, e, false)" />
+                                            @if (activeLookupKey == $"fggodown:{fg.ClientKey}")
+                                            {
+                                                var fgGodownMatches = FilterGodowns(fg.FinishedGoodsGodownText).Take(12).ToList();
+                                                <div class="erp-lookup-panel">
+                                                    @if (fgGodownMatches.Count == 0)
+                                                    {
+                                                        <div class="erp-lookup-empty">Nothing found</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        @foreach (var godown in fgGodownMatches) { <button type="button" @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" @onclick="() => SelectFinishedGoodsGodown(fg, godown)"><strong>@godown.Name</strong></button> }
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                        <button id="jwo-godown-finish-action-@fg.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="() => FocusColourOrSize(fg)"></button>
+                                        </div>
+                                        }
+                                        <div class="jwo-fg-colour-size-line">
+                                        <div class="jwo-colour-under-item">
+                                        @if (item is not null && item.Colours.Count > 0)
+                                        {
+                                            <div class="lookup-field">
+                                                <input id="jwo-fg-colour-@fg.ClientKey" data-erp-lookup="true" data-tt-related-master="/masters/colours" autocomplete="new-password" name="jwo-colour-@fg.ClientKey"
+                                                       class="jwo-distinct-value" placeholder="Colour" value="@fg.ColourText"
+                                                       data-enter-empty-action="jwo-colour-empty-action-@fg.ClientKey"
+                                                       @onfocus="() => OpenColourLookup(fg)" @oninput="e => FinishedGoodColourTextChanged(fg, e)" @onchange="e => FinishedGoodColourTextCommitted(fg, e)" />
+                                                @if (activeLookupKey == $"colour:{fg.ClientKey}")
+                                                {
+                                                    var colourMatches = FilterColours(fg).Take(12).ToList();
+                                                    <div class="erp-lookup-panel compact-lookup-panel">
+                                                        @if (colourMatches.Count == 0)
+                                                        {
+                                                            <div class="erp-lookup-empty">Nothing found</div>
+                                                        }
+                                                        else
+                                                        {
+                                                            @foreach (var colour in colourMatches) { <button type="button" @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" @onclick="() => SelectColour(fg, colour)"><strong>@colour.Name</strong></button> }
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <input readonly value="N/A" tabindex="-1"/>
+                                        }
+                                        <button id="jwo-colour-empty-action-@fg.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="() => FinishColourEntry(fg)"></button>
+                                        </div>
+                                        @if (item is not null && (item.Colours.Count == 0 || fg.ColourId is not null))
+                                        {
+                                            <div class="jwo-size-matrix">
+                                                @if (fg.SizeQuantities.Count == 0) { <span style="color:#94a3b8;">No active sizes available.</span> }
+                                                else
+                                                {
+                                                    var orderedAllocations = fg.SizeQuantities.OrderBy(x => x.DisplayOrder).ThenBy(x => x.SizeName).ToList();
+                                                    @for (var allocationIndex = 0; allocationIndex < orderedAllocations.Count; allocationIndex++)
+                                                    {
+                                                        var currentAllocation = orderedAllocations[allocationIndex];
+                                                        var isLastAllocation = allocationIndex == orderedAllocations.Count - 1;
+
+                                                        <label class="jwo-size-cell jwo-distinct-value" @key="currentAllocation.StockItemVariantId">
+                                                            <span>@currentAllocation.SizeName</span>
+                                                            <input id="jwo-fg-qty-@fg.ClientKey-@currentAllocation.StockItemVariantId" type="number" min="0" step="0.0001"
+                                                                   data-enter-action="@(isLastAllocation ? $"jwo-size-finish-action-{fg.ClientKey}" : null)"
+                                                                   @bind="currentAllocation.Quantity" @bind:event="oninput" />
+                                                        </label>
+                                                    }
+
+                                                    <!-- Proxy button to jump to process reliably -->
+                                                    <button id="jwo-size-finish-action-@fg.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="() => FinishColourEntry(fg)"></button>
+                                                    @if (isGroupLast && HasUnusedColours(fg))
+                                                    {
+                                                        <button type="button" class="jwo-add-colour" @onclick="() => AddColourLine(fg)">+ Colour</button>
+                                                    }
+                                                }
+                                            </div>
+                                        }
+                                        </div>
+                                        </div>
+                                    </td>
+                                    <td class="text-center" style="font-weight:bold; color:#64748b;">@(string.IsNullOrWhiteSpace(fg.UqcShortName) ? "—" : fg.UqcShortName)</td>
+                                    <td class="number-column jwo-distinct-value">@fg.TotalQuantity.ToString("0.####")</td>
+                                    <td class="text-center"><button type="button" class="line-remove small" data-tt-line-delete="true" title="Remove" tabindex="-1" @onclick="() => RemoveFinishedGood(lineIndex)">×</button></td>
+                                </tr>
+
+                                @* Process/BOM allocation for this group renders exclusively in the shared
+                                   Material Allocation popup below, keyed off materialAllocationGroup - the
+                                   same code path for both new-entry and an already-saved JWO. FocusFirstProcess
+                                   sets materialAllocationGroup once the keyboard chain (item -> godown -> colour
+                                   -> size) actually reaches the process step, so the popup only appears once
+                                   there's nothing left to fill outside it; showing it any earlier (e.g. right
+                                   after colour, while Godown/Size are still pending) buried those still-needed
+                                   fields under the modal backdrop, which is exactly the bug this replaced. *@
+                            }
+                        </tbody>
+                    </table>
+                    <button id="jwo-grid-empty-action" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="SkipToNarration"></button>
+                </div>
+            </div>
+
+            @* Material Allocation popup: BOM route + production stages, shared by both active
+               new-entry and an already-saved JWO. Tally-style small window over a dimmed
+               backdrop, opened by the row's chevron or by the keyboard chain (FocusFirstProcess
+               sets materialAllocationGroup once the item -> godown -> colour -> size chain
+               reaches the process step - see the comment left where the old, new-entry-only
+               inline rendering used to live). *@
+            @if (materialAllocationGroup is { } group)
+            {
+                <KeyboardContextScope ContextId="jwo-material-allocation" RootElementId="jwo-material-allocation-dialog"
+                                      ContextType="KeyboardContextType.Modal" Mode="KeyboardContextMode.Modal" />
+                <div class="jwo-modal-overlay">
+                    <section id="jwo-material-allocation-dialog" class="jwo-modal" role="dialog" aria-modal="true" tabindex="-1"
+                             @onkeydown="HandleMaterialAllocationKeyDown" @onkeydown:stopPropagation="true">
+                        <div class="jwo-modal-titlebar">
+                            <strong>Material Allocation · @group.StockItemText @(string.IsNullOrWhiteSpace(group.ColourText) ? "" : $"· {group.ColourText}")</strong>
+                            <button type="button" class="jwo-modal-close" data-tt-modal-accept="true" tabindex="-1" @onclick="CloseMaterialAllocation">Esc Close</button>
+                        </div>
+                        <div class="jwo-modal-body">
+                            <div class="jwo-process-allocation">
+                                <span class="jwo-process-heading">@(group.BillOfMaterialId is null ? "Manual process allocation" : "BOM production route")</span>
+                                <label class="jwo-bom-choice" title="Optional. A selected BOM is snapshotted into this JWO, including all Child BOM stages.">
+                                    <span>BOM</span>
+                                    <select value="@(group.BillOfMaterialId?.ToString() ?? string.Empty)" @onchange="e => BomChanged(group, e)">
+                                        <option value="">Manual allocation</option>
+                                        @foreach (var bom in BomsFor(group))
+                                        {
+                                            <option value="@bom.Id">@($"{bom.Name} · v{bom.VersionNumber}{(bom.IsDefault ? " · Default" : string.Empty)}")</option>
+                                        }
+                                    </select>
+                                </label>
+                            </div>
+                            @{ var orderedStages = group.BomStages.OrderBy(x => x.StageNumber).ToList(); }
+                            <div class="jwo-bom-stages" aria-label="Production stages">
+                                <div class="jwo-bom-stage-title">Production stages · one JWO reference</div>
+                                @if (orderedStages.Count > 0)
+                                {
+                                    <div class="jwo-bom-stage-row jwo-bom-stage-header" aria-hidden="true">
+                                        <span>Item</span>
+                                        <span>Qty</span>
+                                        <span>Job worker</span>
+                                        <span>Process</span>
+                                        <span>Output godown</span>
+                                        <span>Expected date</span>
+                                        <span>Stage</span>
+                                        <span>Expected rate</span>
+                                        <span></span>
+                                    </div>
+                                    @foreach (var stage in orderedStages)
+                                    {
+                                        <div class="jwo-bom-stage-row" style="--stage-level:@stage.StageLevel" @key="stage.ClientKey">
+                                            <span class="jwo-bom-stage-name">@stage.StagePath · @stage.OutputStockItemText</span>
+                                            <span class="jwo-bom-stage-qty">@stage.OutputQuantity.ToString("0.####") @stage.OutputUqcShortName</span>
+                                            <div class="lookup-field">
+                                                <input id="jwo-stage-worker-@stage.ClientKey" class="jwo-stage-job-worker" data-erp-lookup="true" data-tt-related-master="/masters/job-workers" autocomplete="new-password"
+                                                       title="Job worker for this production stage" aria-label="Job worker for @stage.StagePath @stage.OutputStockItemText"
+                                                       placeholder="Select Job Worker" value="@stage.AssignedJobWorkerText"
+                                                       data-enter-empty-action="@(stage.SourceBomId is null ? $"jwo-stage-empty-action-{stage.ClientKey}" : null)"
+                                                       @onfocus="() => OpenStageJobWorkerLookup(stage)" @oninput="e => StageJobWorkerTextChanged(stage, e)" />
+                                                @if (activeLookupKey == $"stageworker:{stage.ClientKey}")
+                                                {
+                                                    var stageWorkerMatches = FilterStageJobWorkers(stage).Take(12).ToList();
+                                                    <div class="erp-lookup-panel compact-lookup-panel">
+                                                        @if (stageWorkerMatches.Count == 0)
+                                                        {
+                                                            <div class="erp-lookup-empty">Nothing found</div>
+                                                        }
+                                                        else
+                                                        {
+                                                            @foreach (var worker in stageWorkerMatches) { <button type="button" @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" @onclick="() => SelectStageJobWorker(stage, worker)"><strong>@worker.Name</strong></button> }
+                                                        }
+                                                    </div>
+                                                }
+                                                @if (stage.SourceBomId is null)
+                                                {
+                                                    <button id="jwo-stage-empty-action-@stage.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="() => DeclineBlankStage(group, stage)"></button>
+                                                }
+                                            </div>
+                                            <div class="lookup-field">
+                                                <input id="jwo-stage-process-@stage.ClientKey" title="Process for this stage" data-erp-lookup="true" data-tt-related-master="/masters/processes" autocomplete="new-password"
+                                                       placeholder="Select Process" value="@stage.ProcessText"
+                                                       @onfocus="() => OpenStageProcessLookup(stage)" @oninput="e => StageProcessTextChanged(stage, e)" />
+                                                @if (activeLookupKey == $"stageprocess:{stage.ClientKey}")
+                                                {
+                                                    var stageProcessMatches = FilterStageProcesses(stage).Take(12).ToList();
+                                                    <div class="erp-lookup-panel compact-lookup-panel">
+                                                        @if (stageProcessMatches.Count == 0)
+                                                        {
+                                                            <div class="erp-lookup-empty">Nothing found</div>
+                                                        }
+                                                        else
+                                                        {
+                                                            @foreach (var stageProcess in stageProcessMatches) { <button type="button" @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" @onclick="() => SelectStageProcess(stage, stageProcess)"><strong>@stageProcess.Name</strong></button> }
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                            <div class="lookup-field">
+                                                <input id="jwo-stage-godown-@stage.ClientKey" title="Finished goods or intermediate-stage output godown" data-erp-lookup="true" data-tt-related-master="/masters/godowns" autocomplete="new-password"
+                                                       placeholder="Select Output Godown" value="@stage.OutputGodownText"
+                                                       @onfocus="() => OpenStageGodownLookup(stage)" @oninput="e => StageGodownTextChanged(stage, e)" />
+                                                @if (activeLookupKey == $"stagegodown:{stage.ClientKey}")
+                                                {
+                                                    var stageGodownMatches = FilterGodowns(stage.OutputGodownText).Take(12).ToList();
+                                                    <div class="erp-lookup-panel compact-lookup-panel">
+                                                        @if (stageGodownMatches.Count == 0)
+                                                        {
+                                                            <div class="erp-lookup-empty">Nothing found</div>
+                                                        }
+                                                        else
+                                                        {
+                                                            @foreach (var stageGodown in stageGodownMatches) { <button type="button" @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" @onclick="() => SelectStageGodown(stage, stageGodown)"><strong>@stageGodown.Name</strong></button> }
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                            <input id="jwo-stage-expected-@stage.ClientKey" class="jwo-stage-expected-date" type="date"
+                                                   min="@editModel.VoucherDate.ToString("yyyy-MM-dd")"
+                                                   title="Expected completion date for this process and job worker"
+                                                   aria-label="Expected completion for @stage.StagePath @stage.OutputStockItemText"
+                                                   @bind="stage.ExpectedCompletionDate" />
+                                            <span class="jwo-stage-kind">@(stage.IsFinalStage ? "Final" : "Intermediate")</span>
+                                            <input id="jwo-stage-rate-@stage.ClientKey" type="number" min="0" step="0.0001" placeholder="Expected rate/unit"
+                                                   title="Optional expected process charge per output unit for this jobber assignment"
+                                                   aria-label="Expected process rate for @stage.StagePath"
+                                                   data-enter-action="jwo-stage-line-action-@stage.ClientKey"
+                                                   @bind="stage.ExpectedProcessRate" />
+                                            @if (stage.SourceBomId is null)
+                                            {
+                                                <button type="button" class="line-remove small" data-tt-line-delete="true" tabindex="-1" @onclick="() => RemoveManualStage(group, stage)">×</button>
+                                            }
+                                            else
+                                            {
+                                                <span></span>
+                                            }
+                                            <button id="jwo-stage-line-action-@stage.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="() => CompleteStageLine(group, stage)"></button>
+                                        </div>
+                                    }
+                                }
+                                <div class="jwo-bom-stage-actions">
+                                    @if (group.BillOfMaterialId is null)
+                                    {
+                                        <button id="jwo-add-stage-@group.ClientKey" type="button" class="jwo-add-colour" @onclick="() => AddManualStage(group)">+ Stage</button>
+                                    }
+                                    @if (orderedStages.Count > 0)
+                                    {
+                                        <button id="jwo-open-components-@group.ClientKey" type="button" class="compact-action jwo-components-button" @onclick="() => OpenComponentAllocation(group)">Enter Components</button>
+                                    }
+                                </div>
+                            </div>
+                            @if (activeComponentFg is { } componentFg)
+                            {
+                                <div class="jwo-component-section" aria-label="Raw materials and components">
+                                    <span class="jwo-process-heading">Raw materials / components</span>
+                                    @if (!string.IsNullOrWhiteSpace(componentPopupMessage)) { <div class="form-message error component-popup-message">@componentPopupMessage</div> }
+                                    <div class="component-allocation-grid">
+                                        <div class="component-allocation-row component-allocation-head">
+                                            <span>#</span><span>Component</span><span title="The godown from which Material Out will dispatch this component">Material Source Godown</span><span>Req Qty</span><span>UQC</span><span>Rate</span><span>Amount</span><span></span>
+                                        </div>
+                                        @for (var componentIndex = 0; componentIndex < componentFg.Components.Count; componentIndex++)
+                                        {
+                                            var currentComponentIndex = componentIndex; var component = componentFg.Components[currentComponentIndex];
+                                            <div class="component-allocation-row" data-tt-line-item="true" @key="component.ClientKey">
+                                                <span>@(currentComponentIndex + 1)</span>
+                                                <div class="lookup-field">
+                                                    <input id="jwo-component-@component.ClientKey" data-erp-lookup="true" data-tt-related-master="/masters/stock-items" autocomplete="new-password" name="jwo-component-@component.ClientKey" placeholder="Search Component" value="@component.StockItemText"
+                                                           data-enter-action="jwo-component-item-action-@component.ClientKey" data-enter-empty-action="jwo-component-empty-action-@component.ClientKey"
+                                                           @onfocus="() => OpenComponentLookup(component)" @oninput="e => ComponentItemTextChanged(component, e)" @onchange="e => ComponentItemTextCommitted(component, e)" />
+                                                    @if (activeLookupKey == $"component:{component.ClientKey}")
+                                                    {
+                                                        var componentMatches = FilterComponents(component).Take(12).ToList();
+                                                        <div class="erp-lookup-panel component-lookup-panel">
+                                                            @if (componentMatches.Count == 0)
+                                                            {
+                                                                <div class="erp-lookup-empty">Nothing found</div>
+                                                            }
+                                                            else
+                                                            {
+                                                                @foreach (var choice in componentMatches) { <button type="button" @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" @onclick="() => SelectComponent(component, choice)"><strong>@choice.Name</strong></button> }
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                                <div class="lookup-field">
+                                                    <input id="jwo-component-godown-@component.ClientKey" data-erp-lookup="true" data-tt-related-master="/masters/godowns" autocomplete="new-password" name="jwo-component-godown-@component.ClientKey" placeholder="Select Material Source Godown" title="Raw material will be dispatched from this godown in Material Out" value="@component.ComponentGodownText"
+                                                           data-enter-action="jwo-component-qty-focus-@component.ClientKey" @onfocus="() => OpenComponentGodownLookup(component)" @oninput="e => ComponentGodownTextChanged(component, e)" />
+                                                    @if (activeLookupKey == $"componentgodown:{component.ClientKey}")
+                                                    {
+                                                        var componentGodownMatches = FilterGodowns(component.ComponentGodownText).Take(12).ToList();
+                                                        <div class="erp-lookup-panel component-lookup-panel">
+                                                            @if (componentGodownMatches.Count == 0)
+                                                            {
+                                                                <div class="erp-lookup-empty">Nothing found</div>
+                                                            }
+                                                            else
+                                                            {
+                                                                @foreach (var godown in componentGodownMatches) { <button type="button" @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" @onclick="() => SelectComponentGodown(component, godown)"><strong>@godown.Name</strong></button> }
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                                <input id="jwo-component-qty-@component.ClientKey" type="number" min="0" step="0.0001" value="@FormatInputQuantity(component.RequiredQuantity)" data-enter-action="jwo-component-rate-focus-@component.ClientKey" @oninput="e => ComponentQuantityChanged(component, e)" />
+                                                <strong style="text-align:center; color: #64748b;">@(string.IsNullOrWhiteSpace(component.UqcShortName) ? "—" : component.UqcShortName)</strong>
+                                                <input id="jwo-component-rate-@component.ClientKey" type="text" inputmode="decimal" value="@GetComponentRateText(component)" data-enter-action="jwo-component-line-action-@component.ClientKey" onfocus="this.select()" @oninput="e => ComponentRateChanged(component, e)" @onblur="_ => NormalizeComponentRateText(component)" />
+                                                <strong class="component-amount">@component.XmlAmount.ToString("0.00")</strong>
+                                                <button type="button" class="line-remove small" data-tt-line-delete="true" tabindex="-1" @onclick="() => RemoveComponent(componentFg, currentComponentIndex)">×</button>
+
+                                                <button id="jwo-component-item-action-@component.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="() => AdvanceComponentItem(component)"></button>
+                                                <button id="jwo-component-empty-action-@component.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="CloseComponentAllocation"></button>
+                                                <button id="jwo-component-qty-focus-@component.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="() => FocusComponentQuantity(component)"></button>
+                                                <button id="jwo-component-rate-focus-@component.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="() => FocusComponentRate(component)"></button>
+                                                <button id="jwo-component-line-action-@component.ClientKey" type="button" class="keyboard-action-proxy" tabindex="-1" @onclick="() => CompleteComponentLine(component)"></button>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </section>
+                </div>
+            }
+
+            <VoucherAuditStamp VoucherId="@editModel.Id" />
+            <div class="jwo-footer-row">
+                <section class="jwo-narration-section">
+                    <label for="jwo-narration-input">Narration <span>:</span></label>
+                    <textarea id="jwo-narration-input" rows="2" maxlength="1000" @bind="editModel.Narration" @bind:event="oninput"></textarea>
+                </section>
+                <section class="jwo-summary-card">
+                    <div class="jwo-summary-line"><span>Finished Goods</span><strong>@FinishedGoodGroupCount</strong></div>
+                    <div class="jwo-summary-line"><span>Colour Lines</span><strong>@ColourLineCount</strong></div>
+                    <div class="jwo-summary-line"><span>Processes Assigned</span><strong>@ProcessCount</strong></div>
+                    <div class="jwo-summary-divider"></div>
+                    <div class="jwo-summary-total"><span>Total Qty</span><strong>@GrandTotal.ToString("0.####")</strong></div>
+                </section>
+            </div>
+
+            <div class="jwo-kbd-strip">
+                <span><kbd>Enter</kbd>Next field</span>
+                <span><kbd>Backspace</kbd>Previous field</span>
+                <span><kbd>F2</kbd>Date</span>
+                <span><kbd>F3</kbd>Create / Edit master</span>
+                <span><kbd>Esc</kbd>Back</span>
+            </div>
+
+            <div class="jwo-statusbar">
+                <span>Job Work Out Order</span><span class="jwo-statusbar-sep">·</span>
+                <span>Batch @(string.IsNullOrWhiteSpace(editModel.Batch) ? "—" : editModel.Batch)</span>
+                <div class="jwo-statusbar-spacer"></div>
+                <span>@FinishedGoodGroupCount finished goods · @ColourLineCount colour lines</span><span class="jwo-statusbar-sep">·</span>
+                <span>Total Qty: @GrandTotal.ToString("0.####")</span>
+            </div>
+
+        </div>
+    }
+    else
+    {
+        <!-- LIST VIEW -->
+        <div class="page-header">
+            <h1>Job Work Out Order</h1>
+            <div class="header-actions">
+                <button type="button" @onclick="OpenCreate" disabled="@(!CanCreate || busy)">Alt+C Create</button>
+                <button type="button" @onclick="OpenEdit" disabled="@(selectedIndex < 0 || busy)">Enter Edit</button>
+                <button type="button" @onclick="DeleteSelected" disabled="@(selectedIndex < 0 || busy)">Alt+D Delete</button>
+                <button type="button" @onclick="RequestCancelSelected" disabled="@(selectedIndex < 0 || busy || SelectedVoucherIsCancelled)">Alt+X Cancel</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(message)) { <div class="form-message list-message @(messageIsError ? "error" : "success")">@message</div> }
+        <div class="list-toolbar" @onkeydown="IgnoreToolbarKeyDown" @onkeydown:stopPropagation="true">
+            <label>F4 Search: <input id="jwo-search" placeholder="Voucher, Batch, Job Worker..." @bind="searchText" @bind:event="oninput" @onkeydown="HandleSearchKeyDown" /></label>
+            <button type="button" @onclick="ApplySearch">Search</button>
+            <button type="button" @onclick="ClearSearch" disabled="@string.IsNullOrWhiteSpace(searchText)">Clear</button>
+        </div>
+        <div id="jwo-grid" class="jwo-list-grid">
+            <table>
+                <thead><tr><th>VOUCHER NO.</th><th>VOUCHER TYPE</th><th>DATE</th><th>BATCH</th><th>JOB WORKER</th><th>FINISHED GOODS</th><th>ORDER QTY</th><th>DUE DATE</th><th>STATUS</th></tr></thead>
+                <tbody>
+                    @if (rows.Count == 0) { <tr><td colspan="9" style="text-align:center;">No Job Work Out Orders found. Press Alt+C to create.</td></tr> }
+                    else { @for (var i = 0; i < rows.Count; i++) { var index = i; var row = rows[index]; <tr id="jwo-row-@row.Id" class="@(selectedIndex == index ? "selected" : null)" @onclick="() => SelectRow(index)" @ondblclick="OpenEdit"><td><strong>@row.VoucherNumber</strong></td><td>@row.VoucherTypeName</td><td>@row.VoucherDate.ToString("dd-MM-yyyy")</td><td>@row.Batch</td><td>@row.JobWorkerName</td><td>@row.FinishedGoodsSummary</td><td style="text-align:right;">@row.TotalOrderedQuantity.ToString("0.####")</td><td>@(row.DueDate?.ToString("dd-MM-yyyy") ?? "—")</td><td>@row.Status</td></tr> } }
+                </tbody>
+            </table>
+        </div>
+        <div class="grid-key-hint">↑/↓ Select · PgUp/PgDn Jump · Enter Edit · Alt+C Create · Alt+D Delete · Esc Back</div>
+    }
+
+    <!-- MODALS -->
+    @if (showExitModal)
+    {
+        <div class="tt-dialog-overlay" role="presentation">
+            <section class="tt-dialog" role="dialog" aria-modal="true" tabindex="0" @onkeydown="HandleExitModalKeyDown" @onkeydown:stopPropagation="true" @onkeydown:preventDefault="true">
+                <header class="tt-dialog-titlebar"><strong>Quit?</strong></header>
+                <div class="tt-dialog-body"><p>Quit? Yes or No</p></div>
+                <footer class="tt-dialog-actions"><button id="jwo-exit-yes" type="button" class="@(exitModalSelectYes ? "dialog-selected" : null)" @onclick="ConfirmExitForm">Yes</button><button id="jwo-exit-no" type="button" class="@(!exitModalSelectYes ? "dialog-selected" : null)" @onclick="CancelExitForm">No</button></footer>
+            </section>
+        </div>
+    }
+    @if (showDeleteModal)
+    {
+        <div class="tt-dialog-overlay" role="presentation">
+            <section class="tt-dialog" role="dialog" aria-modal="true" tabindex="0" @onkeydown="HandleDeleteModalKeyDown" @onkeydown:stopPropagation="true" @onkeydown:preventDefault="true">
+                <header class="tt-dialog-titlebar"><strong>Delete Voucher?</strong></header>
+                <div class="tt-dialog-body"><p>Delete voucher <strong>@pendingDeleteVoucherNumber</strong>?</p></div>
+                <footer class="tt-dialog-actions"><button id="jwo-delete-yes" type="button" class="@(deleteModalSelectYes ? "dialog-selected" : null)" @onclick="ConfirmDeleteSelected">Yes</button><button id="jwo-delete-no" type="button" class="@(!deleteModalSelectYes ? "dialog-selected" : null)" @onclick="CancelDeleteSelected">No</button></footer>
+            </section>
+        </div>
+    }
+    @if (showCancelVoucherModal)
+    {
+        <div class="tt-dialog-overlay" role="presentation">
+            <section class="tt-dialog" role="dialog" aria-modal="true" tabindex="0" @onkeydown="HandleCancelVoucherModalKeyDown" @onkeydown:stopPropagation="true">
+                <header class="tt-dialog-titlebar"><strong>Cancel Voucher?</strong></header>
+                <div class="tt-dialog-body">
+                    <p>Cancel voucher <strong>@pendingCancelVoucherNumber</strong>?</p>
+                    <label>Reason <b>*</b><textarea id="jwo-cancel-reason" maxlength="500" rows="3" @bind="cancelReason"></textarea></label>
+                </div>
+                <footer class="tt-dialog-actions"><button id="jwo-cancel-confirm" type="button" class="danger-button" @onclick="ConfirmCancelSelected">Confirm</button><button type="button" @onclick="CloseCancelVoucherModal">No</button></footer>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "voucherId")] public long? VoucherId { get; set; }
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+    private List<JobWorkOrderListItem> rows = new();
+    private JobWorkOrderLookupData lookups = new();
+    private JobWorkOrderEditModel editModel = new();
+    private int selectedIndex = -1;
+    private bool loading = true;
+    private bool busy;
+    private bool showForm;
+    private bool pendingRowScroll;
+    private bool pendingSearchFocus;
+    private string? pendingFocusId;
+    private string searchText = string.Empty;
+    private string message = string.Empty;
+    private bool messageIsError;
+    private JobWorkFinishedGoodEditModel? activeComponentFg;
+    // Material Allocation (BOM/process/stages) for an already-saved JWO opens as a
+    // Tally-style popup instead of expanding inline in the grid - the group it's
+    // currently showing, or null when closed. Active new-entry (editModel.Id == 0)
+    // is unaffected: that case always renders the same content inline (see the
+    // isGroupOwner && editModel.Id == 0 guard below), since it's wired into the
+    // live Enter-key advance chain and must stay visible during typing.
+    private JobWorkFinishedGoodEditModel? materialAllocationGroup;
+    // Where Escape (or the "Esc Close" button) should return focus to on the underlying page -
+    // whatever field the keyboard chain was naturally at right before the popup opened.
+    // Computed synchronously from the group's own data at open time (see
+    // ComputeMaterialAllocationReturnFocusId) rather than captured via a JS "what has focus
+    // right now" call, since this popup's own open triggers are all reached through this same
+    // page's own well-known Item -> Godown -> Colour -> Size -> Process chain - the state
+    // already tells us exactly where that chain was.
+    private string? materialAllocationReturnFocusId;
+    private string componentPopupMessage = string.Empty;
+    private string? activeLookupKey;
+    private bool showExitModal;
+    private string? exitReturnFocusId;
+    private bool exitModalSelectYes;
+    private bool showDeleteModal;
+    private bool showCancelVoucherModal;
+    private long? pendingCancelId;
+    private string pendingCancelVoucherNumber = string.Empty;
+    private string cancelReason = string.Empty;
+    private bool deleteModalSelectYes;
+    private long? pendingDeleteId;
+    private string pendingDeleteVoucherNumber = string.Empty;
+    private ElementReference pageRoot;
+    private readonly Dictionary<string, string> componentRateText = new();
+    private DotNetObjectReference<JobWorkOutOrder>? relatedMasterRefreshReference;
+
+    private bool IsManualVoucherNumber => lookups.VoucherTypes.FirstOrDefault(x => x.Id == editModel.VoucherTypeId)?.NumberingMode == "Manual";
+    private bool SelectedVoucherIsCancelled => showForm
+        ? string.Equals(editModel.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)
+        : selectedIndex >= 0 && selectedIndex < rows.Count && rows[selectedIndex].Status == "Cancelled";
+
+    // A blank JWO must remain available after a business-data reset. Job workers and
+    // finished goods are transactional choices that users can create from the entry
+    // form (F3); they are not prerequisites for opening that form.
+    private bool CanCreate => Database.IsConnected && lookups.VoucherTypes.Count > 0 && lookups.Godowns.Count > 0;
+    private JobWorkVoucherTypeLookup? SelectedVoucherType => lookups.VoucherTypes.FirstOrDefault(x => x.Id == editModel.VoucherTypeId);
+    private decimal GrandTotal => editModel.FinishedGoods.Sum(x => x.TotalQuantity);
+    private int ColourLineCount => editModel.FinishedGoods.Count(x => x.StockItemId != 0);
+    private int FinishedGoodGroupCount => editModel.FinishedGoods
+        .Where(x => x.StockItemId != 0)
+        .Select(x => string.IsNullOrWhiteSpace(x.DesignGroupKey) ? x.ClientKey : x.DesignGroupKey)
+        .Distinct(StringComparer.Ordinal)
+        .Count();
+    private int ProcessCount => editModel.FinishedGoods
+        .Where(x => ReferenceEquals(GetGroupOwner(x), x))
+        .Sum(x => x.BomStages.Count(s => s.ProcessId is > 0));
+    protected override async Task OnInitializedAsync()
+    {
+        if (Database.IsConnected)
+        {
+            lookups = await Repository.GetLookupsAsync();
+            if (VoucherId is not null) await OpenVoucherAsync(VoucherId.Value);
+            else await OpenCreate();
+        }
+        loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            relatedMasterRefreshReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("texTrackRegisterRelatedMasterRefresh", relatedMasterRefreshReference);
+            await pageRoot.FocusAsync();
+        }
+        if (!string.IsNullOrWhiteSpace(pendingFocusId))
+        {
+            var id = pendingFocusId;
+            pendingFocusId = null;
+            await Task.Delay(40);
+            await JS.InvokeVoidAsync("texTrackFocusById", id);
+        }
+        if (pendingSearchFocus)
+        {
+            pendingSearchFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusById", "jwo-search");
+        }
+        if (pendingRowScroll && selectedIndex >= 0 && selectedIndex < rows.Count)
+        {
+            pendingRowScroll = false;
+            await JS.InvokeVoidAsync("texTrackScrollRowIntoView", $"jwo-row-{rows[selectedIndex].Id}", "jwo-grid");
+        }
+    }
+
+    [JSInvokable]
+    public async Task RefreshRelatedMasterLookupsAsync(string returnFocusId)
+    {
+        lookups = await Repository.GetLookupsAsync();
+        pendingFocusId = string.IsNullOrWhiteSpace(returnFocusId) ? "jwo-voucher-type-input" : returnFocusId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Reuses the same registered reference as RefreshRelatedMasterLookupsAsync above -
+    // called by the shared closeLookupOnBlur JS whenever any data-erp-lookup field on
+    // this page loses focus with its dropdown open, so activeLookupKey genuinely clears
+    // server-side instead of relying only on the client-side hide, which a later
+    // unrelated re-render would otherwise undo. Covers every lookup field JWO has;
+    // each maps the field's DOM id to the exact activeLookupKey string its own @if
+    // block checks, so a stale clear-request can only ever match the field it came from.
+    [JSInvokable]
+    public Task ClearLookupOnBlurAsync(string fieldId)
+    {
+        string? key =
+            fieldId == "jwo-voucher-type-input" ? "voucher-type" :
+            TryStripPrefix(fieldId, "jwo-fg-item-", out var fgItem) ? $"fg:{fgItem}" :
+            TryStripPrefix(fieldId, "jwo-fg-godown-", out var fgGodown) ? $"fggodown:{fgGodown}" :
+            TryStripPrefix(fieldId, "jwo-fg-colour-", out var colour) ? $"colour:{colour}" :
+            TryStripPrefix(fieldId, "jwo-stage-worker-", out var stageWorker) ? $"stageworker:{stageWorker}" :
+            TryStripPrefix(fieldId, "jwo-stage-process-", out var stageProcess) ? $"stageprocess:{stageProcess}" :
+            TryStripPrefix(fieldId, "jwo-stage-godown-", out var stageGodown) ? $"stagegodown:{stageGodown}" :
+            TryStripPrefix(fieldId, "jwo-component-godown-", out var componentGodown) ? $"componentgodown:{componentGodown}" :
+            TryStripPrefix(fieldId, "jwo-component-", out var component) ? $"component:{component}" :
+            null;
+
+        if (key is not null && activeLookupKey == key)
+        {
+            activeLookupKey = null;
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
+    }
+
+    private static bool TryStripPrefix(string value, string prefix, out string remainder)
+    {
+        if (value.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            remainder = value[prefix.Length..];
+            return true;
+        }
+        remainder = string.Empty;
+        return false;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (relatedMasterRefreshReference is not null)
+        {
+            try { await JS.InvokeVoidAsync("texTrackUnregisterRelatedMasterRefresh", relatedMasterRefreshReference); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+        relatedMasterRefreshReference?.Dispose();
+    }
+
+    private async Task LoadAsync(long? selectId = null)
+    {
+        if (!Database.IsConnected)
+        {
+            loading = false;
+            return;
+        }
+        loading = true;
+        try
+        {
+            rows = (await Repository.GetListAsync(searchText)).ToList();
+            if (rows.Count == 0) selectedIndex = -1;
+            else if (selectId is not null)
+            {
+                selectedIndex = rows.FindIndex(x => x.Id == selectId.Value);
+                if (selectedIndex < 0) selectedIndex = 0;
+            }
+            else if (selectedIndex < 0 || selectedIndex >= rows.Count) selectedIndex = 0;
+            pendingRowScroll = selectedIndex >= 0;
+        }
+        catch (Exception exception)
+        {
+            ShowError(VoucherErrorMessages.For(exception));
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void SelectRow(int index)
+    {
+        selectedIndex = index;
+        message = string.Empty;
+        pendingRowScroll = true;
+    }
+
+    private async Task OpenCreate()
+    {
+        if (!CanCreate || busy) return;
+        editModel = await Repository.CreateNewModelAsync();
+        HydrateEditModel();
+        showForm = true;
+        activeComponentFg = null;
+        activeLookupKey = null;
+        componentPopupMessage = string.Empty;
+        message = string.Empty;
+        pendingFocusId = "jwo-voucher-type-input";
+    }
+
+    private async Task OpenEdit()
+    {
+        if (selectedIndex < 0 || selectedIndex >= rows.Count || busy) return;
+        var model = await Repository.GetForEditAsync(rows[selectedIndex].Id);
+        if (model is null)
+        {
+            ShowError("The selected Job Work Out Order no longer exists.");
+            await LoadAsync();
+            return;
+        }
+        editModel = model;
+        HydrateEditModel();
+        showForm = true;
+        activeComponentFg = null;
+        componentPopupMessage = string.Empty;
+        message = string.Empty;
+        pendingFocusId = "jwo-date-input";
+    }
+
+    private async Task OpenVoucherAsync(long voucherId)
+    {
+        var model = await Repository.GetForEditAsync(voucherId);
+        if (model is null)
+        {
+            ShowError("The selected Job Work Out Order no longer exists.");
+            await OpenCreate();
+            return;
+        }
+        editModel = model;
+        HydrateEditModel();
+        showForm = true;
+        activeComponentFg = null;
+        componentPopupMessage = string.Empty;
+        message = string.Empty;
+        pendingFocusId = "jwo-date-input";
+    }
+
+    private void HydrateEditModel()
+    {
+        componentRateText.Clear();
+        var voucherType = lookups.VoucherTypes.FirstOrDefault(x => x.Id == editModel.VoucherTypeId);
+        editModel.VoucherTypeText = voucherType?.Name ?? string.Empty;
+
+        foreach (var fg in editModel.FinishedGoods)
+        {
+            var item = FindFinishedGood(fg.StockItemId);
+            if (item is null)
+            {
+                fg.StockItemText = string.Empty;
+                fg.ColourText = string.Empty;
+                continue;
+            }
+
+            fg.StockItemText = item.Name;
+            fg.UqcShortName = item.UqcShortName;
+            fg.FinishedGoodsGodownText = FindGodown(fg.FinishedGoodsGodownId)?.Name ?? string.Empty;
+            fg.DestinationGodownText = FindGodown(fg.DestinationGodownId)?.Name ?? fg.FinishedGoodsGodownText;
+            fg.ColourText = fg.ColourId is null
+                ? string.Empty
+                : item.Colours.FirstOrDefault(x => x.Id == fg.ColourId.Value)?.Name ?? string.Empty;
+            RebuildSizeQuantities(fg, true);
+
+            foreach (var component in fg.Components)
+            {
+                var componentItem = FindComponent(component.StockItemId);
+                if (componentItem is null)
+                {
+                    component.StockItemText = string.Empty;
+                    continue;
+                }
+
+                component.StockItemText = componentItem.Name;
+                component.UqcId = componentItem.UqcId;
+                component.UqcShortName = componentItem.UqcShortName;
+                component.ComponentGodownText = FindGodown(component.ComponentGodownId)?.Name ?? string.Empty;
+                componentRateText[component.ClientKey] = FormatInputRate(component.XmlRate);
+            }
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (busy) return;
+        
+        RemoveBlankComponentRows();
+        ResolveAllTypedLookups();
+        RemoveBlankComponentRows(); 
+        busy = true;
+        try
+        {
+            var result = await Repository.SaveAsync(editModel);
+            if (!result.Success)
+            {
+                ShowError(result.Message);
+                pendingFocusId = GetValidationFocusId(result.Message);
+                return;
+            }
+            if (!string.IsNullOrWhiteSpace(ReturnUrl))
+            {
+                Navigation.NavigateTo(ReturnUrl);
+                return;
+            }
+            var successMessage = result.Message;
+            lookups = await Repository.GetLookupsAsync();
+            editModel = await Repository.CreateNewModelAsync();
+            HydrateEditModel();
+            showForm = true;
+            activeComponentFg = null;
+            activeLookupKey = null;
+            ShowSuccess(successMessage);
+            pendingFocusId = "jwo-voucher-type-input";
+        }
+        catch (Exception exception)
+        {
+            ShowError(VoucherErrorMessages.For(exception));
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void RequestCancelSelected()
+    {
+        if (busy) return;
+        if (showForm && editModel.Id != 0)
+        {
+            if (SelectedVoucherIsCancelled) return;
+            pendingCancelId = editModel.Id;
+            pendingCancelVoucherNumber = editModel.VoucherNumber;
+        }
+        else
+        {
+            if (selectedIndex < 0 || selectedIndex >= rows.Count) return;
+            var selected = rows[selectedIndex];
+            if (selected.Status == "Cancelled") return;
+            pendingCancelId = selected.Id;
+            pendingCancelVoucherNumber = selected.VoucherNumber;
+        }
+        cancelReason = string.Empty;
+        showCancelVoucherModal = true;
+        pendingFocusId = "jwo-cancel-reason";
+    }
+
+    private async Task HandleCancelVoucherModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseCancelVoucherModal();
+        else if (e.AltKey && string.Equals(e.Key, "x", StringComparison.OrdinalIgnoreCase)) await ConfirmCancelSelected();
+    }
+
+    private async Task ConfirmCancelSelected()
+    {
+        if (pendingCancelId is null || busy) return;
+        busy = true;
+        try
+        {
+            var result = await Repository.CancelAsync(pendingCancelId.Value, cancelReason);
+            message = result.Message;
+            messageIsError = !result.Success;
+            if (result.Success)
+            {
+                CloseCancelVoucherModal();
+                if (!string.IsNullOrWhiteSpace(ReturnUrl)) { Navigation.NavigateTo(ReturnUrl); return; }
+                await OpenCreate();
+                ShowSuccess(result.Message);
+            }
+            else pendingFocusId = "jwo-cancel-reason";
+        }
+        finally { busy = false; }
+    }
+
+    private void CloseCancelVoucherModal()
+    {
+        showCancelVoucherModal = false;
+        pendingCancelId = null;
+        pendingCancelVoucherNumber = string.Empty;
+        cancelReason = string.Empty;
+        pendingFocusId = showForm ? "jwo-date-input" : selectedIndex >= 0 && selectedIndex < rows.Count ? $"jwo-row-{rows[selectedIndex].Id}" : "jwo-page-root";
+    }
+
+    private async Task DeleteSelected()
+    {
+        if (selectedIndex < 0 || selectedIndex >= rows.Count || busy) return;
+        var selected = rows[selectedIndex];
+        pendingDeleteId = selected.Id;
+        pendingDeleteVoucherNumber = selected.VoucherNumber;
+        deleteModalSelectYes = false;
+        showDeleteModal = true;
+        pendingFocusId = "jwo-delete-no";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task DeleteCurrent()
+    {
+        if (editModel.Id == 0 || busy) return;
+        pendingDeleteId = editModel.Id;
+        pendingDeleteVoucherNumber = editModel.VoucherNumber;
+        deleteModalSelectYes = false;
+        showDeleteModal = true;
+        pendingFocusId = "jwo-delete-no";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleDeleteModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "ArrowLeft" or "Left" or "ArrowRight" or "Right" or "Tab")
+        {
+            deleteModalSelectYes = !deleteModalSelectYes;
+            pendingFocusId = deleteModalSelectYes ? "jwo-delete-yes" : "jwo-delete-no";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (e.Key == "Enter")
+        {
+            if (deleteModalSelectYes) await ConfirmDeleteSelected();
+            else await CancelDeleteSelected();
+            return;
+        }
+
+        if (e.Key == "Escape") await CancelDeleteSelected();
+    }
+
+    private async Task ConfirmDeleteSelected()
+    {
+        if (pendingDeleteId is null || busy) return;
+        var deleteId = pendingDeleteId.Value;
+        showDeleteModal = false;
+        busy = true;
+        try
+        {
+            var result = await Repository.DeleteAsync(deleteId);
+            if (!result.Success)
+            {
+                ShowError(result.Message);
+                return;
+            }
+            if (!string.IsNullOrWhiteSpace(ReturnUrl)) { Navigation.NavigateTo(ReturnUrl); return; }
+            await OpenCreate();
+            ShowSuccess(result.Message);
+        }
+        catch (Exception exception)
+        {
+            ShowError(VoucherErrorMessages.For(exception));
+        }
+        finally
+        {
+            busy = false;
+            pendingDeleteId = null;
+            pendingDeleteVoucherNumber = string.Empty;
+            pendingFocusId = "jwo-page-root";
+        }
+    }
+
+    private async Task CancelDeleteSelected()
+    {
+        showDeleteModal = false;
+        pendingDeleteId = null;
+        pendingDeleteVoucherNumber = string.Empty;
+        pendingFocusId = showForm ? "jwo-date-input" : "jwo-page-root";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RequestCloseForm()
+    {
+        exitReturnFocusId = await JS.InvokeAsync<string?>("texTrackKeyboardContexts.getActiveElementId");
+        var isDirty = await JS.InvokeAsync<bool>("texTrackKeyboardContexts.isVoucherDirty", "jwo-form");
+        if (!isDirty)
+        {
+            await CloseForm();
+            return;
+        }
+
+        showExitModal = true;
+        exitModalSelectYes = true;
+        pendingFocusId = "jwo-exit-yes";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleExitModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "ArrowLeft" or "Left" or "ArrowRight" or "Right" or "Tab")
+        {
+            exitModalSelectYes = !exitModalSelectYes;
+            pendingFocusId = exitModalSelectYes ? "jwo-exit-yes" : "jwo-exit-no";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (e.Key == "Enter")
+        {
+            if (exitModalSelectYes) await ConfirmExitForm();
+            else await CancelExitForm();
+            return;
+        }
+
+        if (string.Equals(e.Key, "y", StringComparison.OrdinalIgnoreCase))
+        {
+            await ConfirmExitForm();
+            return;
+        }
+
+        if (string.Equals(e.Key, "n", StringComparison.OrdinalIgnoreCase))
+        {
+            await CancelExitForm();
+            return;
+        }
+
+        if (e.Key == "Escape") await CancelExitForm();
+    }
+
+    private async Task ConfirmExitForm()
+    {
+        await CloseForm();
+    }
+
+    private async Task CancelExitForm()
+    {
+        showExitModal = false;
+        pendingFocusId = exitReturnFocusId ?? "jwo-form-root";
+        exitReturnFocusId = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CloseForm()
+    {
+        if (!string.IsNullOrWhiteSpace(ReturnUrl))
+        {
+            Navigation.NavigateTo(ReturnUrl);
+            return;
+        }
+        Navigation.NavigateTo("/");
+        await Task.CompletedTask;
+    }
+
+    private void AddFinishedGood()
+    {
+        var fg = new JobWorkFinishedGoodEditModel();
+        editModel.FinishedGoods.Add(fg);
+        pendingFocusId = $"jwo-fg-item-{fg.ClientKey}";
+    }
+
+    private IEnumerable<JobWorkFinishedGoodEditModel> GetGroupLines(JobWorkFinishedGoodEditModel fg)
+        => editModel.FinishedGoods.Where(x => x.DesignGroupKey == fg.DesignGroupKey);
+
+    private JobWorkFinishedGoodEditModel GetGroupOwner(JobWorkFinishedGoodEditModel fg)
+        => GetGroupLines(fg).FirstOrDefault() ?? fg;
+
+    private bool IsGroupLast(JobWorkFinishedGoodEditModel fg)
+        => ReferenceEquals(GetGroupLines(fg).LastOrDefault(), fg);
+
+    private decimal GroupTotal(JobWorkFinishedGoodEditModel fg)
+        => GetGroupLines(fg).Sum(x => x.TotalQuantity);
+
+    private int GetGroupOrdinal(JobWorkFinishedGoodEditModel fg)
+    {
+        var key = string.IsNullOrWhiteSpace(fg.DesignGroupKey) ? fg.ClientKey : fg.DesignGroupKey;
+        return editModel.FinishedGoods
+            .TakeWhile(x => !ReferenceEquals(x, fg))
+            .Select(x => string.IsNullOrWhiteSpace(x.DesignGroupKey) ? x.ClientKey : x.DesignGroupKey)
+            .Distinct(StringComparer.Ordinal)
+            .Count() + 1;
+    }
+
+    private bool HasUnusedColours(JobWorkFinishedGoodEditModel fg)
+    {
+        var item = FindFinishedGood(fg.StockItemId);
+        if (item is null || item.Colours.Count == 0) return false;
+        var used = GetGroupLines(fg).Where(x => x.ColourId.HasValue).Select(x => x.ColourId!.Value).ToHashSet();
+        return item.Colours.Any(x => !used.Contains(x.Id));
+    }
+
+    private void AddColourLine(JobWorkFinishedGoodEditModel fg)
+    {
+        var owner = GetGroupOwner(fg);
+        if (!HasUnusedColours(owner))
+        {
+            FocusFirstProcess(owner);
+            return;
+        }
+
+        var line = new JobWorkFinishedGoodEditModel
+        {
+            DesignGroupKey = owner.DesignGroupKey,
+            StockItemId = owner.StockItemId,
+            StockItemText = owner.StockItemText,
+            UqcShortName = owner.UqcShortName,
+            FinishedGoodsGodownId = owner.FinishedGoodsGodownId,
+            FinishedGoodsGodownText = owner.FinishedGoodsGodownText,
+            DestinationGodownId = owner.DestinationGodownId,
+            DestinationGodownText = owner.DestinationGodownText
+        };
+
+        var lastIndex = editModel.FinishedGoods.FindLastIndex(x => x.DesignGroupKey == owner.DesignGroupKey);
+        editModel.FinishedGoods.Insert(lastIndex + 1, line);
+        activeLookupKey = null;
+        pendingFocusId = $"jwo-fg-colour-{line.ClientKey}";
+    }
+
+    private void FinishColourEntry(JobWorkFinishedGoodEditModel fg)
+    {
+        var owner = GetGroupOwner(fg);
+        if (!ReferenceEquals(owner, fg) && fg.ColourId is null && string.IsNullOrWhiteSpace(fg.ColourText))
+        {
+            editModel.FinishedGoods.Remove(fg);
+            FocusFirstProcess(owner);
+            return;
+        }
+
+        if (fg.ColourId is not null && HasUnusedColours(fg)) AddColourLine(fg);
+        else FocusFirstProcess(owner);
+    }
+
+
+    private void RemoveFinishedGood(int index)
+    {
+        if (index < 0 || index >= editModel.FinishedGoods.Count) return;
+        var removed = editModel.FinishedGoods[index];
+        var owner = GetGroupOwner(removed);
+        var replacement = ReferenceEquals(owner, removed)
+            ? GetGroupLines(removed).Skip(1).FirstOrDefault()
+            : null;
+
+        if (replacement is not null)
+        {
+            replacement.StockItemId = owner.StockItemId;
+            replacement.StockItemText = owner.StockItemText;
+            replacement.UqcShortName = owner.UqcShortName;
+            replacement.FinishedGoodsGodownId = owner.FinishedGoodsGodownId;
+            replacement.FinishedGoodsGodownText = owner.FinishedGoodsGodownText;
+            replacement.DestinationGodownId = owner.DestinationGodownId;
+            replacement.DestinationGodownText = owner.DestinationGodownText;
+            replacement.BillOfMaterialId = owner.BillOfMaterialId;
+            replacement.BillOfMaterialText = owner.BillOfMaterialText;
+            replacement.BomStages = owner.BomStages;
+            replacement.Components = owner.Components;
+        }
+        editModel.FinishedGoods.RemoveAt(index);
+        if (editModel.FinishedGoods.Count == 0)
+        {
+            AddFinishedGood();
+            return;
+        }
+
+        var adjacent = editModel.FinishedGoods[Math.Min(index, editModel.FinishedGoods.Count - 1)];
+        pendingFocusId = ReferenceEquals(GetGroupOwner(adjacent), adjacent)
+            ? $"jwo-fg-item-{adjacent.ClientKey}"
+            : $"jwo-fg-colour-{adjacent.ClientKey}";
+    }
+
+    private void AddComponent(JobWorkFinishedGoodEditModel fg)
+        => OpenComponentAllocation(fg);
+
+    private void RemoveComponent(JobWorkFinishedGoodEditModel fg, int index)
+    {
+        if (index < 0 || index >= fg.Components.Count) return;
+        fg.Components.RemoveAt(index);
+
+        if (ReferenceEquals(activeComponentFg, fg))
+        {
+            var blank = fg.Components.LastOrDefault(IsBlankComponent);
+            if (blank is null)
+            {
+                blank = new JobWorkComponentEditModel();
+                fg.Components.Add(blank);
+            }
+            pendingFocusId = $"jwo-component-{blank.ClientKey}";
+        }
+    }
+    
+    // --- PROCESS LOGIC ---
+    
+    private void OpenMaterialAllocation(JobWorkFinishedGoodEditModel groupOwner)
+    {
+        materialAllocationReturnFocusId = $"jwo-fg-item-{groupOwner.ClientKey}";
+        materialAllocationGroup = groupOwner;
+    }
+
+    private void CloseMaterialAllocation()
+    {
+        pendingFocusId = materialAllocationReturnFocusId ?? "jwo-page-root";
+        materialAllocationReturnFocusId = null;
+        materialAllocationGroup = null;
+    }
+
+    // Where the keyboard chain naturally was right before the popup opened, so Escape (or the
+    // "Esc Close" button) can jump back there instead of leaving focus nowhere traceable. The
+    // chain always runs Item -> Godown -> Colour -> Size -> Process, so whatever the group's
+    // data has furthest along that sequence is exactly where the user was.
+    private string ComputeMaterialAllocationReturnFocusId(JobWorkFinishedGoodEditModel owner)
+    {
+        var lastAllocation = owner.SizeQuantities.OrderBy(x => x.DisplayOrder).ThenBy(x => x.SizeName).LastOrDefault();
+        if (lastAllocation is not null) return $"jwo-fg-qty-{owner.ClientKey}-{lastAllocation.StockItemVariantId}";
+        var item = FindFinishedGood(owner.StockItemId);
+        if (item is not null && item.Colours.Count > 0) return $"jwo-fg-colour-{owner.ClientKey}";
+        return $"jwo-fg-godown-{owner.ClientKey}";
+    }
+
+    private void FocusFirstProcess(JobWorkFinishedGoodEditModel fg)
+    {
+        // Stage fields only exist in the DOM while the Material Allocation popup is open (see
+        // materialAllocationGroup), for both active new-entry and a saved JWO - opening it here
+        // is what makes those fields exist just before pendingFocusId targets one of them.
+        // Manual allocation (no BOM) has no stages yet the first time this runs for a group -
+        // create one on the spot, exactly as BOM selection auto-creates its own via BomChanged.
+        var owner = GetGroupOwner(fg);
+        materialAllocationReturnFocusId = ComputeMaterialAllocationReturnFocusId(owner);
+        materialAllocationGroup = owner;
+        if (owner.BomStages.Count == 0 && owner.BillOfMaterialId is null)
+        {
+            AddManualStage(owner);
+            return;
+        }
+
+        var firstStage = owner.BomStages.OrderBy(s => s.StageNumber).FirstOrDefault();
+        if (firstStage != null)
+        {
+            pendingFocusId = $"jwo-stage-worker-{firstStage.ClientKey}";
+        }
+        else
+        {
+            OpenComponentAllocation(fg);
+        }
+    }
+
+    private IEnumerable<JobWorkBomLookup> BomsFor(JobWorkFinishedGoodEditModel fg) =>
+        lookups.BillOfMaterials.Where(x => x.StockItemId == fg.StockItemId)
+            .OrderByDescending(x => x.IsDefault).ThenByDescending(x => x.VersionNumber).ThenBy(x => x.Name);
+
+    private async Task BomChanged(JobWorkFinishedGoodEditModel fg, ChangeEventArgs e)
+    {
+        fg.BillOfMaterialId = long.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        var bom = fg.BillOfMaterialId is long bomId ? lookups.BillOfMaterials.FirstOrDefault(x => x.Id == bomId) : null;
+        fg.BillOfMaterialText = bom?.Name ?? string.Empty;
+        fg.BomStages.Clear();
+        if (fg.BillOfMaterialId is long selectedBomId)
+        {
+            fg.BomStages = await Repository.BuildBomStagePreviewAsync(
+                selectedBomId,
+                fg.TotalQuantity,
+                null,
+                fg.FinishedGoodsGodownId,
+                CancellationToken.None);
+            var defaultExpectedCompletion = editModel.DueDate ?? editModel.VoucherDate;
+            foreach (var stage in fg.BomStages)
+                stage.ExpectedCompletionDate = defaultExpectedCompletion;
+        }
+    }
+
+    private void VoucherDateChanged(DateOnly newVoucherDate)
+    {
+        var previousVoucherDate = editModel.VoucherDate;
+        editModel.VoucherDate = newVoucherDate;
+        foreach (var stage in editModel.FinishedGoods.SelectMany(x => x.BomStages))
+        {
+            if (stage.ExpectedCompletionDate is null || stage.ExpectedCompletionDate == previousVoucherDate)
+                stage.ExpectedCompletionDate = newVoucherDate;
+        }
+        if (editModel.DueDate is null || editModel.DueDate == previousVoucherDate)
+        {
+            editModel.DueDate = newVoucherDate;
+        }
+    }
+
+    private void JobWorkerTextChanged(ChangeEventArgs e)
+    {
+        editModel.JobWorkerText = e.Value?.ToString() ?? string.Empty;
+        ResolveJobWorkerText(false);
+    }
+
+    private void JobWorkerTextCommitted(ChangeEventArgs e)
+    {
+        editModel.JobWorkerText = e.Value?.ToString() ?? string.Empty;
+    }
+
+    private void ResolveJobWorkerText(bool allowUniquePartial)
+    {
+        var text = editModel.JobWorkerText.Trim();
+        var worker = lookups.JobWorkers.FirstOrDefault(x =>
+            string.Equals(JobWorkerDisplay(x), text, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(x.Name, text, StringComparison.OrdinalIgnoreCase));
+
+        if (worker is null && allowUniquePartial && !string.IsNullOrWhiteSpace(text))
+        {
+            var candidates = lookups.JobWorkers
+                .Where(x => JobWorkerDisplay(x).Contains(text, StringComparison.OrdinalIgnoreCase) ||
+                            x.Name.Contains(text, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (candidates.Count == 1) worker = candidates[0];
+        }
+
+        if (worker is null && !allowUniquePartial) return;
+        editModel.JobWorkerLedgerId = worker?.Id;
+        if (worker is not null) editModel.JobWorkerText = JobWorkerFieldText(worker);
+    }
+
+    private void FinishedGoodItemTextChanged(JobWorkFinishedGoodEditModel fg, ChangeEventArgs e)
+    {
+        fg.StockItemText = e.Value?.ToString() ?? string.Empty;
+        ResolveFinishedGoodText(fg, false);
+    }
+
+    private void FinishedGoodItemTextCommitted(JobWorkFinishedGoodEditModel fg, ChangeEventArgs e)
+    {
+        fg.StockItemText = e.Value?.ToString() ?? string.Empty;
+        ResolveFinishedGoodText(fg, true);
+    }
+
+    private void ResolveFinishedGoodText(JobWorkFinishedGoodEditModel fg, bool allowUniquePartial)
+    {
+        var text = fg.StockItemText.Trim();
+        var item = lookups.FinishedGoods.FirstOrDefault(x =>
+            string.Equals(x.Name, text, StringComparison.OrdinalIgnoreCase));
+        if (item is null && allowUniquePartial && !string.IsNullOrWhiteSpace(text))
+        {
+            var candidates = lookups.FinishedGoods
+                .Where(x => x.Name.Contains(text, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (candidates.Count == 1) item = candidates[0];
+        }
+
+        if (item is null)
+        {
+            if (!allowUniquePartial) return;
+            if (fg.StockItemId != 0)
+            {
+                fg.StockItemId = 0;
+                fg.ColourId = null;
+                fg.ColourText = string.Empty;
+                fg.UqcShortName = string.Empty;
+                fg.SizeQuantities.Clear();
+            }
+            return;
+        }
+
+        var itemChanged = fg.StockItemId != item.Id;
+        fg.StockItemId = item.Id;
+        fg.StockItemText = item.Name;
+        fg.UqcShortName = item.UqcShortName;
+
+        if (itemChanged)
+        {
+            fg.ColourId = null;
+            fg.ColourText = string.Empty;
+            fg.SizeQuantities.Clear();
+        }
+
+        if (item.Colours.Count == 1)
+        {
+            fg.ColourId = item.Colours[0].Id;
+            fg.ColourText = item.Colours[0].Name;
+        }
+
+        RebuildSizeQuantities(fg, !itemChanged);
+    }
+
+    private void FinishedGoodColourTextChanged(JobWorkFinishedGoodEditModel fg, ChangeEventArgs e)
+    {
+        fg.ColourText = e.Value?.ToString() ?? string.Empty;
+        ResolveFinishedGoodColourText(fg, false);
+    }
+
+    private void FinishedGoodColourTextCommitted(JobWorkFinishedGoodEditModel fg, ChangeEventArgs e)
+    {
+        fg.ColourText = e.Value?.ToString() ?? string.Empty;
+        ResolveFinishedGoodColourText(fg, true);
+    }
+
+    private void ResolveFinishedGoodColourText(JobWorkFinishedGoodEditModel fg, bool allowUniquePartial)
+    {
+        var item = FindFinishedGood(fg.StockItemId);
+        if (item is null)
+        {
+            fg.ColourId = null;
+            fg.SizeQuantities.Clear();
+            return;
+        }
+
+        if (item.Colours.Count == 0)
+        {
+            fg.ColourId = null;
+            fg.ColourText = string.Empty;
+            RebuildSizeQuantities(fg, true);
+            return;
+        }
+
+        var text = fg.ColourText.Trim();
+        var colour = item.Colours.FirstOrDefault(x =>
+            string.Equals(x.Name, text, StringComparison.OrdinalIgnoreCase));
+        if (colour is null && allowUniquePartial && !string.IsNullOrWhiteSpace(text))
+        {
+            var candidates = item.Colours
+                .Where(x => x.Name.Contains(text, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (candidates.Count == 1) colour = candidates[0];
+        }
+        if (colour is null && !allowUniquePartial) return;
+        var changed = fg.ColourId != colour?.Id;
+        fg.ColourId = colour?.Id;
+        if (colour is not null) fg.ColourText = colour.Name;
+        RebuildSizeQuantities(fg, !changed);
+    }
+
+    private void RebuildSizeQuantities(JobWorkFinishedGoodEditModel fg, bool preserve)
+    {
+        var item = FindFinishedGood(fg.StockItemId);
+        if (item is null)
+        {
+            fg.SizeQuantities.Clear();
+            return;
+        }
+        if (item.Colours.Count > 0 && fg.ColourId is null)
+        {
+            fg.SizeQuantities.Clear();
+            return;
+        }
+
+        var oldByVariant = preserve
+            ? fg.SizeQuantities.ToDictionary(x => x.StockItemVariantId, x => x.Quantity)
+            : new Dictionary<long, decimal>();
+        var allocations = new List<JobWorkSizeQuantityEditModel>();
+
+        if (item.Sizes.Count == 0)
+        {
+            var variant = item.Variants.FirstOrDefault(x => x.ColourId == fg.ColourId && x.SizeId is null);
+            if (variant is not null)
+            {
+                allocations.Add(new JobWorkSizeQuantityEditModel
+                {
+                    StockItemVariantId = variant.Id,
+                    SizeId = null,
+                    SizeName = "Quantity",
+                    DisplayOrder = 0,
+                    Quantity = oldByVariant.GetValueOrDefault(variant.Id)
+                });
+            }
+        }
+        else
+        {
+            foreach (var size in item.Sizes.OrderBy(x => x.DisplayOrder).ThenBy(x => x.Name))
+            {
+                var variant = item.Variants.FirstOrDefault(x => x.ColourId == fg.ColourId && x.SizeId == size.Id);
+                if (variant is null) continue;
+                allocations.Add(new JobWorkSizeQuantityEditModel
+                {
+                    StockItemVariantId = variant.Id,
+                    SizeId = size.Id,
+                    SizeName = size.Name,
+                    DisplayOrder = size.DisplayOrder,
+                    Quantity = oldByVariant.GetValueOrDefault(variant.Id)
+                });
+            }
+        }
+        fg.SizeQuantities = allocations;
+    }
+
+    private void ComponentItemTextChanged(JobWorkComponentEditModel component, ChangeEventArgs e)
+    {
+        component.StockItemText = e.Value?.ToString() ?? string.Empty;
+        ResolveComponentText(component, false);
+    }
+
+    private void ComponentItemTextCommitted(JobWorkComponentEditModel component, ChangeEventArgs e)
+    {
+        component.StockItemText = e.Value?.ToString() ?? string.Empty;
+        ResolveComponentText(component, true);
+    }
+
+    // 🔴 FIX: Force Random Material Typing to show Error and Wipe Box
+    private void ResolveComponentText(JobWorkComponentEditModel component, bool allowUniquePartial)
+    {
+        var text = component.StockItemText.Trim();
+        var item = lookups.Components.FirstOrDefault(x =>
+            string.Equals(x.Name, text, StringComparison.OrdinalIgnoreCase));
+        if (item is null && allowUniquePartial && !string.IsNullOrWhiteSpace(text))
+        {
+            var candidates = lookups.Components
+                .Where(x => x.Name.Contains(text, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (candidates.Count == 1) item = candidates[0];
+        }
+
+        if (item is null && !allowUniquePartial) return;
+        var previousItemId = component.StockItemId;
+        component.StockItemId = item?.Id ?? 0;
+        component.UqcId = item?.UqcId ?? 0;
+        component.UqcShortName = item?.UqcShortName ?? string.Empty;
+        if (item is not null)
+        {
+            component.StockItemText = item.Name;
+            if (previousItemId != item.Id || component.XmlRate <= 0)
+            {
+                component.XmlRate = item.LatestComponentRate;
+                componentRateText[component.ClientKey] = FormatInputRate(component.XmlRate);
+            }
+            component.XmlAmount = decimal.Round(component.RequiredQuantity * component.XmlRate, 4, MidpointRounding.AwayFromZero);
+        }
+    }
+
+    private void ComponentQuantityChanged(JobWorkComponentEditModel component, ChangeEventArgs e)
+    {
+        component.RequiredQuantity = decimal.TryParse(e.Value?.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var quantity)
+            ? quantity
+            : 0;
+        component.XmlAmount = decimal.Round(component.RequiredQuantity * component.XmlRate, 4, MidpointRounding.AwayFromZero);
+    }
+
+    private string GetComponentRateText(JobWorkComponentEditModel component)
+    {
+        if (componentRateText.TryGetValue(component.ClientKey, out var text)) return text;
+        text = FormatInputRate(component.XmlRate);
+        componentRateText[component.ClientKey] = text;
+        return text;
+    }
+
+    private void ComponentRateChanged(JobWorkComponentEditModel component, ChangeEventArgs e)
+    {
+        var text = e.Value?.ToString() ?? string.Empty;
+        componentRateText[component.ClientKey] = text;
+        var normalized = text.Trim().Replace(',', '.');
+        if (decimal.TryParse(normalized, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var rate) && rate >= 0)
+        {
+            component.XmlRate = rate;
+            component.XmlAmount = decimal.Round(component.RequiredQuantity * component.XmlRate, 4, MidpointRounding.AwayFromZero);
+        }
+    }
+
+    private void NormalizeComponentRateText(JobWorkComponentEditModel component)
+    {
+        if (!componentRateText.TryGetValue(component.ClientKey, out var text))
+            text = FormatInputRate(component.XmlRate);
+
+        var normalized = text.Trim().Replace(',', '.');
+        if (!decimal.TryParse(normalized, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var rate) || rate < 0)
+            rate = component.XmlRate;
+
+        component.XmlRate = Math.Max(0, rate);
+        component.XmlAmount = decimal.Round(component.RequiredQuantity * component.XmlRate, 4, MidpointRounding.AwayFromZero);
+        componentRateText[component.ClientKey] = FormatInputRate(component.XmlRate);
+    }
+
+    private void OpenComponentAllocation(JobWorkFinishedGoodEditModel fg)
+    {
+        if (fg.StockItemId <= 0)
+        {
+            ShowError("Select a Finished Good before entering components.");
+            pendingFocusId = $"jwo-fg-item-{fg.ClientKey}";
+            return;
+        }
+
+        activeComponentFg = fg;
+        componentPopupMessage = string.Empty;
+        var blank = fg.Components.LastOrDefault(IsBlankComponent);
+        if (blank is null)
+        {
+            blank = new JobWorkComponentEditModel();
+            fg.Components.Add(blank);
+        }
+        pendingFocusId = $"jwo-component-{blank.ClientKey}";
+    }
+
+    // Manual allocation (no BOM) builds its production stages by hand, one at a time, instead
+    // of BomChanged auto-generating them from a template. Same underlying JobWorkBomStageEditModel
+    // as a BOM-driven stage - just SourceBomId left null - so it saves through the identical
+    // path and is automatically covered by Rate Variance/Job Worker Control like any other stage.
+    private void AddManualStage(JobWorkFinishedGoodEditModel group)
+    {
+        var item = FindFinishedGood(group.StockItemId);
+        var stage = new JobWorkBomStageEditModel
+        {
+            StageNumber = group.BomStages.Count + 1,
+            StageLevel = 0,
+            StagePath = (group.BomStages.Count + 1).ToString(),
+            StageName = group.StockItemText,
+            OutputStockItemId = group.StockItemId,
+            OutputStockItemText = group.StockItemText,
+            OutputUqcId = item?.UqcId ?? 0,
+            OutputUqcShortName = item?.UqcShortName ?? group.UqcShortName,
+            OutputQuantity = group.TotalQuantity,
+            IsFinalStage = true,
+            ExpectedCompletionDate = editModel.DueDate ?? editModel.VoucherDate
+        };
+        group.BomStages.Add(stage);
+        pendingFocusId = $"jwo-stage-worker-{stage.ClientKey}";
+    }
+
+    private void RemoveManualStage(JobWorkFinishedGoodEditModel group, JobWorkBomStageEditModel stage)
+    {
+        if (stage.SourceBomId is not null) return;
+        var stages = group.BomStages.OrderBy(s => s.StageNumber).ToList();
+        var index = stages.IndexOf(stage);
+        group.BomStages.Remove(stage);
+        var renumbered = group.BomStages.OrderBy(s => s.StageNumber).ToList();
+        for (var i = 0; i < renumbered.Count; i++)
+        {
+            renumbered[i].StageNumber = i + 1;
+            renumbered[i].StagePath = (i + 1).ToString();
+        }
+
+        if (renumbered.Count == 0)
+        {
+            // A manual finished good can't be saved with zero stages (nothing would flow into
+            // Rate Variance / Job Worker Control for it), so removing the only stage puts a
+            // fresh blank one back rather than leaving the finished good stage-less.
+            AddManualStage(group);
+            return;
+        }
+
+        var adjacent = renumbered[Math.Min(index, renumbered.Count - 1)];
+        pendingFocusId = $"jwo-stage-worker-{adjacent.ClientKey}";
+    }
+
+    // Mirrors the blank-decline convention used for colours (FinishColourEntry) and components
+    // (AdvanceComponentItem/IsBlankComponent): leaving a manual stage's Job Worker field blank
+    // and pressing Enter means "I don't want this stage" - discard it and move straight to
+    // Components, rather than making the user tab through every remaining blank field first or
+    // land back on "+ Stage". Only reachable for a stage with no job worker typed yet, so this
+    // never discards a stage the user has actually started filling in.
+    private void DeclineBlankStage(JobWorkFinishedGoodEditModel group, JobWorkBomStageEditModel stage)
+    {
+        if (stage.SourceBomId is not null) return;
+        if (stage.AssignedJobWorkerId is not null || !string.IsNullOrWhiteSpace(stage.AssignedJobWorkerText)) return;
+
+        group.BomStages.Remove(stage);
+        var renumbered = group.BomStages.OrderBy(s => s.StageNumber).ToList();
+        for (var i = 0; i < renumbered.Count; i++)
+        {
+            renumbered[i].StageNumber = i + 1;
+            renumbered[i].StagePath = (i + 1).ToString();
+        }
+
+        if (renumbered.Count == 0)
+        {
+            // Declining the only stage still leaves the finished good needing at least one
+            // (see RemoveManualStage) - put a fresh blank one back instead of opening Components
+            // with no process assigned at all.
+            AddManualStage(group);
+            return;
+        }
+
+        OpenComponentAllocation(group);
+    }
+
+    // Reaching the end of a stage row's fields (Expected Rate, the last one): move on to the
+    // next stage if there is one. Otherwise, for manual allocation the stage list is open-ended
+    // (unlike a BOM template's fixed stage count), so land on "+ Stage" instead of jumping
+    // straight into Components - Enter/Space there adds another stage, or Tab reaches
+    // "Enter Components" to move on. A BOM-driven finished good has no "+ Stage" affordance
+    // (its stages come from the template), so it goes straight to Components as before.
+    private void CompleteStageLine(JobWorkFinishedGoodEditModel group, JobWorkBomStageEditModel stage)
+    {
+        var ordered = group.BomStages.OrderBy(s => s.StageNumber).ToList();
+        var index = ordered.IndexOf(stage);
+        var next = index >= 0 && index < ordered.Count - 1 ? ordered[index + 1] : null;
+        if (next is not null)
+        {
+            pendingFocusId = $"jwo-stage-worker-{next.ClientKey}";
+            return;
+        }
+
+        if (group.BillOfMaterialId is null)
+        {
+            pendingFocusId = $"jwo-add-stage-{group.ClientKey}";
+            return;
+        }
+
+        OpenComponentAllocation(group);
+    }
+
+    private void AdvanceComponentItem(JobWorkComponentEditModel component)
+    {
+        if (activeComponentFg is null) return;
+
+        ResolveComponentText(component, true);
+        if (IsBlankComponent(component))
+        {
+            CloseComponentAllocation();
+            return;
+        }
+
+        // 🔴 FIX: Show error AND WIPE BAD TEXT when typing random material
+        if (component.StockItemId <= 0)
+        {
+            componentPopupMessage = "Select a valid Component Stock Item.";
+            component.StockItemText = string.Empty; // Wipe bad text
+            pendingFocusId = $"jwo-component-{component.ClientKey}";
+            return;
+        }
+
+        componentPopupMessage = string.Empty;
+        activeLookupKey = null;
+        pendingFocusId = $"jwo-component-godown-{component.ClientKey}";
+    }
+
+    private void FocusComponentQuantity(JobWorkComponentEditModel component)
+    {
+        if (activeComponentFg is null) return;
+
+        ResolveComponentGodown(component);
+        if (component.ComponentGodownId is null)
+        {
+            componentPopupMessage = "Select a valid Component Godown.";
+            pendingFocusId = $"jwo-component-godown-{component.ClientKey}";
+            return;
+        }
+
+        componentPopupMessage = string.Empty;
+        activeLookupKey = null;
+        pendingFocusId = $"jwo-component-qty-{component.ClientKey}";
+    }
+
+    private void FocusComponentRate(JobWorkComponentEditModel component)
+    {
+        if (component.RequiredQuantity <= 0)
+        {
+            componentPopupMessage = "Required Quantity must be greater than zero.";
+            pendingFocusId = $"jwo-component-qty-{component.ClientKey}";
+            return;
+        }
+
+        componentPopupMessage = string.Empty;
+        if (!componentRateText.ContainsKey(component.ClientKey))
+            componentRateText[component.ClientKey] = FormatInputRate(component.XmlRate);
+        component.XmlAmount = decimal.Round(component.RequiredQuantity * component.XmlRate, 4, MidpointRounding.AwayFromZero);
+        pendingFocusId = $"jwo-component-rate-{component.ClientKey}";
+    }
+
+    private void CompleteComponentLine(JobWorkComponentEditModel component)
+    {
+        if (activeComponentFg is null) return;
+
+        ResolveComponentText(component, true);
+        if (IsBlankComponent(component))
+        {
+            CloseComponentAllocation();
+            return;
+        }
+
+        if (component.StockItemId <= 0)
+        {
+            componentPopupMessage = "Select a valid Component Stock Item.";
+            component.StockItemText = string.Empty; // Wipe bad text
+            pendingFocusId = $"jwo-component-{component.ClientKey}";
+            return;
+        }
+
+        ResolveComponentGodown(component);
+        if (component.ComponentGodownId is null)
+        {
+            componentPopupMessage = "Select a valid Component Godown.";
+            pendingFocusId = $"jwo-component-godown-{component.ClientKey}";
+            return;
+        }
+
+        if (component.RequiredQuantity <= 0)
+        {
+            componentPopupMessage = "Required Quantity must be greater than zero.";
+            pendingFocusId = $"jwo-component-qty-{component.ClientKey}";
+            return;
+        }
+
+        NormalizeComponentRateText(component);
+        if (component.XmlRate < 0)
+        {
+            componentPopupMessage = "Rate cannot be negative.";
+            pendingFocusId = $"jwo-component-rate-{component.ClientKey}";
+            return;
+        }
+        component.XmlAmount = decimal.Round(component.RequiredQuantity * component.XmlRate, 4, MidpointRounding.AwayFromZero);
+
+        var duplicate = activeComponentFg.Components.Any(x =>
+            !ReferenceEquals(x, component) &&
+            x.StockItemId > 0 &&
+            x.StockItemId == component.StockItemId);
+        if (duplicate)
+        {
+            componentPopupMessage = $"Component '{component.StockItemText}' is already entered for this Finished Good.";
+            pendingFocusId = $"jwo-component-{component.ClientKey}";
+            return;
+        }
+
+        componentPopupMessage = string.Empty;
+        var next = new JobWorkComponentEditModel();
+        activeComponentFg.Components.Add(next);
+        pendingFocusId = $"jwo-component-{next.ClientKey}";
+    }
+
+    private void SkipToNarration()
+    {
+        var last = editModel.FinishedGoods.LastOrDefault();
+        if (last != null && last.StockItemId <= 0 && string.IsNullOrWhiteSpace(last.StockItemText) && editModel.FinishedGoods.Count > 1)
+        {
+            editModel.FinishedGoods.Remove(last);
+        }
+        pendingFocusId = "jwo-narration-input";
+    }
+
+    private void ClearBlankComponentRows(JobWorkFinishedGoodEditModel fg)
+    {
+        var removedKeys = fg.Components.Where(IsBlankComponent).Select(x => x.ClientKey).ToList();
+        fg.Components.RemoveAll(IsBlankComponent);
+        foreach (var key in removedKeys) componentRateText.Remove(key);
+    }
+
+    // Escape from the Components section steps back one level only - to the still-open
+    // Process/BOM view of the same Material Allocation popup - without advancing to
+    // another finished good. This is deliberately NOT the same as CloseComponentAllocation
+    // below: that one means "genuinely done with this finished good," this one means
+    // "let me look at Process again."
+    private void StepBackFromComponents()
+    {
+        if (activeComponentFg is null) return;
+        var owner = activeComponentFg;
+        ClearBlankComponentRows(owner);
+        activeComponentFg = null;
+        componentPopupMessage = string.Empty;
+        pendingFocusId = materialAllocationGroup is { } group ? $"jwo-open-components-{group.ClientKey}" : null;
+    }
+
+    // Genuinely finished entering components for this finished good (triggered by pressing
+    // Enter on a blank trailing component row): closes the whole Material Allocation popup
+    // and advances to the next finished good, a fresh blank one, or the Save button.
+    private void CloseComponentAllocation()
+    {
+        if (activeComponentFg is null) return;
+        var closedFg = activeComponentFg;
+        ClearBlankComponentRows(closedFg);
+        activeComponentFg = null;
+        componentPopupMessage = string.Empty;
+        materialAllocationGroup = null;
+
+        var currentIndex = editModel.FinishedGoods.IndexOf(closedFg);
+        if (currentIndex >= 0 && currentIndex == editModel.FinishedGoods.Count - 1)
+        {
+            var newFg = new JobWorkFinishedGoodEditModel();
+            editModel.FinishedGoods.Add(newFg);
+            pendingFocusId = $"jwo-fg-item-{newFg.ClientKey}";
+        }
+        else if (currentIndex >= 0 && currentIndex < editModel.FinishedGoods.Count - 1)
+        {
+            var nextFg = editModel.FinishedGoods[currentIndex + 1];
+            pendingFocusId = $"jwo-fg-item-{nextFg.ClientKey}";
+        }
+        else
+        {
+            pendingFocusId = "jwo-save-button";
+        }
+    }
+
+    // Escape steps back one level at a time: out of Components (back to BOM/Process,
+    // still inside the same popup) first, then out of the popup entirely - mirroring
+    // how Escape already works for nested menus elsewhere in this app.
+    private void HandleMaterialAllocationKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        if (activeComponentFg is not null) StepBackFromComponents();
+        else CloseMaterialAllocation();
+    }
+
+    private static bool IsBlankComponent(JobWorkComponentEditModel component)
+        => component.StockItemId <= 0 &&
+           string.IsNullOrWhiteSpace(component.StockItemText) &&
+           string.IsNullOrWhiteSpace(component.ComponentGodownText) &&
+           component.RequiredQuantity == 0 &&
+           component.XmlRate == 0;
+
+    private void RemoveBlankComponentRows()
+    {
+        foreach (var fg in editModel.FinishedGoods)
+        {
+            fg.Components.RemoveAll(IsBlankComponent);
+        }
+    }
+
+    private void ResolveAllTypedLookups()
+    {
+        ResolveVoucherTypeText();
+        ResolveJobWorkerText(true);
+        foreach (var fg in editModel.FinishedGoods)
+        {
+            ResolveFinishedGoodText(fg, true);
+            ResolveFinishedGoodColourText(fg, true);
+            ResolveFinishedGoodGodowns(fg);
+            foreach (var component in fg.Components) { ResolveComponentText(component, true); ResolveComponentGodown(component); }
+        }
+    }
+
+    private static string DateInputValue(DateOnly value)
+        => value.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatInputRate(decimal rate)
+        => rate.ToString("0.00", CultureInfo.InvariantCulture);
+
+    private static string FormatInputQuantity(decimal quantity)
+        => quantity == 0
+            ? string.Empty
+            : quantity.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string JobWorkerDisplay(JobWorkerLookupItem worker)
+        => $"{worker.Name} · {worker.GroupName}";
+
+    private static string JobWorkerFieldText(JobWorkerLookupItem worker) => worker.Name;
+
+    private JobWorkStockItemLookup? FindFinishedGood(long id) => lookups.FinishedGoods.FirstOrDefault(x => x.Id == id);
+    private JobWorkStockItemLookup? FindComponent(long id) => lookups.Components.FirstOrDefault(x => x.Id == id);
+    private JobWorkGodownLookup? FindGodown(long? id) => id is null ? null : lookups.Godowns.FirstOrDefault(x => x.Id == id.Value);
+
+    private void OpenLookup(string key) => activeLookupKey = key;
+    private void OpenVoucherTypeLookup()
+    {
+        if (editModel.Id == 0) OpenLookup("voucher-type");
+    }
+    private void OpenJobWorkerLookup() => OpenLookup("job-worker");
+    private void OpenFinishedGoodLookup(JobWorkFinishedGoodEditModel fg) => OpenLookup($"fg:{fg.ClientKey}");
+    private void OpenColourLookup(JobWorkFinishedGoodEditModel fg) => OpenLookup($"colour:{fg.ClientKey}");
+    private void OpenFinishedGoodsGodownLookup(JobWorkFinishedGoodEditModel fg) => OpenLookup($"fggodown:{fg.ClientKey}");
+    private void OpenDestinationGodownLookup(JobWorkFinishedGoodEditModel fg) => OpenLookup($"destgodown:{fg.ClientKey}");
+    private void OpenComponentLookup(JobWorkComponentEditModel component) => OpenLookup($"component:{component.ClientKey}");
+    private void OpenComponentGodownLookup(JobWorkComponentEditModel component) => OpenLookup($"componentgodown:{component.ClientKey}");
+
+    private IEnumerable<JobWorkVoucherTypeLookup> FilterVoucherTypes()
+    {
+        var text = editModel.VoucherTypeText.Trim();
+        return string.IsNullOrWhiteSpace(text)
+            ? lookups.VoucherTypes
+            : lookups.VoucherTypes.Where(x => x.Name.Contains(text, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void VoucherTypeTextChanged(ChangeEventArgs e)
+    {
+        if (editModel.Id != 0) return;
+        editModel.VoucherTypeText = e.Value?.ToString() ?? string.Empty;
+        editModel.VoucherTypeId = 0;
+    }
+
+    private void SelectVoucherType(JobWorkVoucherTypeLookup type)
+    {
+        if (editModel.Id != 0) return;
+        var previousNumber = editModel.VoucherNumber;
+        editModel.VoucherTypeId = type.Id;
+        editModel.VoucherTypeText = type.Name;
+        editModel.SequenceNumber = type.NextSequence;
+        editModel.VoucherNumber = type.NextVoucherNumber;
+        if (string.IsNullOrWhiteSpace(editModel.ReferenceNumber) || editModel.ReferenceNumber == previousNumber)
+            editModel.ReferenceNumber = type.NextVoucherNumber;
+        activeLookupKey = null;
+        pendingFocusId = IsManualVoucherNumber ? "jwo-voucher-number" : "jwo-batch-input";
+    }
+
+    private void ResolveVoucherTypeText()
+    {
+        var type = lookups.VoucherTypes.FirstOrDefault(x =>
+            x.Id == editModel.VoucherTypeId ||
+            string.Equals(x.Name, editModel.VoucherTypeText.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (type is null)
+        {
+            editModel.VoucherTypeId = 0;
+            return;
+        }
+        editModel.VoucherTypeId = type.Id;
+        editModel.VoucherTypeText = type.Name;
+    }
+
+    private IEnumerable<JobWorkerLookupItem> FilterJobWorkers()
+    {
+        var text = editModel.JobWorkerText.Trim();
+        return string.IsNullOrWhiteSpace(text)
+            ? lookups.JobWorkers
+            : lookups.JobWorkers.Where(x =>
+                x.Name.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+                x.GroupName.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+                JobWorkerDisplay(x).Contains(text, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IEnumerable<JobWorkStockItemLookup> FilterFinishedGoods(JobWorkFinishedGoodEditModel fg)
+    {
+        var text = fg.StockItemText.Trim();
+        return string.IsNullOrWhiteSpace(text) ? lookups.FinishedGoods : lookups.FinishedGoods.Where(x => x.Name.Contains(text, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IEnumerable<JobWorkColourLookup> FilterColours(JobWorkFinishedGoodEditModel fg)
+    {
+        var item = FindFinishedGood(fg.StockItemId);
+        if (item is null) return Array.Empty<JobWorkColourLookup>();
+        var text = fg.ColourText.Trim();
+        return string.IsNullOrWhiteSpace(text)
+            ? item.Colours
+            : item.Colours.Where(x => x.Name.Contains(text, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void SelectColour(JobWorkFinishedGoodEditModel fg, JobWorkColourLookup colour)
+    {
+        fg.ColourText = colour.Name;
+        ResolveFinishedGoodColourText(fg, true);
+        activeLookupKey = null;
+        FocusFirstSizeThenProcess(fg);
+    }
+
+    private IEnumerable<JobWorkStockItemLookup> FilterComponents(JobWorkComponentEditModel component)
+    {
+        var text = component.StockItemText.Trim();
+        return string.IsNullOrWhiteSpace(text) ? lookups.Components : lookups.Components.Where(x => x.Name.Contains(text, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IEnumerable<JobWorkGodownLookup> FilterGodowns(string text)
+        => string.IsNullOrWhiteSpace(text) ? lookups.Godowns : lookups.Godowns.Where(x => x.Name.Contains(text.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    // Production-stage job worker/process/output-godown fields, converted from plain <select>
+    // to the same typeable erp-lookup pattern used everywhere else on this page - a real
+    // company's job worker/godown list can be long, and unlike a plain <select> these are
+    // searchable and show a "Nothing found" state instead of just a scrollable list.
+    private void OpenStageJobWorkerLookup(JobWorkBomStageEditModel stage) => OpenLookup($"stageworker:{stage.ClientKey}");
+    private void OpenStageProcessLookup(JobWorkBomStageEditModel stage) => OpenLookup($"stageprocess:{stage.ClientKey}");
+    private void OpenStageGodownLookup(JobWorkBomStageEditModel stage) => OpenLookup($"stagegodown:{stage.ClientKey}");
+
+    private IEnumerable<JobWorkerLookupItem> FilterStageJobWorkers(JobWorkBomStageEditModel stage)
+    {
+        var text = stage.AssignedJobWorkerText.Trim();
+        return string.IsNullOrWhiteSpace(text) ? lookups.JobWorkers : lookups.JobWorkers.Where(x => x.Name.Contains(text, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IEnumerable<JobWorkProcessLookup> FilterStageProcesses(JobWorkBomStageEditModel stage)
+    {
+        var text = stage.ProcessText.Trim();
+        return string.IsNullOrWhiteSpace(text) ? lookups.Processes : lookups.Processes.Where(x => x.Name.Contains(text, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void StageJobWorkerTextChanged(JobWorkBomStageEditModel stage, ChangeEventArgs e)
+    {
+        stage.AssignedJobWorkerText = e.Value?.ToString() ?? string.Empty;
+        stage.AssignedJobWorkerId = null;
+    }
+
+    private void StageProcessTextChanged(JobWorkBomStageEditModel stage, ChangeEventArgs e)
+    {
+        stage.ProcessText = e.Value?.ToString() ?? string.Empty;
+        stage.ProcessId = null;
+    }
+
+    private void StageGodownTextChanged(JobWorkBomStageEditModel stage, ChangeEventArgs e)
+    {
+        stage.OutputGodownText = e.Value?.ToString() ?? string.Empty;
+        stage.OutputGodownId = null;
+    }
+
+    private void SelectStageJobWorker(JobWorkBomStageEditModel stage, JobWorkerLookupItem worker)
+    {
+        stage.AssignedJobWorkerId = worker.Id;
+        stage.AssignedJobWorkerText = worker.Name;
+        activeLookupKey = null;
+    }
+
+    private void SelectStageProcess(JobWorkBomStageEditModel stage, JobWorkProcessLookup match)
+    {
+        stage.ProcessId = match.Id;
+        stage.ProcessText = match.Name;
+        activeLookupKey = null;
+    }
+
+    private void SelectStageGodown(JobWorkBomStageEditModel stage, JobWorkGodownLookup godown)
+    {
+        stage.OutputGodownId = godown.Id;
+        stage.OutputGodownText = godown.Name;
+        activeLookupKey = null;
+    }
+
+    private void SelectJobWorker(JobWorkerLookupItem worker)
+    {
+        editModel.JobWorkerLedgerId = worker.Id;
+        editModel.JobWorkerText = JobWorkerFieldText(worker);
+        activeLookupKey = null;
+        pendingFocusId = "jwo-batch-input";
+    }
+    private void SelectFinishedGood(JobWorkFinishedGoodEditModel fg, JobWorkStockItemLookup item)
+    {
+        fg.StockItemText = item.Name;
+        ResolveFinishedGoodText(fg, true);
+        activeLookupKey = null;
+        pendingFocusId = $"jwo-fg-godown-{fg.ClientKey}";
+    }
+    // Enter on a genuinely blank "Select Finished Good" field falls through to here via
+    // data-enter-empty-action, since the field has nothing to select. Without explicitly
+    // clearing activeLookupKey here, the dropdown could reappear after focus moves to the
+    // Godown field: that field also opens its own lookup on focus, which triggers a Blazor
+    // re-render, and since nothing had told the server this field's lookup was closed, the
+    // @if block above would still render it - the earlier client-side-only hide (closeLookupOnBlur)
+    // isn't enough on its own for this specific case, only clearing the state here is.
+    private void DeclineBlankFinishedGoodItem(JobWorkFinishedGoodEditModel fg)
+    {
+        if (fg.StockItemId != 0 || !string.IsNullOrWhiteSpace(fg.StockItemText)) return;
+        activeLookupKey = null;
+        pendingFocusId = $"jwo-fg-godown-{fg.ClientKey}";
+    }
+    private void SelectComponent(JobWorkComponentEditModel component, JobWorkStockItemLookup item) { component.StockItemText = item.Name; ResolveComponentText(component, true); activeLookupKey = null; pendingFocusId = $"jwo-component-godown-{component.ClientKey}"; }
+    private void SelectFinishedGoodsGodown(JobWorkFinishedGoodEditModel fg, JobWorkGodownLookup godown)
+    {
+        fg.FinishedGoodsGodownId = godown.Id;
+        fg.FinishedGoodsGodownText = godown.Name;
+        if (fg.DestinationGodownId is null)
+        {
+            fg.DestinationGodownId = godown.Id;
+            fg.DestinationGodownText = godown.Name;
+        }
+        activeLookupKey = null;
+        FocusColourOrSize(fg);
+    }
+
+    // Godown sits between item and colour in both the row layout and the keyboard chain:
+    // Item -> Godown -> Colour -> Size -> Process. Used after Godown resolves, whether by
+    // picking a lookup match or by typing a value and pressing Enter with no dropdown open.
+    private void FocusColourOrSize(JobWorkFinishedGoodEditModel fg)
+    {
+        var item = FindFinishedGood(fg.StockItemId);
+        if (item is not null && item.Colours.Count > 0)
+        {
+            pendingFocusId = $"jwo-fg-colour-{fg.ClientKey}";
+            return;
+        }
+
+        FocusFirstSizeThenProcess(fg);
+    }
+
+    private void FocusFirstSizeThenProcess(JobWorkFinishedGoodEditModel fg)
+    {
+        var firstAllocation = fg.SizeQuantities.OrderBy(x => x.DisplayOrder).ThenBy(x => x.SizeName).FirstOrDefault();
+        if (firstAllocation is not null) pendingFocusId = $"jwo-fg-qty-{fg.ClientKey}-{firstAllocation.StockItemVariantId}";
+        else FocusFirstProcess(fg);
+    }
+
+    private void SelectDestinationGodown(JobWorkFinishedGoodEditModel fg, JobWorkGodownLookup godown)
+    {
+        fg.DestinationGodownId = godown.Id;
+        fg.DestinationGodownText = godown.Name;
+        activeLookupKey = null;
+        var firstAllocation = fg.SizeQuantities.OrderBy(x => x.DisplayOrder).ThenBy(x => x.SizeName).FirstOrDefault();
+        pendingFocusId = firstAllocation is not null
+            ? $"jwo-fg-qty-{fg.ClientKey}-{firstAllocation.StockItemVariantId}"
+            : null;
+        if (pendingFocusId is null) FocusFirstProcess(fg);
+    }
+    private void SelectComponentGodown(JobWorkComponentEditModel component, JobWorkGodownLookup godown) { component.ComponentGodownId = godown.Id; component.ComponentGodownText = godown.Name; activeLookupKey = null; pendingFocusId = $"jwo-component-qty-{component.ClientKey}"; }
+
+    private void GodownTextChanged(JobWorkFinishedGoodEditModel fg, ChangeEventArgs e, bool destination)
+    {
+        var text = e.Value?.ToString() ?? string.Empty;
+        if (destination) { fg.DestinationGodownText = text; fg.DestinationGodownId = null; }
+        else { fg.FinishedGoodsGodownText = text; fg.FinishedGoodsGodownId = null; }
+    }
+
+    private void ComponentGodownTextChanged(JobWorkComponentEditModel component, ChangeEventArgs e)
+    {
+        component.ComponentGodownText = e.Value?.ToString() ?? string.Empty;
+        component.ComponentGodownId = null;
+    }
+
+    private void ResolveFinishedGoodGodowns(JobWorkFinishedGoodEditModel fg)
+    {
+        var source = lookups.Godowns.FirstOrDefault(x => string.Equals(x.Name, fg.FinishedGoodsGodownText.Trim(), StringComparison.OrdinalIgnoreCase));
+        var destination = lookups.Godowns.FirstOrDefault(x => string.Equals(x.Name, fg.DestinationGodownText.Trim(), StringComparison.OrdinalIgnoreCase));
+        fg.FinishedGoodsGodownId = source?.Id;
+        fg.DestinationGodownId = destination?.Id ?? source?.Id;
+        if (destination is null && source is not null) fg.DestinationGodownText = source.Name;
+    }
+
+    private void ResolveComponentGodown(JobWorkComponentEditModel component)
+    {
+        var godown = lookups.Godowns.FirstOrDefault(x => string.Equals(x.Name, component.ComponentGodownText.Trim(), StringComparison.OrdinalIgnoreCase));
+        component.ComponentGodownId = godown?.Id;
+        if (godown is not null) component.ComponentGodownText = godown.Name;
+    }
+
+    private async Task ApplySearch()
+    {
+        selectedIndex = -1;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private async Task ClearSearch()
+    {
+        searchText = string.Empty;
+        selectedIndex = -1;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private static void IgnoreToolbarKeyDown(KeyboardEventArgs e) { }
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ApplySearch();
+        else if (e.Key == "Escape") await ClearSearch();
+    }
+
+    private async Task HandlePageKeyDown(KeyboardEventArgs e)
+    {
+        if (showExitModal || showDeleteModal || showCancelVoucherModal) return;
+        if (showForm)
+        {
+            return;
+        }
+        if (e.AltKey && e.Key.Equals("c", StringComparison.OrdinalIgnoreCase))
+        {
+            await OpenCreate();
+            return;
+        }
+        if (e.Key == "F4")
+        {
+            pendingSearchFocus = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        if (rows.Count == 0) return;
+
+        var changed = false;
+        if (e.Key is "ArrowDown" or "Down") { selectedIndex = Math.Min(selectedIndex + 1, rows.Count - 1); changed = true; }
+        else if (e.Key is "ArrowUp" or "Up") { selectedIndex = Math.Max(selectedIndex - 1, 0); changed = true; }
+        else if (e.Key == "PageDown") { selectedIndex = Math.Min(selectedIndex + 10, rows.Count - 1); changed = true; }
+        else if (e.Key == "PageUp") { selectedIndex = Math.Max(selectedIndex - 10, 0); changed = true; }
+        else if (e.Key == "Home") { selectedIndex = 0; changed = true; }
+        else if (e.Key == "End") { selectedIndex = rows.Count - 1; changed = true; }
+        else if (e.Key == "Enter") { await OpenEdit(); }
+
+        if (changed)
+        {
+            pendingRowScroll = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ExitList() => Navigation.NavigateTo("/");
+
+    private async Task HandleFormKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await RequestCloseForm();
+        }
+        else if (e.AltKey && e.Key.Equals("a", StringComparison.OrdinalIgnoreCase)) await SaveAsync();
+    }
+
+    private string GetValidationFocusId(string validationMessage)
+    {
+        if (validationMessage.Contains("Voucher Date", StringComparison.OrdinalIgnoreCase)) return "jwo-date-input";
+        if (validationMessage.Contains("Expected Completion", StringComparison.OrdinalIgnoreCase))
+        {
+            var stage = editModel.FinishedGoods.SelectMany(x => x.BomStages)
+                .FirstOrDefault(x => x.ExpectedCompletionDate is null || x.ExpectedCompletionDate < editModel.VoucherDate);
+            return stage is null ? "jwo-save-button" : $"jwo-stage-expected-{stage.ClientKey}";
+        }
+        if (validationMessage.Contains("Batch", StringComparison.OrdinalIgnoreCase)) return "jwo-batch-input";
+        if (validationMessage.Contains("Job Worker", StringComparison.OrdinalIgnoreCase))
+        {
+            var stage = editModel.FinishedGoods.SelectMany(x => x.BomStages).FirstOrDefault(x => x.AssignedJobWorkerId is null);
+            return stage is null ? "jwo-save-button" : $"jwo-stage-worker-{stage.ClientKey}";
+        }
+        if (validationMessage.Contains("Voucher Number", StringComparison.OrdinalIgnoreCase)) return "jwo-voucher-number";
+
+        var fg = editModel.FinishedGoods.FirstOrDefault();
+        if (fg is null) return "jwo-save-button";
+        if (validationMessage.Contains("Colour", StringComparison.OrdinalIgnoreCase)) return $"jwo-fg-colour-{fg.ClientKey}";
+        if (validationMessage.Contains("Godown", StringComparison.OrdinalIgnoreCase) && validationMessage.Contains("Component", StringComparison.OrdinalIgnoreCase))
+            return fg.Components.Count > 0 ? $"jwo-component-godown-{fg.Components[0].ClientKey}" : $"jwo-fg-godown-{fg.ClientKey}";
+        if (validationMessage.Contains("Godown", StringComparison.OrdinalIgnoreCase)) return $"jwo-fg-godown-{fg.ClientKey}";
+        if (validationMessage.Contains("Process", StringComparison.OrdinalIgnoreCase))
+        {
+            var stage = fg.BomStages.OrderBy(s => s.StageNumber).FirstOrDefault(s => s.ProcessId is null or <= 0);
+            return stage is null ? $"jwo-fg-item-{fg.ClientKey}" : $"jwo-stage-worker-{stage.ClientKey}";
+        }
+        if (validationMessage.Contains("Component", StringComparison.OrdinalIgnoreCase))
+            return fg.Components.Count > 0 ? $"jwo-component-{fg.Components[0].ClientKey}" : $"jwo-fg-item-{fg.ClientKey}";
+        if (validationMessage.Contains("Quantity", StringComparison.OrdinalIgnoreCase) || validationMessage.Contains("variant", StringComparison.OrdinalIgnoreCase))
+        {
+            var allocation = fg.SizeQuantities.OrderBy(x => x.DisplayOrder).ThenBy(x => x.SizeName).FirstOrDefault();
+            if (allocation is not null) return $"jwo-fg-qty-{fg.ClientKey}-{allocation.StockItemVariantId}";
+        }
+        if (validationMessage.Contains("Finished Good", StringComparison.OrdinalIgnoreCase)) return $"jwo-fg-item-{fg.ClientKey}";
+        return "jwo-save-button";
+    }
+
+    private static void IgnoreMouseDown(MouseEventArgs e) { }
+    private static long ParseRequiredId(object? value) => long.TryParse(value?.ToString(), out var id) ? id : 0;
+    private static long? ParseOptionalId(object? value) => long.TryParse(value?.ToString(), out var id) ? id : null;
+    private void ShowSuccess(string text) { message = text; messageIsError = false; }
+    private void ShowError(string text) { message = text; messageIsError = true; }
+}

@@ -1,0 +1,72 @@
+TexTrack ERP v0.5 Build 2.7 — Executed Test Checklist
+======================================================
+
+[PASS] dotnet restore TexTrack.sln
+       Both projects restored successfully.
+
+[PASS] dotnet build TexTrack.sln --no-restore
+       0 errors. 3 pre-existing nullable warnings in LedgerRepository and MaterialOutRepository.
+
+[PASS] Full PostgreSQL integration suite
+       59 passed, 0 failed, 0 skipped.
+       Each integration test uses an isolated schema and applies the full migration chain.
+
+[PASS] Production reporting PostgreSQL tests
+       7 passed.
+       Covered:
+       - pending FG formula and exact colour/size variant
+       - cancelled MI exclusion
+       - exact component MO aggregation and excess issue
+       - actual MI-to-MO allocation quantities/rate/value snapshots
+       - cancelled MO/MI exclusion
+       - movement detail
+       - T-format reconciliation
+       - stable Job Worker rename
+       - contains filters and pagination metadata
+       - multi-FG
+       - multiple MO and MI vouchers
+       - full completion
+       - zero consumption balance
+       - multiple Job Workers
+       - MaterialInRepository.SaveAsync transaction
+       - two resulting stock movements and report visibility
+
+[PASS] JavaScript tests
+       18 passed, 0 failed.
+       Includes the global Alt+D/keyboard-context suite and new report route/context/focus checks.
+
+[PASS] Application startup
+       HTTP 200 from all report routes.
+       No startup exception.
+
+[PASS] Restart/idempotence
+       Restarted successfully; HTTP 200 after restart.
+       No migration was added and no migration reapplied.
+
+[PASS] Real Google Chrome production-report acceptance
+       Reports menu opened by Alt+R.
+       All four report routes rendered.
+       Initial filter received focus with no mouse.
+       Alt+D retained document focus; F8 probe confirmed application keyboard ownership.
+       One live report context and one global listener after repeated navigation.
+       F4 restored filter focus.
+       Esc row restoration path passed where report rows were present.
+
+[PASS] Real Google Chrome frozen-module keyboard regression
+       Ledger Groups, Ledgers, UQC, Stock Groups, Stock Categories, Stock Items,
+       Godowns, Job Workers, Voucher Types, Colours, Sizes, Processes,
+       Tax Classifications, JWO and Material Out all passed list/create/alteration
+       Alt+D, modal Esc focus restoration and no-mouse checks.
+       Repeated enhanced navigation retained one context and one listener.
+
+[PASS] JWO and Material Out integration
+       Existing full integration suite passed.
+       Real-Chrome JWO and Material Out keyboard smoke passed.
+
+[PASS] Material In save/posting regression
+       Real repository save succeeded in PostgreSQL isolation.
+       Voucher, FG allocation, consumption, MO allocation and two stock movements persisted.
+       New receipt/consumption appeared in reports.
+
+[NOT ADDED] Reporting migration/index
+       Existing migration 013 indexes cover report joins and filter paths.

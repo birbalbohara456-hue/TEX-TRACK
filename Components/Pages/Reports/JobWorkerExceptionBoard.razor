@@ -1,0 +1,148 @@
+@page "/reports/job-worker-exception-board"
+@attribute [Authorize(Policy = SecurityPolicies.ViewReports)]
+@inject OperationalReportingService Reporting
+@inject IJSRuntime JS
+@inject GlobalOperationState GlobalOperations
+
+<PageTitle>Job Worker Exception Board</PageTitle>
+
+<div id="job-worker-exception-root" class="page-card jwe-page tt-report-natural-flow" tabindex="0" data-keyboard-list-root="true"
+     @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="job-worker-exception-board" RootElementId="job-worker-exception-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="false" InitialFocusTarget="job-worker-exception-root" />
+
+    <header class="jwe-titlebar">
+        <div><p>JOB WORK REPORTS</p><h1>Job Worker Exception Board</h1><small>Action queue derived from production aging, due position and material held</small></div>
+        <div class="jwe-actions"><label class="jwa-as-on"><span>As On</span><input id="jwe-as-on" type="date" data-tt-filter-input="true" @bind="filter.AsOnDate" /></label><button type="button" @onclick="ApplyFilters" disabled="@loading">Apply</button></div>
+    </header>
+
+    <section class="jwe-filters compact" aria-label="Job Worker Exception quick filters" @onkeydown="HandleFilterKeyDown" @onkeydown:stopPropagation="true">
+        <div class="jwe-quick" role="group" aria-label="Quick filters">
+            @foreach (var value in Enum.GetValues<JobWorkerExceptionQuickFilter>())
+            { <button type="button" class="@(filter.QuickFilter == value ? "active" : null)" @onclick="() => SetQuickFilter(value)">@QuickLabel(value)</button> }
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice notice-error">@message</p> }
+    else if (loading) { <p class="jwe-empty">Loading Job Worker Exception Board…</p> }
+    else
+    {
+        <section class="jwe-summary" aria-label="Exception summary">
+            <span>Critical <b>@report.CriticalCount</b></span><span>High <b>@report.HighCount</b></span><span>Attention <b>@report.AttentionCount</b></span>
+            <span>Overdue <b>@report.OverdueCount</b></span><span>No Movement <b>@report.NoMovementCount</b></span><span>Old Material <b>@report.OldMaterialCount</b></span>
+            <span>Material Balance <b>@report.MaterialBalanceCount</b></span><span>Open JWO <b>@report.OpenCount</b></span>
+        </section>
+        <div id="jwe-grid" class="jwe-grid">
+            <table class="selectable-grid" data-tt-filter-key="job-worker-exception"><thead><tr><th>Priority</th><th>Finished Good</th><th>Batch</th><th>JWO No.</th><th>JWO Date</th><th>Due Date</th><th>Production Age</th><th>Due Position</th><th>FG Pending</th><th>Material Out Status</th><th>Current Stage</th><th>Responsible Jobbers</th><th>Oldest Material Age</th><th>Exception Reasons</th><th>Status</th></tr></thead>
+            <tbody>
+            @if (report.Rows.Count == 0) { <tr><td colspan="15" class="jwe-empty">No JWO matches the selected exception filters.</td></tr> }
+            @foreach (var row in report.Rows)
+            {
+                var aging = row.Aging;
+                <tr id="@row.RowKey" class="@(selectedId == aging.JwoVoucherId ? "selected" : null)" @onclick="() => Select(aging.JwoVoucherId)" @ondblclick="() => ToggleDetail(aging.JwoVoucherId)">
+                    <td><span class="jwe-priority @PriorityClass(row.Priority)">@PriorityLabel(row.Priority)</span></td><td>@Text(aging.FinishedGoodNames)</td><td>@Text(aging.Batch)</td>
+                    <td><a href="@JwoUrl(aging.JwoVoucherId)">@aging.JwoNumber</a></td><td>@Date(aging.JwoDate)</td><td>@Date(aging.DueDate)</td><td class="number">@Days(aging.DaysOpen)</td><td>@aging.DuePosition</td>
+                    <td class="number">@PendingMetric(aging.FinishedGoods)</td><td>@aging.MaterialOutStatus</td><td>@Text(aging.CurrentStage)</td><td>@Text(aging.ResponsibleJobWorkers)</td><td class="number">@Days(aging.OldestOutstandingMaterialAge)</td>
+                    <td class="jwe-reason">@row.ReasonText</td><td><span class="jwe-status @StatusClass(aging.Status)">@aging.Status</span></td>
+                </tr>
+                @if (detail?.Summary.JwoVoucherId == aging.JwoVoucherId)
+                {
+                    <tr class="jwe-detail-row"><td colspan="15"><div class="jwe-detail-reasons"><b>Exception reasons:</b> @row.ReasonText</div><JobWorkerAgingDetailPanel Detail="detail" ReturnUrl="/reports/job-worker-exception-board" /></td></tr>
+                }
+            }
+            </tbody></table>
+        </div>
+        <nav class="jwe-pagination"><button type="button" disabled="@(report.Page <= 1)" @onclick="PreviousPage">PgUp Previous</button><span>Page @report.Page of @report.TotalPages · @report.TotalRows JWO</span><button type="button" disabled="@(report.Page >= report.TotalPages)" @onclick="NextPage">PgDn Next</button></nav>
+    }
+    <p class="jwe-help">↑/↓ Select · Enter Expand · Click ▼ in any column header to filter · PgUp/PgDn Page · Esc Close/Back</p>
+</div>
+
+@code {
+    private JobWorkerExceptionFilter filter = new();
+    private JobWorkerExceptionReport report = new();
+    private JobWorkerAgingDetail? detail;
+    private long? selectedId;
+    private bool loading;
+    private string message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var operation = GlobalOperations.Begin("Opening Job Worker Exception Board…");
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        loading = true; message = string.Empty; detail = null;
+        try
+        {
+            report = await Reporting.GetJobWorkerExceptionBoardAsync(filter);
+            filter.Page = report.Page;
+            selectedId = report.Rows.FirstOrDefault()?.Aging.JwoVoucherId;
+        }
+        catch (Exception ex) { message = ex.GetBaseException().Message; report = new(); selectedId = null; }
+        finally { loading = false; }
+    }
+
+    private async Task ApplyFilters() { filter.Page = 1; using var operation = GlobalOperations.Begin("Applying Job Worker Exception Board filters…"); await Load(); await FocusRoot(); }
+    private async Task ClearFilters() { filter = new(); await ApplyFilters(); }
+    private async Task SetQuickFilter(JobWorkerExceptionQuickFilter value) { filter.QuickFilter = value; await ApplyFilters(); }
+    private void Select(long id) => selectedId = id;
+    private async Task ToggleDetail(long id)
+    {
+        selectedId = id;
+        if (detail?.Summary.JwoVoucherId == id) { detail = null; return; }
+        using var operation = GlobalOperations.Begin("Opening JWO exception detail…");
+        detail = await Reporting.GetJobWorkerAgingDetailAsync(id, filter.AsOnDate);
+    }
+    private async Task PreviousPage() { if (report.Page <= 1) return; filter.Page = report.Page - 1; await Load(); await FocusRoot(); }
+    private async Task NextPage() { if (report.Page >= report.TotalPages) return; filter.Page = report.Page + 1; await Load(); await FocusRoot(); }
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "F4") { await JS.InvokeVoidAsync("texTrackFocusById", "jwe-as-on"); return; }
+        if (e.Key == "Escape")
+        {
+            if (detail is not null) { detail = null; await FocusRoot(); return; }
+            await JS.InvokeVoidAsync("texTrackLeaveCurrentPage", "reports", "reports-child-0-7"); return;
+        }
+        if (e.Key == "PageUp") { await PreviousPage(); return; }
+        if (e.Key == "PageDown") { await NextPage(); return; }
+        if (e.Key == "Enter" && selectedId is not null) { await ToggleDetail(selectedId.Value); return; }
+        if (e.Key is not ("ArrowUp" or "ArrowDown") || report.Rows.Count == 0) return;
+        var index = selectedId is null ? 0 : report.Rows.FindIndex(x => x.Aging.JwoVoucherId == selectedId);
+        index = Math.Clamp(index + (e.Key == "ArrowDown" ? 1 : -1), 0, report.Rows.Count - 1);
+        selectedId = report.Rows[index].Aging.JwoVoucherId;
+        await InvokeAsync(StateHasChanged);
+        await JS.InvokeVoidAsync("texTrackRevealRow", report.Rows[index].RowKey, "jwe-grid");
+    }
+    private async Task HandleFilterKeyDown(KeyboardEventArgs e)
+    {
+        if (e.AltKey && string.Equals(e.Key, "s", StringComparison.OrdinalIgnoreCase)) await ApplyFilters();
+        else if (e.Key == "Escape") await FocusRoot();
+    }
+    private ValueTask FocusRoot() => JS.InvokeVoidAsync("texTrackFocusById", "job-worker-exception-root");
+
+    private string JwoUrl(long id) => $"/vouchers/job-work-out-order?voucherId={id}&returnUrl={Uri.EscapeDataString("/reports/job-worker-exception-board")}";
+    private static string PendingMetric(IEnumerable<JobWorkerAgingUqcQuantity> rows)
+    {
+        var pending = rows.Where(x => x.PendingOrBalance != 0).ToList();
+        return pending.Count == 0 ? "—" : string.Join(" · ", pending.Select(x => $"{x.PendingOrBalance:0.####} {x.UqcName}"));
+    }
+    private static string Date(DateOnly value) => value.ToString("dd-MM-yyyy");
+    private static string Date(DateOnly? value) => value?.ToString("dd-MM-yyyy") ?? "—";
+    private static string Days(int value) => $"{value} days";
+    private static string Days(int? value) => value is null ? "—" : $"{value} days";
+    private static string Text(string value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string PriorityClass(JobWorkerExceptionPriority value) => value.ToString().ToLowerInvariant();
+    private static string PriorityLabel(JobWorkerExceptionPriority value) => value.ToString().ToUpperInvariant();
+    private static string StatusClass(string value) => value.Replace(' ', '-').ToLowerInvariant();
+    private static string QuickLabel(JobWorkerExceptionQuickFilter value) => value switch
+    {
+        JobWorkerExceptionQuickFilter.ExceptionsOnly => "Exceptions Only", JobWorkerExceptionQuickFilter.CriticalOnly => "Critical Only",
+        JobWorkerExceptionQuickFilter.OverdueOnly => "Overdue Only", JobWorkerExceptionQuickFilter.NoMovement => "No Movement",
+        JobWorkerExceptionQuickFilter.OldMaterial => "Old Material", JobWorkerExceptionQuickFilter.MaterialBalance => "Material Balance",
+        JobWorkerExceptionQuickFilter.DueSoon => "Due Soon", JobWorkerExceptionQuickFilter.AllOpen => "All Open", _ => "Completed History"
+    };
+    private static string StatusLabel(JobWorkerAgingStatusFilter value) => value == JobWorkerAgingStatusFilter.All ? "All Statuses" : value.ToString().Replace("Late", " Late").Replace("Received", " Received").Replace("Started", " Started");
+}

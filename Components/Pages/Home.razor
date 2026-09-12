@@ -1,0 +1,103 @@
+@page "/"
+@inject DatabaseStatus Database
+@inject CurrentCompanyContext CurrentCompany
+@inject OperationalReportingService Reporting
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+<PageTitle>TexTrack ERP Dashboard</PageTitle>
+
+<section id="dashboard-page-root" class="dashboard operations-dashboard" tabindex="0"
+         data-tt-page-root="true" data-tt-page-autofocus="true" @onkeydown="HandlePageKeyDown">
+    <header class="operations-heading">
+        <div><p>OPERATIONS DASHBOARD</p><h1>@CurrentCompany.CompanyName</h1><small>@CurrentCompany.FinancialYearName · exception-first production control</small></div>
+        <div class="operations-db @(Database.IsConnected ? "connected" : "disconnected")"><b>@(Database.IsConnected ? "PostgreSQL Connected" : "Database Attention")</b><span>@Database.Message</span></div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="form-message error">@error</div>
+    }
+    else if (loading)
+    {
+        <div class="dashboard-loading">Loading current production position…</div>
+    }
+    else
+    {
+        <div class="operations-metrics">
+            <a id="dashboard-action-0" href="/reports/inventory/closing-stock?stockState=Negative" class="metric danger"><span>Negative Stock</span><strong>@negativeStockCount</strong><small>group/UQC exceptions</small></a>
+            <a id="dashboard-action-1" href="/reports/job-worker-control?tab=exceptions" class="metric critical"><span>Critical / High</span><strong>@(exceptions.CriticalCount + exceptions.HighCount)</strong><small>jobber exceptions</small></a>
+            <a id="dashboard-action-2" href="/reports/job-worker-control?tab=aging" class="metric"><span>Overdue JWOs</span><strong>@aging.OverdueJwoCount</strong><small>active orders</small></a>
+            <a id="dashboard-action-3" href="/reports/job-worker-control?tab=aging" class="metric"><span>Pending Components</span><strong>@aging.MaterialBalanceCount</strong><small>orders holding material</small></a>
+            <a id="dashboard-action-4" href="/reports/job-worker-control?tab=aging" class="metric"><span>Oldest Pending</span><strong>@(aging.OldestMaterialDays?.ToString() ?? "—")</strong><small>days with jobber</small></a>
+        </div>
+
+        <div class="operations-grid">
+            <section class="operations-panel latest-jwo">
+                <header><div><b>Current JWO Position</b><small>Stage-aware aging and completion state</small></div><a id="dashboard-action-5" href="/reports/job-worker-control?tab=aging">View All</a></header>
+                <div class="operations-table-wrap"><table><thead><tr><th>JWO</th><th>Finished Good</th><th>Batch</th><th>Material Out</th><th>Current Stage</th><th>Status</th><th>Age</th><th>Pending</th></tr></thead><tbody>
+                @if (aging.Rows.Count == 0) { <tr><td colspan="8" class="empty">No active JWO position is available.</td></tr> }
+                @foreach (var row in aging.Rows.Take(10))
+                {
+                    <tr><td><a href="/vouchers/job-work-out-order?voucherId=@row.JwoVoucherId">@row.JwoNumber</a></td><td>@row.FinishedGoodNames</td><td>@row.Batch</td><td><span class="dashboard-status material-out @CssStatus(row.MaterialOutStatus)">@TitleStatus(row.MaterialOutStatus)</span></td><td>@row.CurrentStage</td><td><span class="dashboard-status @CssStatus(row.Status)">@row.Status</span></td><td>@row.DaysOpen d</td><td>@Pending(row)</td></tr>
+                }
+                </tbody></table></div>
+            </section>
+
+            <section class="operations-panel exception-list">
+                <header><div><b>Action Required</b><small>Blocked, overdue or stalled job work</small></div><a id="dashboard-action-6" href="/reports/job-worker-control?tab=exceptions">View All</a></header>
+                <div class="exception-items">
+                @if (exceptions.Rows.Count == 0) { <p class="empty">No production exception needs attention.</p> }
+                @foreach (var item in exceptions.Rows)
+                {
+                    <a href="/reports/job-worker-control?tab=exceptions"><span class="priority @item.Priority.ToString().ToLowerInvariant()">@item.Priority</span><b>@item.Aging.JwoNumber · @item.Aging.JobWorkerName</b><small>@item.ReasonText</small></a>
+                }
+                </div>
+            </section>
+        </div>
+    }
+
+    <footer class="operations-footer"><span>Alt+M Masters</span><span>Alt+T Entries</span><span>Alt+R Reports</span><span>Dashboard shows a compact live summary; full Job Worker Aging remains available under Reports.</span></footer>
+</section>
+
+@code {
+    private bool loading = true;
+    private string error = string.Empty;
+    private JobWorkerAgingReport aging = new();
+    private JobWorkerExceptionReport exceptions = new();
+    private int negativeStockCount;
+    private int selectedAction;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var agingTask = Reporting.GetJobWorkerAgingAsync(new JobWorkerAgingFilter { AsOnDate = today, QuickFilter = JobWorkerAgingQuickFilter.Open, PageSize = 10 });
+            var exceptionTask = Reporting.GetJobWorkerExceptionBoardAsync(new JobWorkerExceptionFilter { AsOnDate = today, QuickFilter = JobWorkerExceptionQuickFilter.ExceptionsOnly, PageSize = 10 });
+            var stockTask = Reporting.GetClosingStockGroupsAsync(new InventoryReportFilter { DateTo = today, QuantityFilter = ClosingQuantityFilter.Negative });
+            await Task.WhenAll(agingTask, exceptionTask, stockTask);
+            aging = await agingTask; exceptions = await exceptionTask; negativeStockCount = (await stockTask).Count;
+        }
+        catch (Exception ex) { error = ex.GetBaseException().Message; }
+        finally { loading = false; }
+    }
+
+    private static string Pending(JobWorkerAgingReportRow row)
+    {
+        var value = string.Join(", ", row.FinishedGoods.Where(x => x.PendingOrBalance > 0).Select(x => $"{x.PendingOrBalance:0.####} {x.UqcName}"));
+        return value.Length > 0 ? value : "—";
+    }
+
+    private static string CssStatus(string status) => status.ToLowerInvariant().Replace(" ", "-");
+
+    private static string TitleStatus(string status) => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(status.ToLowerInvariant());
+
+    private async Task HandlePageKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is not ("ArrowDown" or "Down" or "ArrowUp" or "Up" or "Enter")) return;
+        if (e.Key is "ArrowDown" or "Down") selectedAction = Math.Min(6, selectedAction + 1);
+        else if (e.Key is "ArrowUp" or "Up") selectedAction = Math.Max(0, selectedAction - 1);
+        else { Navigation.NavigateTo(selectedAction switch { 0 => "/reports/inventory/closing-stock?stockState=Negative", 1 or 6 => "/reports/job-worker-control?tab=exceptions", _ => "/reports/job-worker-control?tab=aging" }); return; }
+        await JS.InvokeVoidAsync("texTrackFocusById", $"dashboard-action-{selectedAction}");
+    }
+}

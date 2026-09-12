@@ -1,0 +1,54 @@
+TexTrack ERP v0.5 Build 2.6A — Material In Foundation
+======================================================
+
+PURPOSE
+-------
+This is the first controlled Material In implementation slice. It adds the
+PostgreSQL schema, C# domain entities, EF Core mappings, service registration,
+pending-JWO/MO availability queries, and atomic create-posting service.
+
+ADDED
+-----
+1. Migration 013_material_in_foundation.sql
+2. Models/MaterialInModels.cs
+3. Services/MaterialInRepository.cs
+4. Material In entities and EF Core mappings
+5. Stock movement links for MI finished goods, consumption and variants
+6. MaterialInRepository dependency-injection registration
+
+CONFIRMED BUSINESS RULES IMPLEMENTED IN SERVICE LAYER
+------------------------------------------------------
+- Material In links primarily to one stable JWO ID.
+- The selected JWO must belong to the selected Job Worker.
+- Finished-goods receipt cannot exceed JWO pending quantity.
+- Colour/size allocation total must equal the FG received quantity.
+- Raw-material consumption is limited by actual valid Material Out quantity.
+- Prior valid Material In consumption is deducted from availability.
+- Material Out lines are allocated oldest-first for traceability.
+- RM consumption and FG receipt post in one serializable transaction.
+- RM movement is negative at the selected consumption Godown.
+- FG variant movements are positive at the receiving Godown.
+- Per-FG process charge is stored and included in FG value.
+- No accounting journal is generated.
+- JWO-to-MI voucher link and audit record are created.
+
+INTENTIONALLY DEFERRED
+----------------------
+- Material In voucher page/UI (the placeholder remains in this build)
+- alteration reversal/repost
+- cancellation/deletion
+- list/search screen
+- print/Tally XML
+- automatic accounting entry
+
+WHY THE UI IS STILL DISABLED
+----------------------------
+The database and service layer must first migrate and start successfully on the
+accepted PostgreSQL database. This prevents UI work from hiding schema or posting
+errors and follows the frozen module workflow.
+
+BUILD VERIFICATION LIMITATION
+-----------------------------
+The packaging environment does not contain the .NET SDK or PostgreSQL server.
+Structural/static checks were run, but the user must run START_TEXTRACK.bat and
+confirm migration 013 applies and the existing frozen screens still open.

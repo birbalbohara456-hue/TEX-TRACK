@@ -1,0 +1,16 @@
+TexTrack ERP v0.5 Build 2.0 — Test Checklist
+
+1. Start TexTrack and confirm migration 010 applies.
+2. Material Out list: Arrow keys select rows; Enter opens selected voucher.
+3. Confirm all saved header, component, quantity, rate, GST/e-Way and narration values load.
+4. Alter quantity/rate and Alt+S. Reopen and confirm values and stock movements changed once only.
+5. Confirm pending JWO quantity excludes the altered voucher's old quantity during validation.
+6. Open an active Material Out and press Alt+X.
+7. Confirm cancellation requires a reason and voucher remains listed as Cancelled.
+8. Confirm cancelled stock effect is reversed and JWO pending quantity reopens.
+9. Confirm cancelled voucher cannot be altered or deleted.
+10. Create an unlinked Material Out; Alt+D and confirm deletion.
+11. Confirm deleted voucher disappears and JWO pending quantity reopens.
+12. When a linked active Material In/dependent voucher exists, confirm Alter/Delete/Cancel are blocked.
+13. Verify Voucher Number is never reused after cancellation or deletion.
+14. Verify Esc/modals restore keyboard focus without mouse use.

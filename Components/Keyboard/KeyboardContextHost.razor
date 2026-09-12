@@ -1,0 +1,14 @@
+@inject IJSRuntime JS
+@inject IWebHostEnvironment Environment
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync(
+                "texTrackKeyboardContexts.configureDiagnostics",
+                Environment.IsDevelopment());
+        }
+    }
+}

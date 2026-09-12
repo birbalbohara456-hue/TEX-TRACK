@@ -1,0 +1,58 @@
+/* Cancels the shared .desk-shell .workspace padding (18px top/bottom, 22px
+   left/right) via negative top/left/bottom margins and an explicit width, so
+   this register fills the workspace edge-to-edge on those three sides
+   without touching the shared rule every other report/master page also
+   relies on. max-width:none defeats the generic .page-card { max-width:1180px
+   } rule, which otherwise stranded a large, viewport-width-dependent gap on
+   the right once the workspace grew past that cap on wide screens.
+   The right edge is controlled entirely by the width calc (margin-right has
+   no effect once width is set explicitly, confirmed by direct measurement -
+   don't rely on it). +55px cancels the 22px workspace padding plus 16px of
+   .workspace's own scrollbar-gutter reservation, minus ~4px left
+   deliberately as a small breathing gap matching the sidebar/content gap on
+   the left. This offset is a fixed pixel amount, not a percentage, so the
+   ~4px gap holds regardless of viewport width. */
+.voucher-history { width: calc(100% + 55px); height: calc(100% + 36px); min-height: 0; max-height: calc(100% + 36px); max-width: none; margin: -18px 0 -18px -22px; padding: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #718096; background: #fffdf8; color: #111827; }
+.voucher-history:focus { outline: none; }
+.voucher-history-header { min-height: 34px; padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid #8fa0b4; background: #1f2e43; color: #fff; font-size: 13px; font-weight: 700; }
+.voucher-history-breadcrumb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voucher-history-crumb-sep { margin: 0 6px; color: #8fa0b4; }
+.voucher-history-period { color: #dce7f4; font-weight: 600; font-size: 12px; white-space: nowrap; }
+.voucher-history-toolbar { min-height: 48px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid #9aa9ba; background: #e5edf5; }
+.voucher-history-toolbar label { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+.voucher-history-toolbar input { width: min(520px, 50vw); min-height: 30px; padding: 4px 8px; border: 0; border-bottom: 1px dotted #65758a; background: #fff; color: #111827; }
+.voucher-history-toolbar input:focus { outline: 2px solid #1f2e43; background: #fff0b7; }
+/* .voucher-history-grid is now a flex column: the scrollable row area and the
+   totals bar are separate flex children, so the totals bar always renders at
+   the true bottom of the box instead of relying on position:sticky, which
+   only reaches the bottom when there's enough content to actually scroll. */
+.voucher-history-grid { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+/* scrollbar-gutter:auto explicitly overrides the shared .tt-contained-scroll
+   utility class's scrollbar-gutter:stable (also present on this element) -
+   omitting the property here isn't enough, since that class still applies it
+   otherwise. Stable gutter reservation left a permanent ~15px strip at the
+   right (colored like this wrapper, not the table) that showed up as a
+   visible notch next to the selected/hover row highlight, which spans the
+   table's own width only. Letting the table use the full width here trades
+   that constant, glaring seam for an occasional few-px shift on the rare
+   filter that crosses the vertical-scrollbar threshold - the better deal. */
+.voucher-history-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: auto; background: #f6f8fb; }
+.voucher-history-grid table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.voucher-history-grid th { position: sticky; top: 0; z-index: 2; padding: 8px; border-right: 1px solid #a8b5c4; border-bottom: 1px solid #1f2e43; background: #dce6f0; color: #111827; font-size: 10px; text-align: left; text-transform: uppercase; }
+.voucher-history-grid td { padding: 8px; border-right: 1px solid #d7dee7; border-bottom: 1px solid #b6c1ce; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voucher-history-grid tbody tr { background: #fffdf8; cursor: pointer; }
+.voucher-history-grid tbody tr:nth-child(even) { background: #f6f8fb; }
+.voucher-history-grid tbody tr:hover:not(.selected):not(.selected-row) { background: #e4edf6; color: #111827; }
+.voucher-history-grid tbody tr.selected,
+.voucher-history-grid tbody tr.selected-row { background: #294a8a; color: #fff; }
+.voucher-history-grid .number { text-align: right; font-variant-numeric: tabular-nums; }
+.voucher-history-totalbar { flex: 0 0 auto; display: grid; grid-template-columns: 1fr auto auto; gap: 24px; align-items: center; padding: 8px 10px; border-top: 1px solid #1f2e43; background: #e8eef5; color: #111827; font-size: 11px; }
+.voucher-history-totalbar strong { white-space: normal; }
+.status-pill { padding: 2px 6px; border: 1px solid #718096; background: #fff; color: #111827; font-size: 10px; font-weight: 800; }
+.status-pill.cancelled { border-color: #b42318; color: #b42318; }
+.voucher-history-pager { min-height: 38px; padding: 5px 10px; display: flex; align-items: center; gap: 10px; border-top: 1px solid #718096; background: #dce6f0; font-family: Consolas, monospace; }
+.pager-spacer { flex: 1; }
+.voucher-history-empty { padding: 24px; color: #5b6b7e; text-align: center; }
+.cancel-reason { display: grid; gap: 5px; margin-top: 12px; font-weight: 700; }
+.cancel-reason textarea { width: 100%; padding: 7px; border: 1px solid #718096; color: #111827; }
+@media (max-width: 1050px) { .voucher-history-grid table { min-width: 1050px; } }

@@ -1,0 +1,224 @@
+@page "/reports/audit-trail"
+@attribute [Authorize(Policy = SecurityPolicies.ViewAuditTrail)]
+@inject VoucherAuditTrailRepository AuditTrail
+@using Microsoft.AspNetCore.Components.Routing
+
+<PageTitle>Voucher Audit Trail</PageTitle>
+
+<div class="page-card audit-trail-page">
+    <header class="audit-header">
+        <div>
+            <span class="eyebrow">CONTROL &amp; ACCOUNTABILITY</span>
+            <h1>Voucher Audit Trail</h1>
+            <p>Read-only successful voucher revisions, including records whose live voucher was deleted.</p>
+        </div>
+        <label class="all-years"><input type="checkbox" @bind="allFinancialYears" /> All financial years</label>
+    </header>
+
+    <div class="audit-toolbar">
+        <input aria-label="Search audit trail" placeholder="Voucher number, type, actor, action or reason"
+               @bind="search" @bind:event="oninput" @onkeydown="SearchKeyDown" />
+        <button type="button" @onclick="LoadAsync">Search</button>
+        <button type="button" @onclick="ClearAsync">Clear</button>
+        <span>@rows.Count voucher record@(rows.Count == 1 ? "" : "s")</span>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="form-message error">@error</div>
+    }
+    else if (loading)
+    {
+        <div class="audit-empty">Loading retained audit history…</div>
+    }
+    else if (rows.Count == 0)
+    {
+        <div class="audit-empty">No voucher history matches this view.</div>
+    }
+    else
+    {
+        <div class="audit-grid-wrap">
+            <table class="audit-grid">
+                <thead>
+                    <tr>
+                        <th>Voucher Type</th><th>Voucher No.</th><th>FY</th><th>Revisions</th>
+                        <th>First Evidence</th><th>Last Action</th><th>Last Actor</th><th>State</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in rows)
+                    {
+                        <tr class="@(selectedIdentity == row.VoucherAuditIdentity ? "selected" : null)"
+                            @onclick="() => SelectAsync(row)">
+                            <td>@row.VoucherType</td>
+                            <td><strong>@row.VoucherNumber</strong></td>
+                            <td>@row.FinancialYear</td>
+                            <td>@row.RevisionCount</td>
+                            <td>@ActionLabel(row.FirstAction)<small>@LocalTime(row.FirstRecordedAtUtc)</small></td>
+                            <td>@ActionLabel(row.LastAction)<small>@LocalTime(row.LastRecordedAtUtc)</small></td>
+                            <td title="@row.LastRecordedBy">@FriendlyActor(row.LastRecordedBy)</td>
+                            <td><span class="state @(row.IsDeleted ? "deleted" : "retained")">@(row.IsDeleted ? "DELETED" : "LIVE / RETAINED")</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (selected is not null)
+    {
+        <section class="history-panel">
+            <header>
+                <div>
+                    <span class="eyebrow">FULL HISTORY</span>
+                    <h2>@selected.VoucherType · @selected.VoucherNumber</h2>
+                    <p>Immutable identity @selected.VoucherAuditIdentity</p>
+                </div>
+                <button type="button" @onclick="CloseHistory">Close</button>
+            </header>
+
+            @foreach (var revision in revisions)
+            {
+                <article class="revision-card">
+                    <div class="revision-heading">
+                        <strong>Revision @revision.RevisionNumber · @ActionLabel(revision.Action)</strong>
+                        <span>@LocalTime(revision.RecordedAtUtc) · @FriendlyActor(revision.RecordedBy)</span>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(revision.Reason))
+                    {
+                        <p class="reason">@revision.Reason</p>
+                    }
+                    @if (revision.Action == VoucherAuditActions.Baseline)
+                    {
+                        <p class="baseline-warning">Baseline only: this captures the state found when full history was introduced; it does not invent earlier edits.</p>
+                    }
+                    <div class="hashes">
+                        <span class="integrity @(revision.IntegrityVerified ? "verified" : "failed")">
+                            @(revision.IntegrityVerified ? "Integrity verified" : "INTEGRITY WARNING")
+                        </span>
+                        <span>Schema v@revision.SnapshotSchemaVersion</span>
+                        <span title="@revision.ContentHash">Content @ShortHash(revision.ContentHash)</span>
+                        <span title="@revision.ChainHash">Chain @ShortHash(revision.ChainHash)</span>
+                    </div>
+                    <details>
+                        <summary>Show comparison with previous revision</summary>
+                        <pre>@Pretty(revision.ChangesJson)</pre>
+                    </details>
+                    <details>
+                        <summary>Show full saved snapshot</summary>
+                        <pre>@Pretty(revision.SnapshotJson)</pre>
+                    </details>
+                </article>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private List<VoucherAuditTrailRow> rows = [];
+    private IReadOnlyList<VoucherAuditRevisionRow> revisions = [];
+    private VoucherAuditTrailRow? selected;
+    private Guid? selectedIdentity;
+    private string search = string.Empty;
+    private string error = string.Empty;
+    private bool loading;
+    private bool allFinancialYears;
+
+    [SupplyParameterFromQuery(Name = "voucher")]
+    public Guid? RequestedVoucher { get; set; }
+    private Guid? loadedRequestedVoucher;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+        if (RequestedVoucher is Guid identity && loadedRequestedVoucher != identity)
+        {
+            loadedRequestedVoucher = identity;
+            var row = rows.FirstOrDefault(x => x.VoucherAuditIdentity == identity);
+            if (row is not null) await SelectAsync(row);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        error = string.Empty;
+        try
+        {
+            rows = (await AuditTrail.GetListAsync(search, allFinancialYears)).ToList();
+            if (selectedIdentity is Guid identity)
+            {
+                selected = rows.FirstOrDefault(x => x.VoucherAuditIdentity == identity);
+                if (selected is null) CloseHistory();
+            }
+        }
+        catch (Exception exception)
+        {
+            error = exception.GetBaseException().Message;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task ClearAsync()
+    {
+        search = string.Empty;
+        allFinancialYears = false;
+        CloseHistory();
+        await LoadAsync();
+    }
+
+    private async Task SelectAsync(VoucherAuditTrailRow row)
+    {
+        selected = row;
+        selectedIdentity = row.VoucherAuditIdentity;
+        revisions = await AuditTrail.GetHistoryAsync(row.VoucherAuditIdentity);
+    }
+
+    private async Task SearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") await LoadAsync();
+    }
+
+    private void CloseHistory()
+    {
+        selected = null;
+        selectedIdentity = null;
+        revisions = [];
+    }
+
+    private static string ActionLabel(string action) => action switch
+    {
+        VoucherAuditActions.Baseline => "Legacy baseline",
+        VoucherAuditActions.ImportCreate => "Imported creation",
+        VoucherAuditActions.ImportUpdate => "Imported replacement",
+        VoucherAuditActions.ImportCancel => "Imported cancellation",
+        VoucherAuditActions.SystemStatusUpdate => "System status update",
+        _ => action
+    };
+
+    private static string FriendlyActor(string actor)
+    {
+        if (!actor.StartsWith("user:", StringComparison.Ordinal)) return actor;
+        var parts = actor.Split(':', 3);
+        return parts.Length == 3 ? parts[2] : actor;
+    }
+
+    private static string LocalTime(DateTimeOffset value) => value.ToLocalTime().ToString("dd-MMM-yyyy HH:mm:ss");
+    private static string ShortHash(string value) => value.Length <= 12 ? value : value[..12];
+
+    private static string Pretty(string json)
+    {
+        try
+        {
+            var node = System.Text.Json.Nodes.JsonNode.Parse(json);
+            return node?.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }) ?? json;
+        }
+        catch
+        {
+            return json;
+        }
+    }
+}

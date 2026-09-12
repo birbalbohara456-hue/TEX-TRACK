@@ -1,0 +1,685 @@
+/*
+ * TexTrack ERP — Material In visual layer (Gateway / Dashboard Color Palette V2.9)
+ */
+
+::deep .topbar { 
+    background-color: #091426 !important; 
+    color: #ffffff !important; 
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important; 
+    border-bottom: 1px solid #1D3554 !important; 
+}
+
+/* CONTAINED LIST VIEW */
+.mi-voucher-page { 
+    position: relative !important; 
+    height: calc(100vh - 94px) !important; 
+    display: flex !important; 
+    flex-direction: column !important; 
+    overflow: hidden !important; 
+    outline: none !important; 
+    background-color: #fbf8fa !important; 
+    box-sizing: border-box !important;
+}
+
+/* FORM VIEW: FULL-SCREEN OVERLAY */
+.mi-entry-form {
+    position: fixed !important;
+    top: 0 !important;
+    left: 208px !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: auto !important;
+    height: 100vh !important;
+    z-index: 100 !important; 
+    display: flex !important; 
+    flex-direction: column !important; 
+    overflow-y: auto !important; 
+    box-sizing: border-box !important; 
+    background-color: #fbf8fa !important; 
+    margin: 0 !important;
+    padding: 12px 16px 24px 16px !important;
+    font-family: Inter, 'Segoe UI', Tahoma, Arial, sans-serif !important;
+    font-size: 11px !important;
+    color: #1b1b1d !important;
+}
+
+/* VOUCHER TITLE BAR */
+.voucher-title-bar {
+    background-color: #fbf8fa !important;
+    color: #091426 !important;
+    padding: 4px 2px !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    border-bottom: 1px solid #c5c6cd !important;
+}
+
+.page-heading {
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.5px !important;
+    color: #091426 !important;
+}
+
+.badge-voucher-no {
+    background-color: #f0edef !important;
+    color: #091426 !important;
+    border: 1px solid #c5c6cd !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    padding: 1px 6px !important;
+    border-radius: 2px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+}
+
+.badge-voucher-no input {
+    background: transparent !important;
+    border: none !important;
+    width: 60px !important;
+    font-weight: 700 !important;
+    color: #091426 !important;
+    outline: none !important;
+}
+
+::deep .header-date input { 
+    background: transparent !important; 
+    color: #091426 !important; 
+    border: none !important; 
+    border-bottom: 1px dotted #75777d !important; 
+    font-weight: 700 !important; 
+    font-size: 11px !important;
+    text-align: right !important;
+}
+
+/* SURFACES & PANELS */
+.voucher-paper-surface {
+    background-color: #ffffff !important;
+    border: 1px solid #c5c6cd !important;
+    border-top: none !important;
+    border-radius: 0 0 2px 2px !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+.panel-light {
+    background-color: #ffffff !important;
+    border: 1px solid #c5c6cd !important;
+    border-radius: 2px !important;
+}
+
+/* FORM CONTROLS & TALLY INPUTS */
+.field-label {
+    color: #45474c !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+}
+
+.tally-input {
+    background-color: #FFFFFF !important;
+    border: 1px solid #75777d !important;
+    border-radius: 2px !important;
+    height: 20px !important;
+    padding: 0 4px !important;
+    font-size: 11px !important;
+    color: #1b1b1d !important;
+    transition: background-color 0.1s ease, border-color 0.1s ease !important;
+}
+
+.tally-input:focus {
+    outline: 1px solid rgba(9,20,38,.2) !important;
+    border-color: #091426 !important;
+    background-color: #ffffff !important;
+    box-shadow: none !important;
+}
+
+.tally-input[readonly], .tally-input:disabled, .read-only-text {
+    background-color: #f0edef !important;
+    border-color: #c5c6cd !important;
+    color: #45474c !important;
+}
+
+/* TABLES & GRIDS */
+.erp-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 11px !important;
+    border: 1px solid #c5c6cd !important;
+}
+
+.erp-table th {
+    background-color: #f5f3f4 !important;
+    color: #45474c !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    padding: 5px 8px !important;
+    border: 1px solid #c5c6cd !important;
+    border-bottom: 1px solid #75777d !important;
+}
+
+.erp-table td {
+    padding: 4px 8px !important;
+    border: 1px solid #D7DFE7 !important;
+    color: #1D2835 !important;
+}
+
+.erp-table tr:nth-child(even) {
+    background-color: #F5F8FB !important;
+}
+
+.erp-table tr:nth-child(odd) {
+    background-color: #FFFFFF !important;
+}
+
+.erp-table tr:hover {
+    background-color: #E4EAF1 !important;
+}
+
+.erp-table tfoot {
+    background-color: #E4EAF1 !important;
+    font-weight: 700 !important;
+}
+
+.erp-table tfoot td {
+    border-top: 2px solid #8797A8 !important;
+    color: #1D2835 !important;
+}
+
+/* BADGES & STATUS */
+.badge-success {
+    background-color: #EDF7F1 !important;
+    color: #2F6B4B !important;
+    border: 1px solid #2F6B4B !important;
+    font-weight: 700 !important;
+    font-size: 10px !important;
+    padding: 1px 5px !important;
+    border-radius: 2px !important;
+}
+
+/* BUTTONS */
+.btn-primary-accept {
+    background-color: #091426 !important;
+    color: #FFFFFF !important;
+    border: 1px solid #091426 !important;
+    border-radius: 2px !important;
+    height: 26px !important;
+    padding: 0 14px !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    cursor: pointer !important;
+}
+
+.btn-primary-accept:hover {
+    background-color: #1e293b !important;
+}
+
+.btn-secondary-quit {
+    background-color: #FFFFFF !important;
+    color: #A33A3A !important;
+    border: 1px solid #A33A3A !important;
+    border-radius: 2px !important;
+    height: 26px !important;
+    padding: 0 14px !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    cursor: pointer !important;
+}
+
+.btn-secondary-quit:hover {
+    background-color: #FFF2F2 !important;
+}
+
+/* EMPTY STATE */
+.mi-empty-state { 
+    margin: 15px 0 !important; 
+    padding: 24px !important; 
+    border: 1px dashed #8797A8 !important; 
+    color: #3B5272 !important; 
+    font-weight: 700 !important;
+    font-style: italic !important;
+    background-color: #F5F8FB !important; 
+    text-align: center !important;
+    font-size: 12px !important;
+}
+
+/* MESSAGES & MODALS */
+.form-message {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    margin: 0 !important;
+    border-bottom: 1px solid #C8D1DB !important;
+}
+.form-message.success { background-color: #EDF7F1 !important; color: #2F6B4B !important; border-color: #2F6B4B !important; }
+.form-message.error { background-color: #FFF2F2 !important; color: #A33A3A !important; border-color: #A33A3A !important; }
+.inline-warning { padding: 4px 8px !important; background-color: #FFF7DF !important; color: #976000 !important; font-weight: 700 !important; font-size: 11px !important; }
+
+.tally-modal-overlay { position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; background: rgba(23, 31, 43, 0.6); backdrop-filter: blur(1px); }
+.tally-modal-window { width: min(400px, 95vw); background: #FFFFFF; border: 1px solid #8797A8; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2); border-radius: 2px; overflow: hidden; outline: none; display: flex; flex-direction: column; }
+.tally-modal-titlebar { padding: 6px 12px; background-color: #3B5272 !important; color: #FFFFFF !important; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #263B56 !important; }
+.tt-dialog-actions { padding: 8px 12px; background: #E4EAF1; border-top: 1px solid #C8D1DB; display: flex; gap: 8px; justify-content: flex-end; }
+.tt-cancel-reason { display: flex; flex-direction: column; gap: 4px; color: #1b1b1d; font-size: 11px; font-weight: 800; }
+.tt-cancel-reason b { color: #a33a3a; }
+.tt-cancel-reason textarea { width: 100%; resize: vertical; border: 1px solid #75777d; padding: 5px; background: #fff; color: #1b1b1d; }
+.action-danger { border: 1px solid #c94f4f !important; background: #fff !important; color: #a33a3a !important; font-weight: 800 !important; }
+
+/* Material In HTML reference layout, implemented without Tailwind. */
+.mi-entry-form {
+    top: 0 !important;
+    bottom: 0 !important;
+    height: auto !important;
+    padding: 8px 12px 18px !important;
+    gap: 8px;
+    overflow-x: hidden !important;
+}
+
+::deep .tt-voucher-entry.mi-entry-form {
+    inset: 0 0 0 208px !important;
+    width: auto !important;
+    height: auto !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #fbf8fa !important;
+}
+
+::deep .tt-voucher-entry.mi-entry-form .tt-voucher-titlebar { padding: 6px 14px !important; }
+::deep .tt-voucher-entry.mi-entry-form .tt-voucher-body { padding: 8px 12px 18px; overflow: auto; }
+::deep .tt-voucher-entry.mi-entry-form .tt-voucher-message:empty { display: none; }
+
+.tt-voucher-field .tt-voucher-control { width: 100%; }
+.tt-voucher-field .tt-voucher-control > .tally-input { width: 100% !important; }
+.tt-voucher-field.is-readonly .tally-input { background: #f0edef !important; color: #505f76 !important; }
+
+.voucher-title-bar {
+    min-height: 28px;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 0 2px 4px !important;
+}
+
+.voucher-title-bar > div {
+    display: flex !important;
+    align-items: center !important;
+}
+
+.voucher-title-bar > div:first-child { gap: 12px; }
+.voucher-title-bar > div:last-child { gap: 16px; color: #505f76; font-weight: 700; }
+.page-heading { font-size: 12px !important; font-weight: 900 !important; letter-spacing: .12em !important; text-transform: uppercase; }
+.badge-voucher-no { height: 22px; box-sizing: border-box; }
+.badge-voucher-no input { height: 18px !important; padding: 0 !important; }
+::deep .header-date { display: inline-block; width: 112px; }
+::deep .header-date input { width: 112px !important; height: 20px !important; text-align: left !important; }
+
+.voucher-paper-surface {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.panel-light {
+    display: grid !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+    padding: 8px !important;
+    background: #fff !important;
+    box-shadow: 0 1px 3px rgba(9, 20, 38, .08) !important;
+}
+
+.panel-light > div:first-child {
+    grid-column: span 9 !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    column-gap: 24px !important;
+    row-gap: 6px !important;
+}
+
+.panel-light > div:first-child > div {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 2px !important;
+    min-width: 0;
+}
+
+.panel-light > div:first-child > div:nth-child(1) { order: 1; }
+.panel-light > div:first-child > div:nth-child(2) { order: 2; }
+.panel-light > div:first-child > div:nth-child(3) { order: 4; }
+.panel-light > div:first-child > div:nth-child(4) { order: 5; }
+.panel-light > div:first-child > div:nth-child(5) { order: 3; }
+.panel-light > div:first-child > div:nth-child(6) { order: 6; }
+
+.panel-light > div:first-child .field-label {
+    width: auto !important;
+    margin: 0 !important;
+    font-size: 10px !important;
+    line-height: 12px;
+}
+
+.panel-light > div:first-child .tally-input {
+    width: 100% !important;
+    min-width: 0;
+    height: 22px !important;
+    box-sizing: border-box;
+    font-weight: 500 !important;
+}
+
+.panel-light > div:last-child {
+    grid-column: span 3 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+    padding: 8px 8px 8px 16px !important;
+    border: 0 !important;
+    border-left: 1px solid #c5c6cd !important;
+    background: transparent !important;
+}
+
+.panel-light > div:last-child > span:first-child { color: #45474c !important; font-size: 10px !important; font-weight: 900 !important; text-transform: uppercase; }
+.panel-light > div:last-child > span:nth-child(2) { margin: 1px 0 !important; color: #091426 !important; font-family: "JetBrains Mono", Consolas, monospace !important; font-size: 22px !important; font-weight: 900 !important; line-height: 25px !important; }
+.panel-light > div:last-child > div { width: 100%; display: flex !important; justify-content: space-between !important; align-items: center; gap: 12px; }
+
+.mi-workspace { display: flex !important; flex-direction: column !important; gap: 12px !important; }
+.mi-workspace > div > div:first-child { min-height: 18px; display: flex !important; align-items: center !important; gap: 8px !important; margin: 0 0 4px !important; padding: 0 4px !important; }
+.mi-workspace > div > div:first-child > span { color: #091426 !important; font-size: 10px !important; font-weight: 900 !important; letter-spacing: .1em !important; text-transform: uppercase !important; }
+.mi-workspace > div > div:first-child > span:last-child:not(:first-child) { margin-left: auto !important; color: #2f6b4b !important; letter-spacing: 0 !important; }
+
+.erp-table { table-layout: fixed; background: #fff; box-shadow: 0 1px 3px rgba(9, 20, 38, .06); }
+.erp-table th { height: 25px; padding: 3px 8px !important; font-size: 10px !important; }
+.erp-table td { height: 24px; padding: 3px 8px !important; font-size: 10px !important; }
+.erp-table th:nth-child(1) { text-align: left; }
+.erp-table th:not(:first-child), .erp-table td:not(:first-child) { text-align: right; }
+.erp-table th:nth-child(4), .erp-table td:nth-child(4), .erp-table th:nth-child(6) { text-align: center; }
+.erp-table th:nth-child(1) { width: 35%; }
+.erp-table th:nth-child(2), .erp-table th:nth-child(3) { width: 12%; }
+.erp-table th:nth-child(4) { width: 7%; }
+.erp-table th:nth-child(5) { width: 15%; }
+.erp-table th:nth-child(6) { width: 19%; }
+
+.fg-title-wrap { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 18px; padding: 5px 8px !important; }
+.fg-title-wrap > div:first-child { min-width: 0; }
+.fg-title-wrap strong { color: #091426 !important; font-size: 11px !important; }
+.fg-title-wrap strong + span { margin-left: 8px !important; color: #657487 !important; font-size: 10px !important; }
+.fg-process-wrap { flex: 0 0 430px; display: grid !important; grid-template-columns: auto 92px auto 92px; align-items: center !important; gap: 3px 8px; }
+.fg-process-wrap > small { grid-column: 1 / -1; text-align: right; font-size: 10px; color: #657487; }
+.fg-process-wrap .tally-input { width: 92px !important; text-align: right; font-family: Consolas, monospace; }
+.variant-matrix-cell { padding: 5px 8px !important; }
+.mi-variant-grid { display: grid !important; grid-template-columns: repeat(6, minmax(0, 1fr)) !important; gap: 8px !important; padding: 6px !important; border: 1px solid #c5c6cd !important; border-radius: 2px; background: #f5f3f4 !important; }
+.mi-variant-cell { min-width: 0; display: flex !important; flex-direction: column !important; gap: 2px; padding: 5px !important; border: 1px solid #c5c6cd !important; border-radius: 2px; background: #fff !important; }
+.mi-variant-cell span { overflow: hidden; color: #091426 !important; font-size: 10px !important; font-weight: 800 !important; text-overflow: ellipsis; white-space: nowrap; }
+.mi-variant-cell small { color: #657487 !important; font-size: 9px !important; }
+.mi-variant-cell input { width: 100% !important; height: 21px !important; box-sizing: border-box; text-align: right; font-family: Consolas, monospace; font-weight: 700; }
+.erp-table tfoot td { height: 27px; text-align: right !important; font-family: Consolas, monospace; font-weight: 800; }
+
+.mi-workspace > div:nth-child(2) .erp-table th:first-child { width: 35%; }
+.mi-workspace > div:nth-child(2) .erp-table th:not(:first-child) { width: 13%; }
+.mi-workspace > div:nth-child(2) .erp-table td { font-family: Consolas, monospace; }
+.mi-workspace > div:nth-child(2) .erp-table td:first-child { font-family: Inter, "Segoe UI", sans-serif; font-weight: 600; text-align: left; }
+.read-only-qty { width: 100% !important; height: 20px !important; box-sizing: border-box; text-align: right; font-family: Consolas, monospace; }
+
+.voucher-paper-surface > div:last-child {
+    display: grid !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    align-items: end !important;
+    gap: 24px !important;
+    margin-top: 2px !important;
+    padding-bottom: 6px;
+}
+
+.voucher-paper-surface > div:last-child > div:first-child { grid-column: span 8 !important; display: flex !important; align-items: flex-start !important; gap: 10px; }
+.voucher-paper-surface > div:last-child > div:first-child .field-label { flex: 0 0 auto; margin-top: 4px !important; }
+.voucher-paper-surface > div:last-child textarea { flex: 1 1 auto !important; width: auto !important; height: 48px !important; box-sizing: border-box; padding: 4px 6px !important; resize: none !important; }
+.voucher-paper-surface > div:last-child > div:last-child { grid-column: span 4 !important; display: flex !important; flex-direction: column !important; align-items: flex-end !important; gap: 4px !important; }
+.voucher-paper-surface > div:last-child > div:last-child > div { display: flex !important; gap: 8px !important; }
+.voucher-paper-surface > div:last-child > div:last-child > span { color: #657487 !important; font-size: 9px !important; font-style: italic; }
+.btn-primary-accept { min-width: 135px; }
+
+@media (max-width: 1050px) {
+    .panel-light > div:first-child { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    .panel-light > div:first-child > div { order: initial !important; }
+    .mi-variant-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+
+/* Finalized full-screen navy/white voucher theme. */
+.mi-voucher-page { width: 100% !important; max-width: none !important; margin: 0 !important; background: #f3f6fa !important; }
+.mi-entry-form { width: 100% !important; max-width: none !important; min-height: calc(100vh - 108px); padding-right: 0 !important; background: #fff !important; }
+.mi-entry-form .voucher-entry-heading { min-height: 50px !important; background: #fff !important; color: #091426 !important; border-bottom: 1px solid #c8d1db !important; }
+.mi-entry-form .voucher-paper-surface { background: #fff !important; }
+.mi-entry-form .panel-light { border: 1px solid #d5dee8 !important; background: #fff !important; }
+.mi-entry-form input:focus, .mi-entry-form textarea:focus, .mi-entry-form select:focus { background: #fff0b7 !important; outline: 1px solid #091426 !important; }
+.mi-entry-form .lookup-field { position: relative; width: 100%; min-width: 0; }
+.mi-entry-form .lookup-field > input { width: 100% !important; }
+.mi-entry-form .erp-lookup-panel { z-index: 1500; width: 100%; min-width: 280px; }
+.mi-entry-form .erp-lookup-panel button { display: flex; justify-content: space-between; gap: 16px; }
+.mi-entry-form .erp-lookup-panel button:focus,
+.mi-entry-form .erp-lookup-panel button.lookup-selected { background: #eaf4fe !important; color: #0f5fa8 !important; }
+.mi-entry-form .erp-lookup-panel button:focus strong,
+.mi-entry-form .erp-lookup-panel button:focus span { color: #0f5fa8 !important; }
+.mi-entry-form .btn-primary-accept { background: #10243f !important; border: 1px solid #f0c94d !important; color: #fff !important; }
+.mi-entry-form .btn-secondary-quit { background: #10243f !important; border: 1px solid #45617f !important; color: #fff !important; }
+
+/* JWO shell parity: these rules intentionally mirror JobWorkOutOrder.razor.css. */
+.mi-voucher-page ::deep .mi-entry-form {
+    --mi-navy: #091426;
+    --mi-page: #f3f6fa;
+    --mi-paper: #ffffff;
+    --mi-grid-head: #dde6f0;
+    --mi-line: #d5dee8;
+    --mi-text: #111827;
+    --mi-muted: #687789;
+    --mi-focus: #fff0b7;
+    --mi-gold: #ffd66b;
+    position: fixed !important;
+    inset: 0 0 0 208px !important;
+    z-index: 100 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    width: auto !important;
+    height: auto !important;
+    min-width: 920px;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: var(--mi-page) !important;
+    color: var(--mi-text) !important;
+    font-family: Inter, "Segoe UI", Arial, sans-serif !important;
+}
+
+.mi-voucher-page ::deep .mi-entry-form > .tt-voucher-titlebar {
+    min-height: 50px !important;
+    height: 50px !important;
+    flex: 0 0 50px !important;
+    padding: 0 18px !important;
+    border: 0 !important;
+    border-bottom: 1px solid #d4dce6 !important;
+    background: var(--mi-paper) !important;
+}
+.mi-voucher-page ::deep .tt-voucher-title { color: var(--mi-navy) !important; font-size: 15px !important; font-weight: 800 !important; letter-spacing: 0 !important; text-transform: none !important; }
+.mi-voucher-page ::deep .tt-voucher-date-block { position: absolute; top: 6px; right: 18px; z-index: 4; flex-direction: column; align-items: flex-end; gap: 1px; }
+.mi-voucher-page ::deep .tt-voucher-date { width: 126px; }
+.mi-voucher-page ::deep .tt-voucher-date input { width: 126px !important; min-height: 24px !important; padding: 1px 2px !important; border: 0 !important; border-bottom: 1px dotted #7d8a99 !important; background: #fff !important; color: var(--mi-text) !important; font-size: 12px !important; font-weight: 800 !important; text-align: right !important; }
+.mi-voucher-page ::deep .tt-voucher-day { color: #7a8795 !important; font-size: 10px !important; }
+.mi-voucher-page ::deep .tt-voucher-message { flex: 0 0 auto; }
+.mi-voucher-page ::deep .tt-voucher-message .form-message { margin: 8px 12px 0 !important; padding: 7px 10px !important; border-radius: 3px; font-size: 11px !important; }
+.mi-voucher-page ::deep .tt-voucher-body { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; }
+.mi-voucher-page ::deep .voucher-paper-surface { min-height: 0; flex: 1 1 auto; display: flex !important; flex-direction: column !important; gap: 0 !important; padding: 0 !important; overflow: hidden; border: 0 !important; background: var(--mi-page) !important; box-shadow: none !important; }
+
+.mi-voucher-page ::deep .panel-light {
+    display: grid !important;
+    grid-template-columns: minmax(620px, 1.45fr) minmax(290px, .55fr) !important;
+    gap: 28px !important;
+    flex: 0 0 auto;
+    margin: 10px 12px 8px !important;
+    padding: 10px 16px !important;
+    border: 1px solid var(--mi-line) !important;
+    border-radius: 4px !important;
+    background: var(--mi-paper) !important;
+}
+.mi-voucher-page ::deep .panel-light > div:first-child { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 4px 28px !important; min-width: 0; }
+.mi-voucher-page ::deep .tt-voucher-field { display: grid !important; grid-template-columns: 132px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 25px; }
+.mi-voucher-page ::deep .tt-voucher-field > label { color: var(--mi-muted) !important; font-size: 11px !important; font-weight: 600 !important; line-height: 14px; text-transform: none !important; }
+.mi-voucher-page ::deep .tt-voucher-field > label::after { float: right; color: var(--mi-muted); content: ":"; }
+.mi-voucher-page ::deep .tt-voucher-field input,
+.mi-voucher-page ::deep .tt-voucher-field select { width: 100% !important; min-height: 24px !important; padding: 2px 7px !important; border: 0 !important; border-bottom: 1px solid #aab6c4 !important; border-radius: 0 !important; background: #fff !important; color: var(--mi-text) !important; font-size: 12px !important; font-weight: 600 !important; }
+.mi-voucher-page ::deep .tt-voucher-field input:focus,
+.mi-voucher-page ::deep .tt-voucher-field select:focus,
+.mi-voucher-page ::deep textarea:focus { outline: 2px solid var(--mi-navy) !important; outline-offset: -1px; background: var(--mi-focus) !important; color: #000 !important; }
+.mi-voucher-page ::deep .lookup-field:focus-within { z-index: 500; }
+/* Border/radius and selected-row colors matched to JWO's lookup dropdown (soft light-blue
+   fill with dark-blue text, instead of a solid navy fill with white text). */
+.mi-voucher-page ::deep .erp-lookup-panel { top: calc(100% + 1px) !important; z-index: 99999 !important; max-height: min(280px, 42vh) !important; border: 1px solid #2490ef !important; border-radius: 6px !important; box-shadow: 0 8px 20px rgba(9,20,38,.22) !important; }
+.mi-voucher-page ::deep .erp-lookup-panel button:focus,
+.mi-voucher-page ::deep .erp-lookup-panel button.keyboard-selected { background: #eaf4fe !important; color: #0f5fa8 !important; }
+.mi-voucher-page ::deep .erp-lookup-panel button:focus *,
+.mi-voucher-page ::deep .erp-lookup-panel button.keyboard-selected * { color: #0f5fa8 !important; }
+
+.mi-voucher-page ::deep .panel-light > div:last-child { display: flex !important; flex-direction: column !important; justify-content: center !important; align-items: flex-end !important; gap: 2px; padding: 0 0 0 18px !important; border: 0 !important; border-left: 1px solid var(--mi-line) !important; background: #fff !important; }
+.mi-voucher-page ::deep .mi-voucher-number-field { width: 100%; display: grid; grid-template-columns: 88px minmax(0,1fr); align-items: center; gap: 8px; margin-bottom: 3px; }
+.mi-voucher-page ::deep .mi-voucher-number-field span { color: var(--mi-muted) !important; font-size: 11px !important; font-weight: 600 !important; }
+.mi-voucher-page ::deep .mi-voucher-number-field span::after { float: right; content: ":"; }
+.mi-voucher-page ::deep .mi-voucher-number-field input { min-height: 24px; padding: 2px 7px; border: 0; border-bottom: 1px solid #aab6c4; background: #eef2f6; color: #526173; font-size: 12px; font-weight: 700; }
+
+.mi-voucher-page ::deep .mi-workspace,
+.mi-voucher-page ::deep .mi-empty-state { min-height: 0; flex: 1 1 auto; margin: 0 12px !important; overflow: auto; border: 1px solid var(--mi-line) !important; background: var(--mi-paper) !important; }
+.mi-voucher-page ::deep .mi-empty-state { display: grid; place-items: center; color: #42546a !important; font-size: 11px; font-weight: 700; }
+.mi-voucher-page ::deep .erp-table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 0 !important; box-shadow: none !important; }
+/* Grid header banner and row density matched to JWO (the master voucher reference) - solid
+   navy-blue banner with white text instead of the pale blue-gray/dark-text treatment, and
+   JWO's slightly roomier row padding/font-size. */
+.mi-voucher-page ::deep .erp-table th { height: 31px !important; padding: 0 9px !important; border: 0 !important; border-right: 1px solid #e1e7ef !important; border-bottom: 1px solid #c5d0dc !important; background: #0f5fa8 !important; color: #fff !important; font-size: 10px !important; font-weight: 800 !important; line-height: 31px; }
+.mi-voucher-page ::deep .erp-table td { min-height: 34px !important; padding: 6px 9px !important; border: 0 !important; border-right: 1px solid #e1e7ef !important; border-bottom: 1px solid #e1e7ef !important; background: rgba(255,255,255,.96) !important; color: var(--mi-text) !important; font-size: 11.5px !important; }
+.mi-voucher-page ::deep .erp-table tr:focus-within td { background: var(--mi-focus) !important; }
+
+.mi-voucher-page ::deep .mi-narration-section { display: grid; grid-template-columns: 86px minmax(0,1fr); align-items: center; gap: 10px; flex: 0 0 48px; margin: 0 12px; padding: 7px 16px; border: 1px solid var(--mi-line); border-top: 0; background: #fff; }
+.mi-voucher-page ::deep .mi-narration-section label { color: var(--mi-text); font-size: 11px; font-weight: 700; }
+.mi-voucher-page ::deep .mi-narration-section label span { float: right; color: var(--mi-muted); }
+.mi-voucher-page ::deep .mi-narration-section textarea { width: 100% !important; height: 31px !important; min-height: 31px !important; padding: 6px 9px !important; resize: none; border: 0 !important; border-bottom: 1px solid #aab6c4 !important; border-radius: 0 !important; }
+.mi-voucher-page ::deep .mi-save-actions { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 12px; flex: 0 0 38px; min-height: 38px; height: 38px; padding: 0 12px; border-top: 1px solid #000; background: var(--mi-navy); color: #fff; }
+.mi-voucher-page ::deep .mi-footer-primary,
+.mi-voucher-page ::deep .mi-footer-secondary { display: flex; align-items: center; gap: 8px; }
+.mi-voucher-page ::deep .mi-footer-secondary { justify-self: end; }
+.mi-voucher-page ::deep .mi-footer-command { display: inline-flex; min-height: 24px; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid #314863; border-radius: 3px; background: #13243a; color: #fff; font-size: 10px; cursor: pointer; }
+.mi-voucher-page ::deep .mi-footer-command.is-accept { border-color: var(--mi-gold); background: #294568; }
+.mi-voucher-page ::deep .mi-footer-command.is-accept b { color: var(--mi-gold); }
+.mi-voucher-page ::deep .mi-footer-command.is-danger b { color: #ffb7b7; }
+.mi-voucher-page ::deep .mi-footer-help { overflow: hidden; color: #b9cbe0 !important; font-family: Consolas, monospace; font-size: 10px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Compact Material In proportions, aligned with the JWO and Material Out vouchers. */
+.mi-voucher-page ::deep .panel-light {
+    grid-template-columns: minmax(0, 1fr) 280px !important;
+    align-items: start !important;
+    gap: 24px !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 8px 12px 6px !important;
+    padding: 8px 16px !important;
+}
+
+.mi-voucher-page ::deep .panel-light > div:first-child {
+    align-content: start !important;
+    gap: 2px 28px !important;
+}
+
+.mi-voucher-page ::deep .panel-light > .mi-voucher-summary {
+    min-height: 25px !important;
+    align-self: start !important;
+    justify-content: flex-start !important;
+    padding: 0 0 0 18px !important;
+}
+
+.mi-voucher-page ::deep .mi-voucher-number-field { margin: 0 !important; }
+.mi-voucher-page ::deep .mi-workspace { gap: 6px !important; }
+.mi-voucher-page ::deep .mi-workspace > div > div:first-child { margin-bottom: 2px !important; }
+.mi-voucher-page ::deep .fg-title-wrap { padding: 3px 8px !important; }
+.mi-voucher-page ::deep .variant-matrix-cell { padding: 3px 8px !important; }
+
+.mi-voucher-page ::deep .mi-variant-grid {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 4px 14px !important;
+    padding: 4px 8px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #f7f9fc !important;
+}
+
+.mi-voucher-page ::deep .mi-variant-cell {
+    display: grid !important;
+    grid-template-columns: auto auto 64px !important;
+    align-items: center !important;
+    gap: 5px !important;
+    min-height: 25px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+.mi-voucher-page ::deep .mi-variant-cell .variant-title {
+    color: #526173 !important;
+    font-size: 10px !important;
+    font-style: italic;
+    font-weight: 700 !important;
+}
+
+.mi-voucher-page ::deep .mi-variant-cell .variant-pending {
+    margin: 0 !important;
+    color: #7a8795 !important;
+    font-size: 9px !important;
+    white-space: nowrap;
+}
+
+.mi-voucher-page ::deep .mi-variant-cell input {
+    width: 64px !important;
+    height: 23px !important;
+    min-height: 23px !important;
+    padding: 1px 5px !important;
+}
+
+.mi-voucher-page ::deep .mi-gross-total {
+    display: flex !important;
+    min-height: 30px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 18px;
+    margin-top: 0;
+    padding: 5px 10px;
+    border-top: 1px solid var(--mi-line);
+    background: #eef3f8;
+    color: var(--mi-text);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.mi-voucher-page ::deep .mi-gross-total strong {
+    min-width: 105px;
+    color: var(--mi-navy);
+    font-family: Consolas, monospace;
+    font-size: 12px;
+    text-align: right;
+}
+
+/* Quit confirmation mirrors Job Work Out Order exactly. */
+.mi-voucher-page ::deep .tt-dialog-overlay { backdrop-filter: blur(1.5px); }
+.mi-voucher-page ::deep .tt-dialog {
+    overflow: hidden;
+    border: 1px solid #091426;
+    border-radius: 4px;
+    box-shadow: 0 18px 48px rgba(9, 20, 38, .32);
+}
+.mi-voucher-page ::deep .tt-dialog-titlebar { min-height: 34px; padding: 8px 14px; background: #091426; color: #fff; }
+.mi-voucher-page ::deep .tt-dialog-body { padding: 18px; color: #111827; background: #fff; }
+.mi-voucher-page ::deep .tt-dialog-actions { padding: 9px 14px; background: #eef3f8; }
+.mi-voucher-page ::deep .tt-dialog-actions button { min-width: 104px; border: 1px solid #718096; background: #fff; color: #111827; }
+.mi-voucher-page ::deep .tt-dialog-actions button.dialog-selected,
+.mi-voucher-page ::deep .tt-dialog-actions button:focus-visible { outline: 2px solid #ffd66b; outline-offset: -3px; border-color: #091426; background: #fff0b7; color: #111827; }

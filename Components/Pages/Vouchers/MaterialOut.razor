@@ -1,0 +1,1699 @@
+@page "/vouchers/material-out"
+@implements IAsyncDisposable
+@attribute [Authorize(Policy = SecurityPolicies.OperateVouchers)]
+@using System.Globalization
+@inject MaterialOutRepository Repository
+@inject DatabaseStatus Database
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject DeveloperAccessService DeveloperAccess
+@inject StockPositionService StockPosition
+
+<PageTitle>Material Out</PageTitle>
+
+<div id="mo-page-root" class="page-card mo-page" tabindex="0" @ref="pageRoot" @onkeydown="HandlePageKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="material-out-list" RootElementId="mo-page-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="@(selectedIndex >= 0 && !busy)" DeleteAsync="PromptDeleteSelected" />
+    
+    @if (!Database.IsConnected)
+    {
+        <div class="database-warning"><strong>PostgreSQL setup required</strong><p>@Database.Message</p></div>
+    }
+    else if (loading)
+    {
+        <div class="loading-state">Loading Material Out…</div>
+    }
+    else
+    {
+        @if (!showForm)
+        {
+            <!-- LIST VIEW -->
+            <div class="page-header">
+                <h1>Material Out</h1>
+                <div class="header-actions">
+                    <button type="button" @onclick="OpenCreate" disabled="@busy">Alt+C Create</button>
+                    <button type="button" @onclick="() => OpenSelectedAsync()" disabled="@(busy || selectedIndex < 0)">Enter Alter</button>
+                    <button type="button" @onclick="PromptDeleteSelected" disabled="@(busy || selectedIndex < 0)">Alt+D Delete</button>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(message)) { <div class="form-message list-message @(messageIsError ? "error" : "success")">@message</div> }
+
+            <div class="list-toolbar">
+                <label>F4 Search: <input id="mo-search" placeholder="Search Material Out..." value="@searchText"
+                                         @oninput="SearchTextChanged" @onkeydown="HandleSearchKeyDown" @onkeydown:stopPropagation="true" /></label>
+                <button type="button" @onclick="ApplySearchAsync" disabled="@busy">Search</button>
+                <button type="button" @onclick="ClearSearchAsync" disabled="@(busy || string.IsNullOrWhiteSpace(searchText))">Clear</button>
+            </div>
+
+            <div id="mo-grid" class="mo-list-grid">
+                <table>
+                    <thead><tr>
+                        <th>VOUCHER NO.</th><th>DATE</th><th>PARTY A/C NAME</th><th>JWO / ORDER NO.</th>
+                        <th>BATCH</th><th>JOBBER DESTINATION GODOWN</th><th class="number-column">QUANTITY</th>
+                        <th class="number-column">AMOUNT</th><th>STATUS</th>
+                    </tr></thead>
+                    <tbody>
+                    @if (rows.Count == 0)
+                    {
+                        <tr><td colspan="9" class="empty-row" style="text-align:center;">No Material Out vouchers found. Press Alt+C to create.</td></tr>
+                    }
+                    else
+                    {
+                        @for (var i = 0; i < rows.Count; i++)
+                        {
+                            var index = i; var row = rows[index];
+                            <tr id="mo-row-@row.Id" class="@(selectedIndex == index ? "selected" : null)" @onclick="() => SelectListRow(index)" @ondblclick="() => OpenSelectedAsync()">
+                                <td><strong>@row.VoucherNumber</strong></td><td>@row.VoucherDate.ToString("dd-MM-yyyy")</td>
+                                <td>@row.JobWorkerName</td><td>@row.DisplayedOrderNumber</td><td>@row.Batch</td>
+                                <td>@row.DestinationGodownName</td><td class="number-column">@row.TotalQuantity.ToString("0.####")</td>
+                                <td class="number-column">@row.TotalAmount.ToString("0.00")</td><td>@row.Status</td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <div class="grid-key-hint">↑/↓ Select · Enter Alter · PgUp/PgDn Jump · Home/End · Alt+C Create · Alt+D Delete · Esc Back</div>
+        }
+        else
+        {
+            <!-- FORM VIEW -->
+            <KeyboardContextScope ContextId="material-out-form" RootElementId="mo-form-root"
+                                  ContextType="KeyboardContextType.Form"
+                                  Mode="@(editingVoucherId is null ? KeyboardContextMode.Create : KeyboardContextMode.Alteration)"
+                                  CanDelete="@(editingVoucherId is not null && !busy)" DeleteAsync="PromptDeleteCurrent"
+                                  CanCancel="@(editingVoucherId is not null && !isCancelledVoucher && !busy)" CancelAsync="PromptCancelCurrent"
+                                  IsVoucherEntry="true" EscapeAsync="HandleVoucherEscapeAsync" AcceptAsync="SaveVoucherAsync" />
+            <section id="mo-form-root" class="mo-entry-form tt-voucher-entry" data-voucher-profile="material-out" tabindex="0" data-enter-navigation="true" data-tt-voucher-form-root="true">
+
+                <header class="mo-form-heading">
+                    <strong>Material Out</strong>
+                    <div class="mo-context-date">
+                        <VoucherDateInput Id="mo-date" Class="mo-header-date-input" @bind-Value="defaults.VoucherDate" Disabled="@(isCancelledVoucher && !DeveloperAccess.IsDeveloper)" />
+                        <span>@defaults.VoucherDate.ToString("dddd")</span>
+                    </div>
+                </header>
+
+                @if (!string.IsNullOrWhiteSpace(message)) { <div class="form-message @(messageIsError ? "error" : "success")">@message</div> }
+
+                <section class="tally-master-fields">
+                    <div class="tally-col">
+                        <div class="tally-field wide-field">
+                            <span>Party A/c Name <b>*</b></span>
+                            <div class="lookup-field">
+                                <input @ref="partyInput" id="mo-job-worker" data-erp-lookup="true" data-tt-related-master="/masters/ledgers" autocomplete="new-password" name="mo-job-worker-lookup"
+                                       data-enter-empty-action="mo-job-worker-first-option"
+                                       readonly="@(editingVoucherId is not null)"
+                                       aria-label="Party A/c Name" placeholder="Type to search Job Worker" value="@jobWorkerText"
+                                       @onfocus="OpenJobWorkerLookup" @oninput="JobWorkerTextChanged" @onchange="JobWorkerTextCommitted"
+                                       @onkeydown="HandlePartyKeyDown" @onkeydown:stopPropagation="true" />
+                                @if (activeLookupKey == "job-worker")
+                                {
+                                    var workers = FilterJobWorkers().Take(12).ToList();
+                                    <div class="erp-lookup-panel">
+                                        @for (var wIdx = 0; wIdx < workers.Count; wIdx++)
+                                        {
+                                            var worker = workers[wIdx];
+                                            var isSelected = wIdx == workerLookupIndex;
+                                            <button id="@(wIdx == 0 ? "mo-job-worker-first-option" : null)" type="button" tabindex="-1" class="@(isSelected ? "lookup-selected" : null)"
+                                                    @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" 
+                                                    @onclick="() => SelectJobWorker(worker)">
+                                                <strong>@worker.Name</strong><span>@worker.GroupName</span>
+                                            </button>
+                                        }
+                                        @if (workers.Count == 0) { <div class="erp-lookup-empty">No matching Job Worker</div> }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="tally-field compact-field">
+                            <span>JWO / Order No. <b>*</b></span>
+                            <div class="lookup-field">
+                                <input id="mo-order-number" data-erp-lookup="true" autocomplete="new-password" name="mo-order-number-lookup"
+                                       data-enter-empty-action="mo-order-first-option"
+                                       readonly="@(editingVoucherId is not null)"
+                                       aria-label="JWO / Order No." maxlength="100" placeholder="Select pending JWO" value="@orderNumberText"
+                                       @onfocus="OpenOrderLookup" @oninput="OrderTextChanged" @onkeydown="HandleOrderKeyDown" @onkeydown:stopPropagation="true" />
+                                @if (activeLookupKey == "order")
+                                {
+                                    var pendingOrders = FilterOrders().Take(15).ToList();
+                                    <div class="erp-lookup-panel mo-order-lookup-panel">
+                                        @if (pendingOrders.Count == 0) { <div class="erp-lookup-empty">No pending JWO found for this Job Worker</div> }
+                                        else
+                                        {
+                                            <div class="mo-order-lookup-head">
+                                                <span>Order No.</span><span>Date</span><span>Batch</span><span style="text-align:right;">Pending</span>
+                                            </div>
+                                            @for (var oIdx = 0; oIdx < pendingOrders.Count; oIdx++)
+                                            {
+                                                var order = pendingOrders[oIdx];
+                                                var orderIndex = orders.IndexOf(order);
+                                                var isSelected = oIdx == orderLookupIndex;
+                                                <button id="@(oIdx == 0 ? "mo-order-first-option" : null)" type="button" tabindex="-1" class="mo-order-option @(isSelected ? "lookup-selected" : null)"
+                                                        @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" 
+                                                        @onclick="() => SelectOrder(orderIndex)">
+                                                    <strong>@order.VoucherNumber</strong>
+                                                    <span>@order.VoucherDate.ToString("dd-MM-yyyy")</span>
+                                                    <span>@order.Batch</span>
+                                                    <span style="text-align:right;">@FormatQuantity(order.TotalPendingQuantity, GetOrderDecimalPlaces(order))</span>
+                                                </button>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="tally-field compact-field">
+                            <span>Jobber Destination Godown</span>
+                            <div class="lookup-field">
+                                <input id="mo-destination" data-erp-lookup="true" data-tt-related-master="/masters/godowns" autocomplete="new-password" name="mo-destination-lookup"
+                                       aria-label="Jobber Destination Godown" placeholder="Select Jobber Destination Godown" @bind:get="destinationGodownText" @bind:set="DestinationGodownTextChanged" @bind:event="oninput"
+                                       @onfocus="OpenDestinationGodownLookup" @onchange="DestinationGodownTextCommitted" />
+                                @if (activeLookupKey == "destination-godown")
+                                {
+                                    <div class="erp-lookup-panel">
+                                        @foreach (var godown in FilterGodowns().Take(12))
+                                        {
+                                            <button type="button" tabindex="-1" @onmousedown="IgnoreMouseDown" @onmousedown:preventDefault="true" @onclick="() => SelectDestinationGodown(godown)"><strong>@godown.Name</strong></button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tally-col">
+                        <label class="tally-field" style="width: 250px;">
+                            <span>Voucher No.</span>
+                            <input id="mo-voucher-number" readonly="@(editingVoucherId is not null || defaults.NumberingMode != "Manual")"
+                                   tabindex="@(editingVoucherId is null && defaults.NumberingMode == "Manual" ? 0 : -1)" @bind="defaults.VoucherNumber" />
+                        </label>
+                        <label class="tally-field" style="width: 250px;">
+                            <span>Batch</span>
+                            <input id="mo-batch" maxlength="100" @bind="batchText" @bind:event="oninput" />
+                        </label>
+                        <label class="tally-field" style="width: 250px;">
+                            <span>Reference</span>
+                            <input id="mo-reference" maxlength="100" @bind="defaults.ReferenceNumber" @bind:event="oninput" />
+                        </label>
+                    </div>
+                </section>
+
+                <div class="mo-lines-workspace">
+                    <div class="tally-grid">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name of Item (Component)</th>
+                                    <th>Material Source Godown</th>
+                                    <th class="number-column">Stock in Hand</th>
+                                    <th class="number-column">Pending</th>
+                                    <th class="number-column" style="width: 120px;">Issue Qty</th>
+                                    <th>UQC</th>
+                                    <th class="number-column" style="width: 100px;">Rate</th>
+                                    <th class="number-column">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (selectedOrder is null)
+                                {
+                                    <tr><td colspan="8" class="empty-cell">Select Party A/c Name, then choose a pending JWO from the JWO / Order No. field.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var fg in selectedOrder.FinishedGoods)
+                                    {
+                                        <tr class="mo-fg-row">
+                                            <td colspan="8">
+                                                <strong>@fg.FinishedGoodName</strong>
+                                                <span>Ordered @FormatQuantity(fg.OrderedQuantity, GetFinishedGoodDecimalPlaces(fg)) · Finished Goods Godown @fg.FinishedGoodsGodownName</span>
+                                            </td>
+                                        </tr>
+                                        @foreach (var line in fg.Components)
+                                        {
+                                            var inputId = $"mo-qty-{line.JwoComponentId}";
+                                            <tr>
+                                                <td>@line.StockItemName</td>
+                                                <td>@line.SourceGodownName</td>
+                                                <td class="number-column" style="color: #0f172a !important;" title="@(line.SourceGodownId is null ? "No source godown selected" : $"As on {defaults.VoucherDate:dd-MMM-yyyy}")">
+                                                    @(line.SourceGodownId is null ? "—" : stockInHand.TryGetValue(line.JwoComponentId, out var onHand) ? FormatQuantity(onHand, line.DecimalPlaces) : "…")
+                                                </td>
+                                                <td class="number-column" style="color: #0f172a !important;">@FormatQuantity(line.PendingQuantity, line.DecimalPlaces)</td>
+                                                <td>
+                                                    <input id="@inputId" type="text" inputmode="decimal" value="@GetQuantityText(line)"
+                                                           onfocus="this.select()" @oninput="@(e => HandleQuantityInput(e, line))"
+                                                           @onblur="@(_ => NormalizeQuantityText(line))" @onkeydown="@(e => HandleQuantityKeyDown(e, line))" @onkeydown:stopPropagation="true" />
+                                                </td>
+                                                <td class="text-center" style="font-weight:bold; color:#0f172a;">@line.UqcShortName</td>
+                                                <td>
+                                                    <input id="@($"mo-rate-{line.JwoComponentId}")" type="text" inputmode="decimal" value="@GetRateText(line)"
+                                                           onfocus="this.select()" @oninput="@(e => HandleRateInput(e, line))"
+                                                           readonly="@line.IsProducedComponent"
+                                                           title="@(line.IsProducedComponent ? "Derived from the remaining value received from the earlier production stage." : "Enter the material rate.")"
+                                                           @onblur="@(_ => NormalizeRateText(line))" @onkeydown="@(e => HandleRateKeyDown(e, line))" @onkeydown:stopPropagation="true" />
+                                                </td>
+                                                <td class="number-column">@line.Amount.ToString("0.00")</td>
+                                            </tr>
+                                        }
+                                    }
+                                }
+                            </tbody>
+                            @if (selectedOrder is not null)
+                            {
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="3" style="text-align:right; font-weight:bold; padding-right:15px; color:#0f172a;">TOTAL:</td>
+                                        <td class="number-column">@FormatTotalQuantity()</td>
+                                        <td colspan="2"></td>
+                                        <td class="number-column">@TotalAmount.ToString("0.00")</td>
+                                    </tr>
+                                </tfoot>
+                            }
+                        </table>
+                    </div>
+                </div>
+
+                <div class="mo-footer-fields">
+                    <label style="width: 250px; flex: none;">
+                        Provide GST/e-Way Bill details
+                        <select id="mo-gst-eway" value="@gstEwayBillDetails" @onchange="GstEwaySelectionChanged">
+                            <option value="No">No</option>
+                            <option value="Yes">Yes</option>
+                        </select>
+                    </label>
+                    <label>
+                        Narration
+                        <textarea id="mo-narration" rows="2" @bind="narration" @bind:event="oninput"></textarea>
+                    </label>
+                </div>
+
+                @if (editingVoucherId is long auditVoucherId)
+                {
+                    <VoucherAuditStamp VoucherId="@auditVoucherId" />
+                }
+                <VoucherActionBar Class="mo-save-actions" Note="Material Out permanently impacts Stock values and cannot be edited if partially consumed.">
+                    
+                    @if (editingVoucherId is null)
+                    {
+                        <button type="button" class="compact-action action-secondary" disabled="@busy" @onclick="ClearSelection">Clear Order</button>
+                    }
+                    @if (editingVoucherId is not null && !isCancelledVoucher)
+                    {
+                        <button type="button" class="compact-action action-danger" disabled="@busy" @onclick="PromptDeleteCurrent">Alt+D Delete</button>
+                        <button type="button" class="compact-action action-danger" disabled="@busy" @onclick="PromptCancelCurrent">Alt+X Cancel</button>
+                    }
+
+                    <button type="button" class="compact-action action-secondary" @onclick="HandleVoucherEscapeAsync" disabled="@busy">Esc Back</button>
+                    <button id="mo-save" type="button" class="compact-action action-save" data-enter-save="true" data-voucher-save-action="true" disabled="@(busy || isCancelledVoucher && !DeveloperAccess.IsDeveloper)" @onclick="SaveVoucherAsync">@(busy ? "Saving…" : editingVoucherId is null ? "Alt+A Accept (Save)" : "Alt+A Update")</button>
+                </VoucherActionBar>
+
+            </section>
+        }
+    }
+</div>
+
+<!-- E-WAY BILL MODAL -->
+@if (showEwayDetailsModal)
+{
+    <div class="tally-modal-overlay" @onkeydown="HandleEwayModalKeyDown" @onkeydown:preventDefault="true" @onkeydown:stopPropagation="true">
+        <section class="tally-modal-window" role="dialog" aria-modal="true" aria-labelledby="mo-eway-title" tabindex="0" @ref="ewayModalRoot">
+            <header class="tally-modal-titlebar">
+                <strong id="mo-eway-title">GST/e-Way Bill Additional Details</strong>
+                <span>Enter Next · Esc Return · Alt+A Save</span>
+            </header>
+
+            <div class="mo-eway-body" data-enter-navigation="true">
+                <section class="mo-eway-section">
+                    <h3>e-Way Bill Details</h3>
+                    <div class="mo-eway-grid two-column">
+                        <label>e-Way Bill No.<input id="mo-eway-number" @bind="ewayBillNumber" @bind:event="oninput" /></label>
+                        <label>e-Way Bill Date<FlexibleDateInput @bind-Value="ewayBillDate" BasisDate="defaults.VoucherDate" /></label>
+                        <label>Consolidated e-Way Bill No.<input @bind="consolidatedEwayBillNumber" @bind:event="oninput" /></label>
+                        <label>Consolidated Date<FlexibleDateInput @bind-Value="consolidatedEwayBillDate" BasisDate="defaults.VoucherDate" /></label>
+                        <label>Sub Type
+                            <select @bind="ewaySubType"><option>Others</option><option>Supply</option><option>Job Work</option><option>For Own Use</option></select>
+                        </label>
+                        <label>Document Type
+                            <select @bind="ewayDocumentType"><option>Delivery Challan</option><option>Tax Invoice</option><option>Bill of Supply</option><option>Others</option></select>
+                        </label>
+                    </div>
+                </section>
+
+                <div class="mo-eway-party-columns">
+                    <section class="mo-eway-section">
+                        <h3>Consignor Details (From)</h3>
+                        <div class="mo-eway-grid">
+                            <label>Mailing Name<input @bind="consignorMailingName" /></label>
+                            <label>GSTIN/UIN<input @bind="consignorGstin" /></label>
+                            <label>State<input @bind="consignorState" /></label>
+                            <label>Address 1<input @bind="consignorAddress1" /></label>
+                            <label>Address 2<input @bind="consignorAddress2" /></label>
+                            <label>Pincode<input @bind="consignorPincode" /></label>
+                            <label>Place<input @bind="consignorPlace" /></label>
+                            <label>Actual State<input @bind="consignorActualState" /></label>
+                        </div>
+                    </section>
+                    <section class="mo-eway-section">
+                        <h3>Consignee Details (To)</h3>
+                        <div class="mo-eway-grid">
+                            <label>Mailing Name<input @bind="consigneeMailingName" /></label>
+                            <label>GSTIN/UIN<input @bind="consigneeGstin" /></label>
+                            <label>State<input @bind="consigneeState" /></label>
+                            <label>Address 1<input @bind="consigneeAddress1" /></label>
+                            <label>Address 2<input @bind="consigneeAddress2" /></label>
+                            <label>Pincode<input @bind="consigneePincode" /></label>
+                            <label>Place<input @bind="consigneePlace" /></label>
+                            <label>Actual State<input @bind="consigneeActualState" /></label>
+                        </div>
+                    </section>
+                </div>
+
+                <section class="mo-eway-section">
+                    <h3>Transport and Part B Details</h3>
+                    <div class="mo-eway-grid two-column">
+                        <label>Pin-to-Pin Distance<input inputmode="numeric" @bind="pinToPinDistance" /></label>
+                        <label>Transporter Name<input @bind="transporterName" /></label>
+                        <label>Transporter ID<input @bind="transporterId" /></label>
+                        <label>Mode<select @bind="transportMode"><option>Not Applicable</option><option>Road</option><option>Rail</option><option>Air</option><option>Ship</option></select></label>
+                        <label>Doc/Lading/RR/AirWay No.<input @bind="transportDocumentNumber" /></label>
+                        <label>Document Date<FlexibleDateInput @bind-Value="transportDocumentDate" BasisDate="defaults.VoucherDate" /></label>
+                        <label>Vehicle Number<input @bind="vehicleNumber" /></label>
+                        <label>Vehicle Type<select @bind="vehicleType"><option>Not Applicable</option><option>Regular</option><option>Over Dimensional Cargo</option></select></label>
+                    </div>
+                </section>
+            </div>
+
+            <footer class="tt-dialog-actions">
+                <button type="button" class="compact-action action-secondary" disabled="@busy" @onclick="CloseEwayDetails">Esc Return</button>
+                <button type="button" class="compact-action action-secondary" disabled="@busy" @onclick="AcceptEwayDetails">Accept Details</button>
+                <button type="button" class="compact-action action-save" disabled="@busy" @onclick="SaveFromEwayAsync">@(busy ? "Saving…" : "Alt+A Save Voucher")</button>
+            </footer>
+        </section>
+    </div>
+}
+
+<!-- EXIT MODALS -->
+@if (showExitModal)
+{
+    <div class="tt-dialog-overlay" role="presentation">
+        <section class="tt-dialog" role="dialog" aria-modal="true" aria-labelledby="mo-exit-title" tabindex="0" @ref="exitModalRoot"
+                 @onkeydown="HandleExitModalKeyDown" @onkeydown:stopPropagation="true" @onkeydown:preventDefault="true">
+            <header class="tt-dialog-titlebar"><strong id="mo-exit-title">Quit?</strong></header>
+            <div class="tt-dialog-body"><p>Quit? Yes or No</p></div>
+            <footer class="tt-dialog-actions">
+                <button id="mo-exit-yes" type="button" class="@(exitModalSelectYes ? "dialog-selected" : null)" @onclick="ConfirmExitVoucher">Yes</button>
+                <button id="mo-exit-no" type="button" class="@(!exitModalSelectYes ? "dialog-selected" : null)" @onclick="CancelExitVoucher">No</button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (showDeleteModal)
+{
+    <div class="tally-modal-overlay" role="presentation">
+        <section class="tally-modal-window" role="dialog" aria-modal="true" aria-labelledby="mo-delete-title" tabindex="0" style="width: 450px; min-height: auto;"
+                 @onkeydown="HandleDeleteModalKeyDown" @onkeydown:stopPropagation="true" @onkeydown:preventDefault="true">
+            <header class="tally-modal-titlebar"><strong id="mo-delete-title">Delete Material Out?</strong></header>
+            <div class="tt-dialog-body" style="padding: 15px; color:#0f172a;">
+                <p>This is allowed only when the voucher has no linked Material In or other dependency.</p>
+                <p><strong>@currentActionVoucherNumber</strong></p>
+                @if (!string.IsNullOrWhiteSpace(actionMessage)) { <div class="form-message error">@actionMessage</div> }
+            </div>
+            <footer class="tt-dialog-actions">
+                <button id="mo-delete-yes" type="button" class="compact-action action-danger" @onclick="ConfirmDeleteAsync">Yes</button>
+                <button id="mo-delete-no" type="button" class="compact-action action-secondary" @onclick="CloseDeleteModal">No</button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (showCancelModal)
+{
+    <div class="tally-modal-overlay" role="presentation">
+        <section class="tally-modal-window" role="dialog" aria-modal="true" aria-labelledby="mo-cancel-title" tabindex="0" style="width: 500px; min-height: auto;"
+                 @onkeydown="HandleCancelModalKeyDown" @onkeydown:stopPropagation="true">
+            <header class="tally-modal-titlebar"><strong id="mo-cancel-title">Cancel Material Out?</strong></header>
+            <div class="tt-dialog-body" style="padding: 15px; color:#0f172a;">
+                <p>The voucher will remain in history and its stock effect will be reversed.</p>
+                <p><strong>@currentActionVoucherNumber</strong></p>
+                <label style="display:flex; flex-direction:column; gap:4px; font-weight:bold; font-size:12px; margin-top:10px; color:#0f172a;">Cancellation Reason <b>*</b>
+                    <textarea id="mo-cancel-reason" maxlength="500" rows="3" @bind="cancellationReason" @bind:event="oninput" style="border:1px solid #cbd5e1; padding:5px; color:#0f172a;"></textarea>
+                </label>
+                @if (!string.IsNullOrWhiteSpace(actionMessage)) { <div class="form-message error">@actionMessage</div> }
+            </div>
+            <footer class="tt-dialog-actions">
+                <button type="button" class="compact-action action-danger" @onclick="ConfirmCancelAsync">Cancel Voucher</button>
+                <button type="button" class="compact-action action-secondary" @onclick="CloseCancelModal">Return</button>
+            </footer>
+        </section>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "voucherId")] public long? VoucherId { get; set; }
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+    private ElementReference pageRoot;
+    private ElementReference exitModalRoot;
+    private ElementReference partyInput;
+    private List<MaterialOutListItem> rows = new();
+    private int selectedIndex = -1;
+    private bool showForm;
+    private bool pendingRowScroll;
+    private MaterialOutLookupData lookup = new();
+    private MaterialOutVoucherDefaults defaults = new();
+    private List<MaterialOutPendingOrder> orders = new();
+    private MaterialOutPendingOrder? selectedOrder;
+    private long? selectedJobWorkerId;
+    private long? destinationGodownId;
+    private string jobWorkerText = string.Empty;
+    private string destinationGodownText = string.Empty;
+    private string orderNumberText = string.Empty;
+    private string batchText = string.Empty;
+    private string? activeLookupKey;
+    private int workerLookupIndex = -1;
+    private int orderLookupIndex = -1;
+    private string searchText = string.Empty;
+    private bool loading = true;
+    private bool busy;
+    private readonly Dictionary<long, string> quantityText = new();
+    private readonly Dictionary<long, string> rateText = new();
+    private readonly Dictionary<long, decimal> stockInHand = new();
+    private string gstEwayBillDetails = "No";
+    private bool showEwayDetailsModal;
+    private ElementReference ewayModalRoot;
+    private string ewayBillNumber = string.Empty;
+    private DateOnly? ewayBillDate;
+    private string consolidatedEwayBillNumber = string.Empty;
+    private DateOnly? consolidatedEwayBillDate;
+    private string ewaySubType = "Others";
+    private string ewayDocumentType = "Delivery Challan";
+    private string consignorMailingName = string.Empty;
+    private string consignorGstin = string.Empty;
+    private string consignorState = string.Empty;
+    private string consignorAddress1 = string.Empty;
+    private string consignorAddress2 = string.Empty;
+    private string consignorPincode = string.Empty;
+    private string consignorPlace = string.Empty;
+    private string consignorActualState = string.Empty;
+    private string consigneeMailingName = string.Empty;
+    private string consigneeGstin = string.Empty;
+    private string consigneeState = string.Empty;
+    private string consigneeAddress1 = string.Empty;
+    private string consigneeAddress2 = string.Empty;
+    private string consigneePincode = string.Empty;
+    private string consigneePlace = string.Empty;
+    private string consigneeActualState = string.Empty;
+    private string pinToPinDistance = string.Empty;
+    private string transporterName = string.Empty;
+    private string transporterId = string.Empty;
+    private string transportMode = "Not Applicable";
+    private string transportDocumentNumber = string.Empty;
+    private DateOnly? transportDocumentDate;
+    private string vehicleNumber = string.Empty;
+    private string vehicleType = "Not Applicable";
+    private string narration = string.Empty;
+    private string message = string.Empty;
+    private bool messageIsError;
+    private string? pendingFocusId;
+    private void FocusMaterialOutDate() => pendingFocusId = "mo-date";
+    private bool showExitModal;
+    private string? exitReturnFocusId;
+    private bool exitModalSelectYes;
+    private long? editingVoucherId;
+    private string editingConcurrencyToken = string.Empty;
+    private bool isCancelledVoucher;
+    private bool showDeleteModal;
+    private bool showCancelModal;
+    private bool actionModalSelectYes;
+    private long? actionVoucherId;
+    private string currentActionVoucherNumber = string.Empty;
+    private string cancellationReason = string.Empty;
+    private string actionMessage = string.Empty;
+    private DotNetObjectReference<MaterialOut>? relatedMasterRefreshReference;
+
+    private IEnumerable<MaterialOutPendingComponent> SelectedLines =>
+        selectedOrder?.FinishedGoods.SelectMany(x => x.Components) ?? Enumerable.Empty<MaterialOutPendingComponent>();
+    private decimal TotalAmount => SelectedLines.Sum(x => x.Amount);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Database.IsConnected)
+        {
+            lookup = await Repository.GetLookupDataAsync();
+            defaults = await Repository.GetEntryDefaultsAsync();
+            if (VoucherId is not null) await OpenSelectedAsync(VoucherId.Value);
+            else await OpenCreate();
+        }
+        loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            relatedMasterRefreshReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("texTrackRegisterRelatedMasterRefresh", relatedMasterRefreshReference);
+            await pageRoot.FocusAsync();
+        }
+        if (showExitModal)
+        {
+            await exitModalRoot.FocusAsync();
+            return;
+        }
+        if (showEwayDetailsModal)
+        {
+            await JS.InvokeVoidAsync("texTrackFocusById", "mo-eway-number");
+            return;
+        }
+
+        // 🔴 FIX: ONLY FOCUS SPECIFICALLY REQUESTED TARGETS (NO INFINITE FOCUS LOOP)
+        if (!string.IsNullOrWhiteSpace(pendingFocusId))
+        {
+            var id = pendingFocusId;
+            pendingFocusId = null;
+            await Task.Delay(40);
+
+            if (id == "mo-job-worker")
+            {
+                try { await partyInput.FocusAsync(); } catch { }
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("texTrackFocusById", id);
+            }
+        }
+        
+        if (pendingRowScroll && selectedIndex >= 0 && selectedIndex < rows.Count)
+        {
+            pendingRowScroll = false;
+            await JS.InvokeVoidAsync("texTrackScrollRowIntoView", $"mo-row-{rows[selectedIndex].Id}", "mo-grid");
+        }
+    }
+
+    [JSInvokable]
+    public async Task RefreshRelatedMasterLookupsAsync(string returnFocusId)
+    {
+        lookup = await Repository.GetLookupDataAsync();
+        pendingFocusId = string.IsNullOrWhiteSpace(returnFocusId) ? "mo-job-worker" : returnFocusId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Reuses the same registered reference as RefreshRelatedMasterLookupsAsync above -
+    // called by the shared closeLookupOnBlur JS whenever a data-erp-lookup field loses
+    // focus with its dropdown open, so activeLookupKey genuinely clears server-side
+    // instead of relying only on the client-side hide, which a later unrelated
+    // re-render would otherwise undo (see JobWorkOutOrder.razor's identical handler for
+    // the full explanation). Only clears when it still matches the exact field that
+    // blurred.
+    [JSInvokable]
+    public Task ClearLookupOnBlurAsync(string fieldId)
+    {
+        var key = fieldId switch
+        {
+            "mo-job-worker" => "job-worker",
+            "mo-order-number" => "order",
+            "mo-destination" => "destination-godown",
+            _ => null
+        };
+        if (key is not null && activeLookupKey == key)
+        {
+            activeLookupKey = null;
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (relatedMasterRefreshReference is not null)
+        {
+            try { await JS.InvokeVoidAsync("texTrackUnregisterRelatedMasterRefresh", relatedMasterRefreshReference); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+        relatedMasterRefreshReference?.Dispose();
+    }
+
+    private async Task LoadListAsync(long? selectId = null)
+    {
+        rows = (await Repository.GetListAsync(searchText)).ToList();
+        if (rows.Count == 0) selectedIndex = -1;
+        else if (selectId is not null)
+        {
+            selectedIndex = rows.FindIndex(x => x.Id == selectId.Value);
+            if (selectedIndex < 0) selectedIndex = 0;
+        }
+        else if (selectedIndex < 0 || selectedIndex >= rows.Count) selectedIndex = 0;
+        pendingRowScroll = selectedIndex >= 0;
+    }
+
+    private async Task OpenCreate()
+    {
+        if (busy) return;
+        editingVoucherId = null;
+        editingConcurrencyToken = string.Empty;
+        isCancelledVoucher = false;
+        defaults = await Repository.GetEntryDefaultsAsync();
+        await ResetAfterSaveAsync();
+        showForm = true;
+        message = string.Empty;
+        pendingFocusId = defaults.NumberingMode == "Manual" ? "mo-voucher-number" : "mo-job-worker";
+    }
+
+    private async Task OpenSelectedAsync(long? requestedVoucherId = null)
+    {
+        if (busy) return;
+        var voucherId = requestedVoucherId ?? (selectedIndex >= 0 && selectedIndex < rows.Count ? rows[selectedIndex].Id : 0);
+        if (voucherId == 0) return;
+        busy = true;
+        try
+        {
+            var data = await Repository.GetForEditAsync(voucherId);
+            if (data is null)
+            {
+                message = "The selected Material Out voucher could not be loaded.";
+                messageIsError = true;
+                return;
+            }
+
+            editingVoucherId = data.VoucherId;
+            editingConcurrencyToken = data.ConcurrencyToken;
+            isCancelledVoucher = string.Equals(data.Status, "Cancelled", StringComparison.OrdinalIgnoreCase);
+            defaults = data.Defaults;
+            selectedJobWorkerId = data.JobWorkerLedgerId;
+            jobWorkerText = data.JobWorkerName;
+            destinationGodownId = data.DestinationGodownId;
+            destinationGodownText = data.DestinationGodownName;
+            batchText = data.Batch;
+            narration = data.Narration;
+            selectedOrder = data.Order;
+            orders = new List<MaterialOutPendingOrder> { data.Order };
+            orderNumberText = data.Order.VoucherNumber;
+            gstEwayBillDetails = data.ProvideGstEwayDetails ? "Yes" : "No";
+            ApplyEwayDetails(data.EwayDetails);
+            quantityText.Clear();
+            rateText.Clear();
+            foreach (var line in SelectedLines)
+            {
+                quantityText[line.JwoComponentId] = FormatQuantity(line.IssueNowQuantity, line.DecimalPlaces);
+                rateText[line.JwoComponentId] = line.Rate.ToString("0.00", CultureInfo.InvariantCulture);
+            }
+            await LoadStockPositionsAsync();
+            showForm = true;
+            activeLookupKey = null;
+            message = isCancelledVoucher
+                ? $"Material Out {defaults.VoucherNumber} is cancelled and is available for audit view only."
+                : $"Material Out {defaults.VoucherNumber} opened in alteration mode.";
+            messageIsError = false;
+            pendingFocusId = isCancelledVoucher && !DeveloperAccess.IsDeveloper ? "mo-page-root" : "mo-job-worker";
+        }
+        catch (Exception ex)
+        {
+            message = VoucherErrorMessages.For(ex);
+            messageIsError = true;
+        }
+        finally { busy = false; }
+    }
+
+    private void SelectListRow(int index)
+    {
+        selectedIndex = index;
+        pendingRowScroll = true;
+    }
+
+    private void OpenJobWorkerLookup()
+    {
+        // Party A/c Name is immutable once a voucher is opened in alteration - it
+        // defines the alteration's Job Worker/JWO ownership chain, same rule as the
+        // JWO link itself. The field stays readonly and its lookup never opens.
+        if (editingVoucherId is not null) return;
+        activeLookupKey = "job-worker";
+        workerLookupIndex = -1;
+    }
+
+    private void JobWorkerTextChanged(ChangeEventArgs e)
+    {
+        if (editingVoucherId is not null) return;
+        jobWorkerText = e.Value?.ToString() ?? string.Empty;
+        selectedJobWorkerId = null;
+        activeLookupKey = "job-worker";
+        workerLookupIndex = -1;
+    }
+
+    private async Task JobWorkerTextCommitted(ChangeEventArgs e)
+    {
+        jobWorkerText = e.Value?.ToString() ?? string.Empty;
+        var exact = lookup.JobWorkers.FirstOrDefault(x => string.Equals(x.Name, jobWorkerText.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (exact is not null) await SelectJobWorker(exact);
+    }
+
+    // 🔴 FIX: KEYBOARD ARROW UP/DOWN & ENTER SELECTION FOR PARTY A/C NAME
+    private async Task HandlePartyKeyDown(KeyboardEventArgs e)
+    {
+        // Party A/c Name is immutable during alteration (see OpenJobWorkerLookup) -
+        // the field is readonly, but readonly does not stop keydown handlers, so
+        // Arrow Up/Down must be blocked here too or they can still reopen the
+        // lookup dropdown on a field the user can no longer actually change.
+        if (editingVoucherId is not null) return;
+        var workers = FilterJobWorkers().Take(12).ToList();
+
+        if (e.Key is "ArrowDown" or "Down")
+        {
+            if (activeLookupKey != "job-worker") activeLookupKey = "job-worker";
+            if (workers.Count > 0) workerLookupIndex = workerLookupIndex < 0 ? 0 : (workerLookupIndex + 1) % workers.Count;
+            return;
+        }
+        if (e.Key is "ArrowUp" or "Up")
+        {
+            if (activeLookupKey != "job-worker") activeLookupKey = "job-worker";
+            if (workers.Count > 0) workerLookupIndex = workerLookupIndex < 0 ? workers.Count - 1 : (workerLookupIndex - 1 + workers.Count) % workers.Count;
+            return;
+        }
+        if (e.Key == "Enter")
+        {
+            JobWorkerLookupItem? selected = null;
+            if (workers.Count > 0 && workerLookupIndex >= 0 && workerLookupIndex < workers.Count)
+            {
+                selected = workers[workerLookupIndex];
+            }
+            else
+            {
+                var text = jobWorkerText.Trim();
+                selected = lookup.JobWorkers.FirstOrDefault(x => string.Equals(x.Name, text, StringComparison.OrdinalIgnoreCase))
+                           ?? workers.FirstOrDefault();
+            }
+
+            if (selected is not null)
+            {
+                await SelectJobWorker(selected);
+            }
+            else
+            {
+                activeLookupKey = null;
+                workerLookupIndex = -1;
+                pendingFocusId = "mo-order-number";
+            }
+            return;
+        }
+        if (e.Key == "Escape")
+        {
+            activeLookupKey = null;
+            workerLookupIndex = -1;
+            await HandleVoucherEscapeAsync();
+            return;
+        }
+    }
+
+    private IEnumerable<JobWorkerLookupItem> FilterJobWorkers()
+    {
+        var term = jobWorkerText.Trim();
+        return string.IsNullOrWhiteSpace(term)
+            ? lookup.JobWorkers
+            : lookup.JobWorkers.Where(x => x.Name.Contains(term, StringComparison.OrdinalIgnoreCase) || x.GroupName.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task SelectJobWorker(JobWorkerLookupItem worker)
+    {
+        // The Job Worker/JWO pairing defines an alteration's ownership and dependency
+        // chain and is already loaded correctly by OpenSelectedAsync - Party A/c Name
+        // is immutable during alteration (readonly field, lookup never opens), so this
+        // must be a true no-op here too rather than applying the new worker and only
+        // suppressing the pending-order reload, which left the visible worker changed
+        // while the JWO lines stayed from the original one.
+        if (editingVoucherId is not null)
+        {
+            pendingFocusId = SelectedLines.Select(x => $"mo-qty-{x.JwoComponentId}").FirstOrDefault() ?? "mo-narration";
+            return;
+        }
+
+        selectedJobWorkerId = worker.Id;
+        jobWorkerText = worker.Name;
+        activeLookupKey = null; // 🔴 CLOSE LOOKUP IMMEDIATELY ON SELECTION
+        workerLookupIndex = -1;
+
+        if (destinationGodownId is null && worker.DefaultMaterialOutDestinationGodownId is not null)
+        {
+            destinationGodownId = worker.DefaultMaterialOutDestinationGodownId;
+            destinationGodownText = worker.DefaultMaterialOutDestinationGodownName;
+        }
+        await LoadPendingAsync();
+    }
+
+    private void OpenOrderLookup()
+    {
+        // JWO / Order No. is immutable during alteration, same rule as Party A/c Name
+        // above - the field stays readonly and its lookup never opens.
+        if (editingVoucherId is not null) return;
+        if (selectedJobWorkerId is not null)
+        {
+            activeLookupKey = "order";
+            orderLookupIndex = -1;
+        }
+    }
+
+    private void OrderTextChanged(ChangeEventArgs e)
+    {
+        if (editingVoucherId is not null) return;
+        orderNumberText = e.Value?.ToString() ?? string.Empty;
+        if (selectedJobWorkerId is not null)
+        {
+            activeLookupKey = "order";
+            orderLookupIndex = -1;
+        }
+    }
+
+    // 🔴 FIX: KEYBOARD ARROW UP/DOWN & ENTER SELECTION FOR JWO ORDER NO
+    private async Task HandleOrderKeyDown(KeyboardEventArgs e)
+    {
+        // JWO / Order No. is immutable during alteration - see OpenOrderLookup.
+        if (editingVoucherId is not null) return;
+        var pendingOrders = FilterOrders().Take(15).ToList();
+
+        if (e.Key is "ArrowDown" or "Down")
+        {
+            if (activeLookupKey != "order") activeLookupKey = "order";
+            if (pendingOrders.Count > 0) orderLookupIndex = orderLookupIndex < 0 ? 0 : (orderLookupIndex + 1) % pendingOrders.Count;
+            return;
+        }
+        if (e.Key is "ArrowUp" or "Up")
+        {
+            if (activeLookupKey != "order") activeLookupKey = "order";
+            if (pendingOrders.Count > 0) orderLookupIndex = orderLookupIndex < 0 ? pendingOrders.Count - 1 : (orderLookupIndex - 1 + pendingOrders.Count) % pendingOrders.Count;
+            return;
+        }
+        if (e.Key == "Enter")
+        {
+            if (pendingOrders.Count > 0 && orderLookupIndex >= 0 && orderLookupIndex < pendingOrders.Count)
+            {
+                var chosenOrder = pendingOrders[orderLookupIndex];
+                var index = orders.IndexOf(chosenOrder);
+                if (index >= 0) await SelectOrder(index);
+            }
+            else if (selectedOrder is not null)
+            {
+                activeLookupKey = null;
+                orderLookupIndex = -1;
+                pendingFocusId = SelectedLines.Select(x => $"mo-qty-{x.JwoComponentId}").FirstOrDefault() ?? "mo-narration";
+            }
+            return;
+        }
+        if (e.Key == "Escape")
+        {
+            activeLookupKey = null;
+            orderLookupIndex = -1;
+        }
+    }
+
+    private IEnumerable<MaterialOutPendingOrder> FilterOrders()
+    {
+        var term = orderNumberText.Trim();
+        if (string.IsNullOrWhiteSpace(term) || selectedOrder is not null && string.Equals(term, selectedOrder.VoucherNumber, StringComparison.OrdinalIgnoreCase))
+            return orders;
+        return orders.Where(x => x.VoucherNumber.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || x.Batch.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || x.ReferenceNumber.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void OpenDestinationGodownLookup() => activeLookupKey = "destination-godown";
+
+    private void DestinationGodownTextChanged(string? value)
+    {
+        destinationGodownText = value ?? string.Empty;
+        destinationGodownId = null;
+        activeLookupKey = "destination-godown";
+    }
+
+    private void DestinationGodownTextCommitted(ChangeEventArgs e)
+    {
+        destinationGodownText = e.Value?.ToString() ?? string.Empty;
+        var exact = lookup.Godowns.FirstOrDefault(x => string.Equals(x.Name, destinationGodownText.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (exact is not null) SelectDestinationGodown(exact);
+    }
+
+    private IEnumerable<JobWorkGodownLookup> FilterGodowns()
+    {
+        var term = destinationGodownText.Trim();
+        return string.IsNullOrWhiteSpace(term)
+            ? lookup.Godowns
+            : lookup.Godowns.Where(x => x.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void SelectDestinationGodown(JobWorkGodownLookup godown)
+    {
+        destinationGodownId = godown.Id;
+        destinationGodownText = godown.Name;
+        activeLookupKey = null;
+        pendingFocusId = "mo-order-number";
+    }
+
+    private static void IgnoreMouseDown(MouseEventArgs _) { }
+
+    private async Task LoadPendingAsync()
+    {
+        if (selectedJobWorkerId is null || busy) return;
+        var alterationOrder = editingVoucherId is not null ? selectedOrder : null;
+        pendingFocusId = "mo-order-number";
+        busy = true;
+        try
+        {
+            orders = (await Repository.GetPendingOrdersAsync(selectedJobWorkerId.Value)).ToList();
+            if (alterationOrder is not null)
+            {
+                if (orders.All(x => x.JwoVoucherId != alterationOrder.JwoVoucherId))
+                    orders.Insert(0, alterationOrder);
+                selectedOrder = alterationOrder;
+                orderNumberText = alterationOrder.VoucherNumber;
+                batchText = alterationOrder.Batch;
+            }
+            else
+            {
+                selectedOrder = null;
+                orderNumberText = string.Empty;
+            }
+            quantityText.Clear();
+            activeLookupKey = alterationOrder is null ? "order" : null;
+            orderLookupIndex = -1;
+            message = alterationOrder is not null
+                ? $"JWO {alterationOrder.VoucherNumber} retained for this Material Out alteration."
+                : orders.Count == 0 ? "No pending JWO components were found for the selected Job Worker." : $"{orders.Count} pending JWO(s) found. Select an order from JWO / Order No.";
+            messageIsError = orders.Count == 0;
+            pendingFocusId = "mo-order-number";
+        }
+        catch (Exception ex)
+        {
+            message = VoucherErrorMessages.For(ex);
+            messageIsError = true;
+        }
+        finally { busy = false; }
+    }
+
+    private async Task SelectOrder(int index)
+    {
+        // JWO / Order No. is immutable during alteration - see OpenOrderLookup.
+        if (editingVoucherId is not null) return;
+        if (index < 0 || index >= orders.Count) return;
+        selectedOrder = orders[index];
+        orderNumberText = selectedOrder.VoucherNumber;
+        batchText = selectedOrder.Batch;
+        defaults.ReferenceNumber = string.IsNullOrWhiteSpace(selectedOrder.ReferenceNumber)
+            ? selectedOrder.VoucherNumber
+            : selectedOrder.ReferenceNumber;
+        if (destinationGodownId is null)
+        {
+            destinationGodownText = selectedOrder.FinishedGoods
+                .Select(x => x.DestinationGodownName)
+                .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty;
+            destinationGodownId = lookup.Godowns
+                .FirstOrDefault(x => string.Equals(x.Name, destinationGodownText, StringComparison.OrdinalIgnoreCase))?.Id;
+        }
+        quantityText.Clear();
+        rateText.Clear();
+        foreach (var line in SelectedLines)
+        {
+            line.IssueNowQuantity = line.PendingQuantity;
+            quantityText[line.JwoComponentId] = FormatQuantity(line.IssueNowQuantity, line.DecimalPlaces);
+            rateText[line.JwoComponentId] = line.Rate.ToString("0.00", CultureInfo.InvariantCulture);
+        }
+        await LoadStockPositionsAsync();
+        activeLookupKey = null; // 🔴 CLOSE LOOKUP IMMEDIATELY ON SELECTION
+        orderLookupIndex = -1;
+        message = $"JWO {selectedOrder.VoucherNumber} loaded. Review or edit Issue Quantity.";
+        messageIsError = false;
+        pendingFocusId = SelectedLines.Select(x => $"mo-qty-{x.JwoComponentId}").FirstOrDefault() ?? "mo-narration";
+    }
+
+    private void ClearSelection()
+    {
+        selectedOrder = null;
+        orders.Clear();
+        orderNumberText = string.Empty;
+        batchText = string.Empty;
+        destinationGodownId = null;
+        destinationGodownText = string.Empty;
+        quantityText.Clear();
+        rateText.Clear();
+        stockInHand.Clear();
+        activeLookupKey = null;
+        message = string.Empty;
+        pendingFocusId = "mo-job-worker";
+    }
+
+    // Fetches the exact stock-on-hand quantity per line from the shared stock-position
+    // service (company + item + variant + UQC + godown + as-on date), one call per
+    // component - never by scraping a report. StockPositionService matches the
+    // variant exactly (including null), so a component tied to a specific colour/size
+    // variant must pass that variant id through or it will read as zero.
+    private async Task LoadStockPositionsAsync()
+    {
+        stockInHand.Clear();
+        var lines = SelectedLines.Where(x => x.SourceGodownId is not null).ToList();
+        if (lines.Count == 0) return;
+        foreach (var line in lines)
+        {
+            try
+            {
+                var snapshot = await StockPosition.GetAsync(new StockPositionRequest(
+                    line.StockItemId, line.StockItemVariantId, line.UqcId, line.SourceGodownId!.Value, defaults.VoucherDate));
+                stockInHand[line.JwoComponentId] = snapshot.Quantity;
+            }
+            catch (InvalidOperationException)
+            {
+                // A master referenced by this line is no longer valid for the current
+                // company; leave it out of stockInHand so the cell shows "..." rather than
+                // a stale or wrong figure.
+            }
+        }
+        StateHasChanged();
+    }
+
+    private string GetQuantityText(MaterialOutPendingComponent line)
+    {
+        if (quantityText.TryGetValue(line.JwoComponentId, out var value)) return value;
+        value = FormatQuantity(line.IssueNowQuantity, line.DecimalPlaces);
+        quantityText[line.JwoComponentId] = value;
+        return value;
+    }
+
+    private void HandleQuantityInput(ChangeEventArgs e, MaterialOutPendingComponent line)
+    {
+        var text = e.Value?.ToString() ?? string.Empty;
+        quantityText[line.JwoComponentId] = text;
+        if (TryParseQuantity(text, out var value))
+            line.IssueNowQuantity = Math.Clamp(value, 0, line.PendingQuantity);
+    }
+
+    private void NormalizeQuantityText(MaterialOutPendingComponent line)
+    {
+        if (!quantityText.TryGetValue(line.JwoComponentId, out var text) || !TryParseQuantity(text, out var value))
+            value = line.IssueNowQuantity;
+        line.IssueNowQuantity = Math.Clamp(value, 0, line.PendingQuantity);
+        quantityText[line.JwoComponentId] = FormatQuantity(line.IssueNowQuantity, line.DecimalPlaces);
+    }
+
+    private static bool TryParseQuantity(string text, out decimal value)
+    {
+        var normalized = (text ?? string.Empty).Trim().Replace(',', '.');
+        return decimal.TryParse(normalized, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out value);
+    }
+
+    private void HandleQuantityKeyDown(KeyboardEventArgs e, MaterialOutPendingComponent current)
+    {
+        if (e.Key == "Escape") { pendingFocusId = "mo-order-number"; return; }
+        if (e.Key != "Enter") return;
+        NormalizeQuantityText(current);
+        var lines = SelectedLines.ToList();
+        var index = lines.FindIndex(x => x.JwoComponentId == current.JwoComponentId);
+        pendingFocusId = current.IsProducedComponent
+            ? (index >= 0 && index + 1 < lines.Count ? $"mo-qty-{lines[index + 1].JwoComponentId}" : "mo-gst-eway")
+            : $"mo-rate-{current.JwoComponentId}";
+    }
+
+    private string GetRateText(MaterialOutPendingComponent line)
+    {
+        if (rateText.TryGetValue(line.JwoComponentId, out var value)) return value;
+        value = line.Rate.ToString("0.00", CultureInfo.InvariantCulture);
+        rateText[line.JwoComponentId] = value;
+        return value;
+    }
+
+    private void HandleRateInput(ChangeEventArgs e, MaterialOutPendingComponent line)
+    {
+        if (line.IsProducedComponent) return;
+        var text = e.Value?.ToString() ?? string.Empty;
+        rateText[line.JwoComponentId] = text;
+        if (TryParseQuantity(text, out var value) && value >= 0) line.Rate = value;
+    }
+
+    private void NormalizeRateText(MaterialOutPendingComponent line)
+    {
+        if (line.IsProducedComponent)
+        {
+            rateText[line.JwoComponentId] = line.Rate.ToString("0.00", CultureInfo.InvariantCulture);
+            return;
+        }
+        if (!rateText.TryGetValue(line.JwoComponentId, out var text) || !TryParseQuantity(text, out var value) || value < 0)
+            value = line.Rate;
+        line.Rate = Math.Max(0, value);
+        rateText[line.JwoComponentId] = line.Rate.ToString("0.00", CultureInfo.InvariantCulture);
+    }
+
+    private void HandleRateKeyDown(KeyboardEventArgs e, MaterialOutPendingComponent current)
+    {
+        if (e.Key == "Escape") { pendingFocusId = $"mo-qty-{current.JwoComponentId}"; return; }
+        if (e.Key != "Enter") return;
+        NormalizeRateText(current);
+        var lines = SelectedLines.ToList();
+        var index = lines.FindIndex(x => x.JwoComponentId == current.JwoComponentId);
+        pendingFocusId = index >= 0 && index + 1 < lines.Count ? $"mo-qty-{lines[index + 1].JwoComponentId}" : "mo-gst-eway";
+    }
+
+    private void GstEwaySelectionChanged(ChangeEventArgs e)
+    {
+        gstEwayBillDetails = e.Value?.ToString() == "Yes" ? "Yes" : "No";
+        if (gstEwayBillDetails == "Yes")
+        {
+            showEwayDetailsModal = true;
+            activeLookupKey = null;
+        }
+        else
+        {
+            pendingFocusId = "mo-narration";
+        }
+    }
+
+    private async Task HandleEwayModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            CloseEwayDetails();
+            return;
+        }
+        if (e.AltKey && string.Equals(e.Key, "a", StringComparison.OrdinalIgnoreCase))
+            await SaveFromEwayAsync();
+    }
+
+    private void AcceptEwayDetails()
+    {
+        showEwayDetailsModal = false;
+        message = "GST/e-Way Bill additional details accepted.";
+        messageIsError = false;
+        pendingFocusId = "mo-narration";
+    }
+
+    private void CloseEwayDetails()
+    {
+        showEwayDetailsModal = false;
+        pendingFocusId = "mo-gst-eway";
+    }
+
+    private async Task SaveFromEwayAsync()
+    {
+        showEwayDetailsModal = false;
+        await SaveVoucherAsync();
+    }
+
+    private async Task SaveVoucherAsync()
+    {
+        if (busy) return;
+        foreach (var line in SelectedLines) NormalizeQuantityText(line);
+        if (!TryBuildSaveRequest(out var request, out var validationMessage))
+        {
+            message = validationMessage;
+            messageIsError = true;
+            pendingFocusId = GetValidationFocusId(validationMessage);
+            return;
+        }
+
+        busy = true;
+        message = string.Empty;
+        try
+        {
+            var savedDestination = destinationGodownText;
+            var wasEditing = editingVoucherId is not null;
+            request.VoucherId = editingVoucherId ?? 0;
+            request.ConcurrencyToken = editingConcurrencyToken;
+            var result = editingVoucherId is null
+                ? await Repository.SaveAsync(request)
+                : await Repository.UpdateAsync(request);
+            var savedNumber = result.VoucherNumber;
+            if (!string.IsNullOrWhiteSpace(ReturnUrl))
+            {
+                Navigation.NavigateTo(ReturnUrl);
+                return;
+            }
+            await ResetAfterSaveAsync();
+            defaults = await Repository.GetEntryDefaultsAsync();
+            showForm = true;
+            message = $"Material Out {savedNumber} {(wasEditing ? "updated" : "saved")} successfully. Stock moved to {savedDestination}.";
+            messageIsError = false;
+            pendingFocusId = defaults.NumberingMode == "Manual" ? "mo-voucher-number" : "mo-job-worker";
+        }
+        catch (Exception ex)
+        {
+            message = VoucherErrorMessages.For(ex);
+            messageIsError = true;
+            pendingFocusId = "mo-save";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private bool TryBuildSaveRequest(out MaterialOutSaveRequest request, out string validationMessage)
+    {
+        request = new MaterialOutSaveRequest();
+        validationMessage = string.Empty;
+        if (selectedJobWorkerId is null)
+        {
+            validationMessage = "Select Party A/c Name.";
+            return false;
+        }
+        if (selectedOrder is null)
+        {
+            validationMessage = "Select a pending JWO / Order No.";
+            return false;
+        }
+        if (destinationGodownId is null)
+        {
+            validationMessage = "Select Jobber Destination Godown from the Godown lookup.";
+            return false;
+        }
+        if (defaults.NumberingMode == "Manual" && string.IsNullOrWhiteSpace(defaults.VoucherNumber))
+        {
+            validationMessage = "Voucher Number is required in Manual numbering mode.";
+            return false;
+        }
+
+        var lines = new List<MaterialOutSaveLine>();
+        foreach (var fg in selectedOrder.FinishedGoods)
+        {
+            foreach (var line in fg.Components.Where(x => x.IssueNowQuantity > 0))
+            {
+                if (line.SourceGodownId is null)
+                {
+                    validationMessage = $"Material Source Godown is missing for component {line.StockItemName}.";
+                    return false;
+                }
+                if (line.IssueNowQuantity > line.PendingQuantity)
+                {
+                    validationMessage = $"Issue Quantity for {line.StockItemName} exceeds pending quantity.";
+                    return false;
+                }
+                lines.Add(new MaterialOutSaveLine
+                {
+                    JwoFinishedGoodId = fg.JwoFinishedGoodId,
+                    JwoComponentId = line.JwoComponentId,
+                    StockItemId = line.StockItemId,
+                    UqcId = line.UqcId,
+                    SourceGodownId = line.SourceGodownId.Value,
+                    IssuedQuantity = line.IssueNowQuantity,
+                    Rate = line.Rate
+                });
+            }
+        }
+        if (lines.Count == 0)
+        {
+            validationMessage = "Enter at least one Issue Quantity greater than zero.";
+            return false;
+        }
+
+        request = new MaterialOutSaveRequest
+        {
+            VoucherId = editingVoucherId ?? 0,
+            ConcurrencyToken = editingConcurrencyToken,
+            VoucherTypeId = defaults.VoucherTypeId,
+            VoucherNumber = defaults.VoucherNumber,
+            VoucherDate = defaults.VoucherDate,
+            ReferenceNumber = defaults.ReferenceNumber,
+            Batch = batchText,
+            JobWorkerLedgerId = selectedJobWorkerId.Value,
+            JwoVoucherId = selectedOrder.JwoVoucherId,
+            DisplayedOrderNumber = orderNumberText,
+            DestinationGodownId = destinationGodownId.Value,
+            Narration = narration,
+            ProvideGstEwayDetails = gstEwayBillDetails == "Yes",
+            EwayDetails = BuildEwayDetails(),
+            Lines = lines
+        };
+        return true;
+    }
+
+    private MaterialOutEwayDetailsInput BuildEwayDetails() => new()
+    {
+        EwayBillNumber = ewayBillNumber,
+        EwayBillDate = ewayBillDate,
+        ConsolidatedEwayBillNumber = consolidatedEwayBillNumber,
+        ConsolidatedEwayBillDate = consolidatedEwayBillDate,
+        EwaySubType = ewaySubType,
+        EwayDocumentType = ewayDocumentType,
+        ConsignorMailingName = consignorMailingName,
+        ConsignorGstin = consignorGstin,
+        ConsignorState = consignorState,
+        ConsignorAddress1 = consignorAddress1,
+        ConsignorAddress2 = consignorAddress2,
+        ConsignorPincode = consignorPincode,
+        ConsignorPlace = consignorPlace,
+        ConsignorActualState = consignorActualState,
+        ConsigneeMailingName = consigneeMailingName,
+        ConsigneeGstin = consigneeGstin,
+        ConsigneeState = consigneeState,
+        ConsigneeAddress1 = consigneeAddress1,
+        ConsigneeAddress2 = consigneeAddress2,
+        ConsigneePincode = consigneePincode,
+        ConsigneePlace = consigneePlace,
+        ConsigneeActualState = consigneeActualState,
+        PinToPinDistance = pinToPinDistance,
+        TransporterName = transporterName,
+        TransporterId = transporterId,
+        TransportMode = transportMode,
+        TransportDocumentNumber = transportDocumentNumber,
+        TransportDocumentDate = transportDocumentDate,
+        VehicleNumber = vehicleNumber,
+        VehicleType = vehicleType
+    };
+
+    private static string GetValidationFocusId(string validationMessage)
+    {
+        if (validationMessage.Contains("Party", StringComparison.OrdinalIgnoreCase)) return "mo-job-worker";
+        if (validationMessage.Contains("JWO", StringComparison.OrdinalIgnoreCase)) return "mo-order-number";
+        if (validationMessage.Contains("Destination", StringComparison.OrdinalIgnoreCase)) return "mo-destination";
+        if (validationMessage.Contains("Voucher Number", StringComparison.OrdinalIgnoreCase)) return "mo-voucher-number";
+        return "mo-save";
+    }
+
+    private async Task ResetAfterSaveAsync()
+    {
+        defaults = await Repository.GetEntryDefaultsAsync();
+        editingVoucherId = null;
+        editingConcurrencyToken = string.Empty;
+        isCancelledVoucher = false;
+        selectedOrder = null;
+        selectedJobWorkerId = null;
+        destinationGodownId = null;
+        jobWorkerText = string.Empty;
+        destinationGodownText = string.Empty;
+        orderNumberText = string.Empty;
+        batchText = string.Empty;
+        orders.Clear();
+        quantityText.Clear();
+        rateText.Clear();
+        stockInHand.Clear();
+        activeLookupKey = null;
+        workerLookupIndex = -1;
+        orderLookupIndex = -1;
+        gstEwayBillDetails = "No";
+        narration = string.Empty;
+        showEwayDetailsModal = false;
+        ewayBillNumber = string.Empty;
+        ewayBillDate = null;
+        consolidatedEwayBillNumber = string.Empty;
+        consolidatedEwayBillDate = null;
+        transporterName = string.Empty;
+        transporterId = string.Empty;
+        transportDocumentNumber = string.Empty;
+        transportDocumentDate = null;
+        vehicleNumber = string.Empty;
+    }
+
+    private async Task HandlePageKeyDown(KeyboardEventArgs e)
+    {
+        if (showExitModal || showEwayDetailsModal || showDeleteModal || showCancelModal) return;
+        if (!showForm)
+        {
+            if (e.Key == "F4")
+            {
+                pendingFocusId = "mo-search";
+                return;
+            }
+            if (e.AltKey && string.Equals(e.Key, "c", StringComparison.OrdinalIgnoreCase))
+            {
+                await OpenCreate();
+                return;
+            }
+            if (e.Key == "Enter")
+            {
+                await OpenSelectedAsync();
+                return;
+            }
+            if (rows.Count > 0)
+            {
+                var changed = false;
+                if (e.Key is "ArrowDown" or "Down") { selectedIndex = Math.Min(selectedIndex + 1, rows.Count - 1); changed = true; }
+                else if (e.Key is "ArrowUp" or "Up") { selectedIndex = Math.Max(selectedIndex - 1, 0); changed = true; }
+                else if (e.Key == "PageDown") { selectedIndex = Math.Min(selectedIndex + 10, rows.Count - 1); changed = true; }
+                else if (e.Key == "PageUp") { selectedIndex = Math.Max(selectedIndex - 10, 0); changed = true; }
+                else if (e.Key == "Home") { selectedIndex = 0; changed = true; }
+                else if (e.Key == "End") { selectedIndex = rows.Count - 1; changed = true; }
+                if (changed) { pendingRowScroll = true; return; }
+            }
+            if (e.Key == "Escape") Navigation.NavigateTo("/");
+            return;
+        }
+        if (e.AltKey && string.Equals(e.Key, "x", StringComparison.OrdinalIgnoreCase) && editingVoucherId is not null && !isCancelledVoucher)
+        {
+            PromptCancelCurrent();
+            return;
+        }
+        if (e.AltKey && string.Equals(e.Key, "a", StringComparison.OrdinalIgnoreCase))
+        {
+            await SaveVoucherAsync();
+            return;
+        }
+        if (e.Key == "Escape") await HandleVoucherEscapeAsync();
+    }
+
+    private void SearchTextChanged(ChangeEventArgs e) => searchText = e.Value?.ToString() ?? string.Empty;
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ApplySearchAsync();
+        else if (e.Key == "Escape") pendingFocusId = "mo-page-root";
+    }
+
+    private async Task ApplySearchAsync()
+    {
+        selectedIndex = -1;
+        await LoadListAsync();
+        pendingFocusId = "mo-search";
+    }
+
+    private async Task ClearSearchAsync()
+    {
+        searchText = string.Empty;
+        selectedIndex = -1;
+        await LoadListAsync();
+        pendingFocusId = "mo-search";
+    }
+
+    private async Task HandleVoucherEscapeAsync()
+    {
+        exitReturnFocusId = await JS.InvokeAsync<string?>("texTrackKeyboardContexts.getActiveElementId");
+        var isDirty = await JS.InvokeAsync<bool>("texTrackKeyboardContexts.isVoucherDirty", "material-out-form");
+        if (!isDirty)
+        {
+            ConfirmExitVoucher();
+            return;
+        }
+
+        activeLookupKey = null;
+        showExitModal = true;
+        exitModalSelectYes = true;
+        pendingFocusId = "mo-exit-yes";
+    }
+
+    private void HandleExitModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "ArrowLeft" or "ArrowRight" or "Tab")
+        {
+            exitModalSelectYes = !exitModalSelectYes;
+            pendingFocusId = exitModalSelectYes ? "mo-exit-yes" : "mo-exit-no";
+            return;
+        }
+        if (e.Key == "Enter")
+        {
+            if (exitModalSelectYes) ConfirmExitVoucher(); else CancelExitVoucher();
+            return;
+        }
+        if (string.Equals(e.Key, "y", StringComparison.OrdinalIgnoreCase))
+        {
+            ConfirmExitVoucher();
+            return;
+        }
+        if (string.Equals(e.Key, "n", StringComparison.OrdinalIgnoreCase))
+        {
+            CancelExitVoucher();
+            return;
+        }
+        if (e.Key == "Escape") CancelExitVoucher();
+    }
+
+    private void ConfirmExitVoucher()
+    {
+        if (!string.IsNullOrWhiteSpace(ReturnUrl))
+        {
+            Navigation.NavigateTo(ReturnUrl);
+            return;
+        }
+        Navigation.NavigateTo("/");
+    }
+
+    private void CancelExitVoucher()
+    {
+        showExitModal = false;
+        pendingFocusId = exitReturnFocusId ?? "mo-form-root";
+        exitReturnFocusId = null;
+    }
+
+    private void PromptDeleteSelected()
+    {
+        if (selectedIndex < 0 || selectedIndex >= rows.Count) return;
+        actionVoucherId = rows[selectedIndex].Id;
+        currentActionVoucherNumber = rows[selectedIndex].VoucherNumber;
+        showDeleteModal = true;
+        actionModalSelectYes = false;
+        actionMessage = string.Empty;
+        pendingFocusId = "mo-delete-no";
+    }
+
+    private void PromptDeleteCurrent()
+    {
+        if (editingVoucherId is null) return;
+        actionVoucherId = editingVoucherId;
+        currentActionVoucherNumber = defaults.VoucherNumber;
+        showDeleteModal = true;
+        actionModalSelectYes = false;
+        actionMessage = string.Empty;
+        pendingFocusId = "mo-delete-no";
+    }
+
+    private void PromptCancelCurrent()
+    {
+        if (editingVoucherId is null || isCancelledVoucher) return;
+        actionVoucherId = editingVoucherId;
+        currentActionVoucherNumber = defaults.VoucherNumber;
+        cancellationReason = string.Empty;
+        actionMessage = string.Empty;
+        showCancelModal = true;
+        pendingFocusId = "mo-cancel-reason";
+    }
+
+    private void HandleDeleteModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "ArrowLeft" or "ArrowRight" or "Tab")
+        {
+            actionModalSelectYes = !actionModalSelectYes;
+            pendingFocusId = actionModalSelectYes ? "mo-delete-yes" : "mo-delete-no";
+        }
+        else if (e.Key == "Enter")
+        {
+            if (actionModalSelectYes) _ = ConfirmDeleteAsync(); else CloseDeleteModal();
+        }
+        else if (e.Key == "Escape") CloseDeleteModal();
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (actionVoucherId is null || busy) return;
+        busy = true;
+        try
+        {
+            var result = await Repository.DeleteAsync(actionVoucherId.Value);
+            if (!result.Success)
+            {
+                actionMessage = result.Message;
+                return;
+            }
+            showDeleteModal = false;
+            editingVoucherId = null;
+            if (!string.IsNullOrWhiteSpace(ReturnUrl)) { Navigation.NavigateTo(ReturnUrl); return; }
+            await OpenCreate();
+            message = result.Message;
+            messageIsError = false;
+            pendingFocusId = defaults.NumberingMode == "Manual" ? "mo-voucher-number" : "mo-job-worker";
+        }
+        finally { busy = false; }
+    }
+
+    private void CloseDeleteModal()
+    {
+        showDeleteModal = false;
+        actionVoucherId = null;
+        pendingFocusId = showForm ? "mo-job-worker" : "mo-page-root";
+    }
+
+    private void HandleCancelModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") { CloseCancelModal(); return; }
+        if (e.AltKey && string.Equals(e.Key, "x", StringComparison.OrdinalIgnoreCase))
+            _ = ConfirmCancelAsync();
+    }
+
+    private async Task ConfirmCancelAsync()
+    {
+        if (actionVoucherId is null || busy) return;
+        if (string.IsNullOrWhiteSpace(cancellationReason))
+        {
+            actionMessage = "Cancellation reason is required.";
+            pendingFocusId = "mo-cancel-reason";
+            return;
+        }
+        busy = true;
+        try
+        {
+            var result = await Repository.CancelAsync(actionVoucherId.Value, cancellationReason);
+            if (!result.Success)
+            {
+                actionMessage = result.Message;
+                return;
+            }
+            showCancelModal = false;
+            editingVoucherId = null;
+            if (!string.IsNullOrWhiteSpace(ReturnUrl)) { Navigation.NavigateTo(ReturnUrl); return; }
+            await OpenCreate();
+            message = result.Message;
+            messageIsError = false;
+            pendingFocusId = defaults.NumberingMode == "Manual" ? "mo-voucher-number" : "mo-job-worker";
+        }
+        finally { busy = false; }
+    }
+
+    private void CloseCancelModal()
+    {
+        showCancelModal = false;
+        actionVoucherId = null;
+        actionMessage = string.Empty;
+        pendingFocusId = "mo-save";
+    }
+
+    private void ApplyEwayDetails(MaterialOutEwayDetailsInput e)
+    {
+        ewayBillNumber = e.EwayBillNumber;
+        ewayBillDate = e.EwayBillDate;
+        consolidatedEwayBillNumber = e.ConsolidatedEwayBillNumber;
+        consolidatedEwayBillDate = e.ConsolidatedEwayBillDate;
+        ewaySubType = e.EwaySubType;
+        ewayDocumentType = e.EwayDocumentType;
+        consignorMailingName = e.ConsignorMailingName;
+        consignorGstin = e.ConsignorGstin;
+        consignorState = e.ConsignorState;
+        consignorAddress1 = e.ConsignorAddress1;
+        consignorAddress2 = e.ConsignorAddress2;
+        consignorPincode = e.ConsignorPincode;
+        consignorPlace = e.ConsignorPlace;
+        consignorActualState = e.ConsignorActualState;
+        consigneeMailingName = e.ConsigneeMailingName;
+        consigneeGstin = e.ConsigneeGstin;
+        consigneeState = e.ConsigneeState;
+        consigneeAddress1 = e.ConsigneeAddress1;
+        consigneeAddress2 = e.ConsigneeAddress2;
+        consigneePincode = e.ConsigneePincode;
+        consigneePlace = e.ConsigneePlace;
+        consigneeActualState = e.ConsigneeActualState;
+        pinToPinDistance = e.PinToPinDistance;
+        transporterName = e.TransporterName;
+        transporterId = e.TransporterId;
+        transportMode = e.TransportMode;
+        transportDocumentNumber = e.TransportDocumentNumber;
+        transportDocumentDate = e.TransportDocumentDate;
+        vehicleNumber = e.VehicleNumber;
+        vehicleType = e.VehicleType;
+    }
+
+    private static string FormatQuantity(decimal value, int decimals) => value.ToString($"F{Math.Clamp(decimals, 0, 6)}");
+    private static int GetOrderDecimalPlaces(MaterialOutPendingOrder order) =>
+        order.FinishedGoods.SelectMany(x => x.Components).Select(x => x.DecimalPlaces).DefaultIfEmpty(2).Max();
+    private static int GetFinishedGoodDecimalPlaces(MaterialOutPendingFinishedGood fg) =>
+        fg.Components.Select(x => x.DecimalPlaces).DefaultIfEmpty(2).Max();
+    private string FormatTotalQuantity()
+    {
+        var lines = SelectedLines.ToList();
+        if (lines.Count == 0) return string.Empty;
+        var decimals = lines.Max(x => x.DecimalPlaces);
+        return FormatQuantity(lines.Sum(x => x.IssueNowQuantity), decimals);
+    }
+}

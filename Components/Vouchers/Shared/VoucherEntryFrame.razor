@@ -1,0 +1,50 @@
+@namespace TexTrack.Web.Components.Vouchers.Shared
+
+<CascadingValue Value="Profile" IsFixed="true">
+    <section id="@Id" class="tt-voucher-entry @Class" tabindex="0" data-voucher-profile="@Profile.Key"
+             data-enter-navigation="true" data-tt-voucher-form-root="true">
+        <header class="tt-voucher-titlebar">
+            <div class="tt-voucher-identity">
+                <strong class="tt-voucher-title">@Title</strong>
+                @if (VoucherNumberContent is not null)
+                {
+                    <div class="tt-voucher-number">@VoucherNumberContent</div>
+                }
+            </div>
+            @if (TitlebarActionsContent is not null)
+            {
+                @TitlebarActionsContent
+            }
+            <div class="tt-voucher-date-block">
+                @if (DateContent is not null)
+                {
+                    <div class="tt-voucher-date">@DateContent</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(DayText))
+                {
+                    <span class="tt-voucher-day">@DayText</span>
+                }
+            </div>
+        </header>
+
+        @if (MessageContent is not null)
+        {
+            <div class="tt-voucher-message">@MessageContent</div>
+        }
+
+        <div class="tt-voucher-body">@ChildContent</div>
+    </section>
+</CascadingValue>
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public VoucherLayoutProfile Profile { get; set; } = VoucherLayoutProfiles.Placeholder("voucher");
+    [Parameter] public string? DayText { get; set; }
+    [Parameter] public RenderFragment? VoucherNumberContent { get; set; }
+    [Parameter] public RenderFragment? DateContent { get; set; }
+    [Parameter] public RenderFragment? TitlebarActionsContent { get; set; }
+    [Parameter] public RenderFragment? MessageContent { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -1,0 +1,971 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject DatabaseStatus Database
+@inject CurrentCompanyContext CurrentCompany
+@inject CurrentPeriodContext CurrentPeriod
+@inject GlobalOperationState GlobalOperations
+@using TexTrack.Web.Components.Assistant
+
+<KeyboardContextHost />
+<button id="tt-period-change-command" type="button" class="keyboard-action-proxy" tabindex="-1" aria-hidden="true"
+        @onclick="OpenPeriodDialog"></button>
+<button id="tt-masters-menu-command" type="button" class="keyboard-action-proxy" tabindex="-1" aria-hidden="true"
+        @onclick="OpenMastersMenu"></button>
+<button id="tt-entries-menu-command" type="button" class="keyboard-action-proxy" tabindex="-1" aria-hidden="true"
+        @onclick="OpenEntriesMenu"></button>
+<button id="tt-reports-menu-command" type="button" class="keyboard-action-proxy" tabindex="-1" aria-hidden="true"
+        @onclick="OpenReportsMenu"></button>
+<button id="tt-leave-page-command" type="button" class="keyboard-action-proxy" tabindex="-1" aria-hidden="true"
+        @onclick="LeaveCurrentPage"></button>
+
+<div class="app-shell @(IsVoucherRoute ? "voucher-shell" : "desk-shell")" @onkeydown="HandleKeyDown" tabindex="0" @ref="shell">
+    <nav class="topbar" aria-label="TexTrack ERP">
+        <div class="brand">
+            <span class="brand-mark">TT</span>
+            <span class="brand-copy">
+                <strong>TexTrack</strong>
+            </span>
+        </div>
+
+        <div class="topnav" aria-label="Main navigation">
+            <button type="button" class="@(IsActiveArea("masters") ? "active" : null)" @onclick="OpenMastersMenu">
+                <span class="menu-label"><u>M</u>asters</span>
+                <span class="menu-shortcut">Alt+M</span>
+            </button>
+            <button type="button" class="@(IsActiveArea("entries") ? "active" : null)" @onclick="OpenEntriesMenu">
+                <span class="menu-label"><u>E</u>ntries</span>
+                <span class="menu-shortcut">Alt+T</span>
+            </button>
+            <button type="button" class="@(IsActiveArea("reports") ? "active" : null)" @onclick="OpenReportsMenu">
+                <span class="menu-label"><u>R</u>eports</span>
+                <span class="menu-shortcut">Alt+R</span>
+            </button>
+            <button type="button" class="@(IsActiveArea("settings") ? "active" : null)" @onclick="OpenSettingsMenu">
+                <span class="menu-label"><u>S</u>ettings</span>
+            </button>
+        </div>
+
+        <div class="sidebar-spacer">
+            <AssistantPanel @ref="assistantPanel" />
+        </div>
+
+        <div class="company">
+            <span class="company-name">@CurrentCompany.CompanyName</span>
+            <span class="company-meta">
+                <span class="db-dot @(Database.IsConnected ? "online" : "offline")"></span>
+                FY @CurrentCompany.FinancialYearName
+            </span>
+        </div>
+        <div class="sidebar-foot">
+            <span class="status-database @(Database.IsConnected ? "connected" : "disconnected")">
+                @(Database.IsConnected ? "PostgreSQL Connected" : "Database Offline")
+            </span>
+            <span class="build-version">v0.6 Build 3.1</span>
+        </div>
+    </nav>
+
+    @if (openMenu is not null)
+    {
+        <div class="menu-overlay" @onclick="CloseMenu">
+            <section id="textrack-dropdown-menu" class="dropdown-menu" data-tt-menu-root="true" @onclick:stopPropagation="true" aria-label="@GetMenuHeading(openMenu)">
+                <div class="dropdown-heading">
+                    <h2>@GetMenuHeading(openMenu)</h2>
+                    <span>↑/↓ Move · Enter Open · ← Back · Esc Close</span>
+                </div>
+
+                @if (openMenu == MastersMenuName)
+                {
+                    @for (var i = 0; i < MasterGroups.Length; i++)
+                    {
+                        var groupIndex = i;
+                        var group = MasterGroups[groupIndex];
+                        <div class="master-menu-group">
+                            <button id="masters-item-@groupIndex" type="button"
+                                    class="master-menu-group-button @(currentMenuIndex == groupIndex ? "keyboard-selected" : null)"
+                                    data-tt-menu-item="true" data-tt-kind="group" aria-expanded="@(openMasterGroup == group.Key ? "true" : "false")"
+                                    @onfocus="() => FocusMasterGroup(groupIndex)"
+                                    @onclick="() => ToggleMasterGroupFromMouse(groupIndex)">
+                                <span>@group.Text</span><span>@(openMasterGroup == group.Key ? "⌄" : "›")</span>
+                            </button>
+                            @if (openMasterGroup == group.Key)
+                            {
+                                <div class="master-menu-children">
+                                    @for (var childIndex = 0; childIndex < group.Items.Length; childIndex++)
+                                    {
+                                        var child = group.Items[childIndex];
+                                        <a id="masters-child-@groupIndex-@childIndex"
+                                           href="@child.Href"
+                                           class="menu-link @(currentMenuIndex == groupIndex && currentMasterChildIndex == childIndex ? "keyboard-selected" : null)"
+                                           data-tt-menu-item="true" data-tt-kind="link" data-tt-parent="masters-item-@groupIndex"
+                                           @onfocus="() => FocusMasterChild(groupIndex, childIndex)"
+                                           @onclick="() => RememberMasterChild(groupIndex, childIndex)">
+                                            <span>@child.Text</span><span class="menu-chevron">›</span>
+                                        </a>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else if (openMenu == EntriesMenuName)
+                {
+                    @for (var i = 0; i < EntryMenu.Length; i++)
+                    {
+                        var index = i;
+                        var item = EntryMenu[index];
+                        <a id="entries-item-@index"
+                           href="@item.Href"
+                           class="menu-link @(currentMenuIndex == index ? "keyboard-selected" : null)"
+                           data-tt-menu-item="true" data-tt-kind="link"
+                           @onfocus="() => currentMenuIndex = index"
+                           @onclick="() => RememberMenuItem(EntriesMenuName, index)">
+                            <span>@item.Text</span>
+                            <span class="menu-chevron">›</span>
+                        </a>
+                    }
+                }
+                else if (openMenu == ReportsMenuName)
+                {
+                    @for (var i = 0; i < ReportMenu.Length; i++)
+                    {
+                        var index = i; var item = ReportMenu[index];
+                        <div class="master-menu-group">
+                            @if (item.Href is not null)
+                            {
+                                <a id="reports-item-@index" href="@item.Href"
+                                   class="menu-link @(currentMenuIndex == index ? "keyboard-selected" : null)"
+                                   data-tt-menu-item="true" data-tt-kind="link"
+                                   @onfocus="() => FocusReportItem(index)" @onclick="() => RememberReportItem(index)">
+                                    <span>@item.Text</span><span class="menu-chevron">›</span>
+                                </a>
+                            }
+                            else
+                            {
+                                <button id="reports-item-@index" type="button"
+                                        class="master-menu-group-button @(currentMenuIndex == index ? "keyboard-selected" : null)"
+                                        data-tt-menu-item="true" data-tt-kind="group" aria-expanded="@(openReportGroup == item.Key ? "true" : "false")"
+                                        @onfocus="() => FocusReportItem(index)" @onclick="() => ToggleReportGroupFromMouse(index)">
+                                    <span>@item.Text</span><span>@(openReportGroup == item.Key ? "⌄" : "›")</span>
+                                </button>
+                                @if (openReportGroup == item.Key)
+                                {
+                                    <div class="master-menu-children">
+                                    @for (var childIndex = 0; childIndex < item.Items.Length; childIndex++)
+                                    {
+                                        var child = item.Items[childIndex];
+                                        <a id="reports-child-@index-@childIndex" href="@child.Href"
+                                           class="menu-link @(currentMenuIndex == index && currentReportChildIndex == childIndex ? "keyboard-selected" : null)"
+                                           data-tt-menu-item="true" data-tt-kind="link" data-tt-parent="reports-item-@index"
+                                           @onfocus="() => FocusReportChild(index, childIndex)" @onclick="() => RememberReportChild(index, childIndex)">
+                                            <span>@child.Text</span><span class="menu-chevron">›</span>
+                                        </a>
+                                    }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                }
+                else if (openMenu == SettingsMenuName)
+                {
+                    @for (var i = 0; i < SettingsMenu.Length; i++)
+                    {
+                        var index = i;
+                        var item = SettingsMenu[index];
+                        <a id="settings-item-@index" href="@item.Href"
+                           class="menu-link @(currentMenuIndex == index ? "keyboard-selected" : null)"
+                           data-tt-menu-item="true" data-tt-kind="link"
+                           @onfocus="() => currentMenuIndex = index"
+                           @onclick="() => RememberMenuItem(SettingsMenuName, index)">
+                            <span>@item.Text</span><span class="menu-chevron">›</span>
+                        </a>
+                    }
+                }
+            </section>
+        </div>
+    }
+
+    @if (showExitModal)
+    {
+        <div class="tt-dialog-overlay" role="presentation">
+            <section class="tt-dialog" role="dialog" aria-modal="true" aria-labelledby="shell-exit-title"
+                     tabindex="0" @onkeydown="HandleShellExitModalKeyDown" @onkeydown:stopPropagation="true" @onkeydown:preventDefault="true">
+                <header class="tt-dialog-titlebar">
+                    <strong id="shell-exit-title">Exit Voucher?</strong>
+                </header>
+                <div class="tt-dialog-body">
+                    <p>Do you want to exit this voucher?</p>
+                </div>
+                <footer class="tt-dialog-actions">
+                    <button id="shell-exit-yes" type="button" class="@(exitModalSelectYes ? "dialog-selected" : null)"
+                            @onclick="ConfirmShellExit">Yes</button>
+                    <button id="shell-exit-no" type="button" class="@(!exitModalSelectYes ? "dialog-selected" : null)"
+                            @onclick="CancelShellExit">No</button>
+                </footer>
+                <div class="tt-dialog-hint">←/→ Select · Enter Confirm · Esc Cancel</div>
+            </section>
+        </div>
+    }
+
+    @if (showPeriodModal)
+    {
+        <div class="tt-dialog-overlay" role="presentation">
+            <section id="tt-period-dialog" class="tt-dialog tt-period-dialog" role="dialog" aria-modal="true" data-tt-date-navigation="true"
+                     aria-labelledby="tt-period-title" tabindex="-1"
+                     @onkeydown="HandlePeriodDialogKeyDown" @onkeydown:stopPropagation="true">
+                <header class="tt-dialog-titlebar">
+                    <strong id="tt-period-title">Change Active Period</strong>
+                </header>
+                <div class="tt-dialog-body tt-period-body">
+                    <label for="tt-period-from">From</label>
+                    <FlexibleDateInput Id="tt-period-from" Value="draftPeriodFrom" ValueChanged="SetDraftPeriodFrom" BasisDate="CurrentPeriod.From" />
+                    <label for="tt-period-to">To</label>
+                    <FlexibleDateInput Id="tt-period-to" Value="draftPeriodTo" ValueChanged="SetDraftPeriodTo" BasisDate="CurrentPeriod.To" />
+                    @if (!string.IsNullOrWhiteSpace(periodError))
+                    {
+                        <p class="tt-period-error" role="alert">@periodError</p>
+                    }
+                </div>
+                <footer class="tt-dialog-actions">
+                    <button type="button" data-tt-modal-accept="true" data-enter-save="true" class="action-save" @onclick="ApplyPeriod">Alt+A Accept</button>
+                    <button type="button" @onclick="CancelPeriodDialog">Esc Cancel</button>
+                </footer>
+                <div class="tt-dialog-hint">Alt+A Accept · Esc Cancel</div>
+            </section>
+        </div>
+    }
+
+    <div class="app-main">
+        <main class="workspace">
+            @Body
+        </main>
+    </div>
+</div>
+
+@if (GlobalOperations.IsBusy)
+{
+    <div class="tt-global-busy" role="alert" aria-live="assertive" aria-busy="true">
+        <section><span class="tt-global-spinner" aria-hidden="true"></span><strong>@GlobalOperations.Message</strong><small>Please wait. TexTrack will unlock automatically when the operation finishes.</small></section>
+    </div>
+}
+
+@code {
+    private const string MastersMenuName = "masters";
+    private const string EntriesMenuName = "entries";
+    private const string ReportsMenuName = "reports";
+    private const string SettingsMenuName = "settings";
+
+    private string? openMenu;
+    private string? lastOriginMenu;
+    private int lastOriginIndex;
+    private int lastOriginChildIndex = -1;
+    private int currentMenuIndex;
+    private string? openMasterGroup;
+    private string? openReportGroup;
+    private int currentMasterChildIndex = -1;
+    private int currentReportChildIndex = -1;
+    private string? pendingFocusId;
+    private ElementReference shell;
+    private bool pendingPageFocus;
+    private bool pendingRestoreDashboardFocus;
+    private bool showExitModal;
+    private bool exitModalSelectYes;
+    private bool showPeriodModal;
+    private DateOnly draftPeriodFrom = new(2026, 4, 1);
+    private AssistantPanel? assistantPanel;
+    private DateOnly draftPeriodTo = new(2027, 3, 31);
+    private string? periodError;
+    private string? periodReturnFocusId;
+
+    private string CurrentRoute => Navigation.ToBaseRelativePath(Navigation.Uri).TrimStart('/');
+
+    private bool IsVoucherRoute => CurrentRoute.StartsWith("vouchers/", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsActiveArea(string area) => area switch
+    {
+        MastersMenuName => CurrentRoute.StartsWith("masters/", StringComparison.OrdinalIgnoreCase),
+        EntriesMenuName => IsVoucherRoute,
+        ReportsMenuName => CurrentRoute.StartsWith("reports/", StringComparison.OrdinalIgnoreCase),
+        SettingsMenuName => CurrentRoute.StartsWith("settings/", StringComparison.OrdinalIgnoreCase),
+        _ => false
+    };
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += HandleLocationChanged;
+        GlobalOperations.Changed += HandleGlobalOperationChanged;
+    }
+
+    private void HandleGlobalOperationChanged() => _ = InvokeAsync(StateHasChanged);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            pendingPageFocus = true;
+        }
+
+        // Exactly one of these fires per after-render pass. Both used to be able
+        // to fire together after an Escape-triggered return to Dashboard (one
+        // requesting a specific menu item, the other requesting a generic page
+        // root), which raced two independent JS retry loops against each other.
+        // An explicit target always wins over the generic page-root fallback.
+        if (pendingFocusId is not null)
+        {
+            var focusId = pendingFocusId;
+            pendingFocusId = null;
+            pendingPageFocus = false;
+            pendingRestoreDashboardFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusById", focusId);
+        }
+        else if (pendingRestoreDashboardFocus)
+        {
+            pendingRestoreDashboardFocus = false;
+            pendingPageFocus = false;
+            await JS.InvokeVoidAsync("texTrackRestoreDashboardFocus");
+        }
+        else if (pendingPageFocus)
+        {
+            pendingPageFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusPageRoot");
+        }
+    }
+
+    private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
+    {
+        openMenu = null;
+        openMasterGroup = null;
+        currentMasterChildIndex = -1;
+        pendingFocusId = null;
+        pendingRestoreDashboardFocus = false;
+        pendingPageFocus = true;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
+        GlobalOperations.Changed -= HandleGlobalOperationChanged;
+    }
+
+    private void OpenMastersMenu() => ToggleMenu(MastersMenuName);
+    private void OpenEntriesMenu() => ToggleMenu(EntriesMenuName);
+    private void OpenReportsMenu() => ToggleMenu(ReportsMenuName);
+    private void OpenSettingsMenu() => ToggleMenu(SettingsMenuName);
+
+    private void ToggleMenu(string name)
+    {
+        if (openMenu == name)
+        {
+            CloseMenu();
+            return;
+        }
+
+        // Before opening the menu, remember which Dashboard item has focus
+        // so we can restore it when Esc closes the menu
+        _ = JS.InvokeVoidAsync("texTrackRememberDashboardFocus");
+
+        openMenu = name;
+        currentMenuIndex = lastOriginMenu == name ? lastOriginIndex : 0;
+        currentMasterChildIndex = -1;
+
+        if (name == MastersMenuName && lastOriginMenu == MastersMenuName && lastOriginChildIndex >= 0)
+        {
+            openMasterGroup = MasterGroups[currentMenuIndex].Key;
+            currentMasterChildIndex = Math.Min(lastOriginChildIndex, MasterGroups[currentMenuIndex].Items.Length - 1);
+            pendingFocusId = $"masters-child-{currentMenuIndex}-{currentMasterChildIndex}";
+        }
+        else if (name == ReportsMenuName && lastOriginMenu == ReportsMenuName && lastOriginChildIndex >= 0 && ReportMenu[currentMenuIndex].Items.Length > 0)
+        {
+            openReportGroup = ReportMenu[currentMenuIndex].Key;
+            currentReportChildIndex = Math.Min(lastOriginChildIndex, ReportMenu[currentMenuIndex].Items.Length - 1);
+            pendingFocusId = $"reports-child-{currentMenuIndex}-{currentReportChildIndex}";
+        }
+        else if (name is MastersMenuName or EntriesMenuName or ReportsMenuName or SettingsMenuName)
+        {
+            pendingFocusId = $"{name}-item-{currentMenuIndex}";
+        }
+    }
+
+    private void CloseMenu()
+    {
+        openMenu = null;
+        openMasterGroup = null;
+        currentMasterChildIndex = -1;
+        pendingFocusId = null;
+        pendingRestoreDashboardFocus = true;
+    }
+
+    private void RememberMenuItem(string menu, int index)
+    {
+        lastOriginMenu = menu;
+        lastOriginIndex = index;
+        if (menu is not MastersMenuName and not ReportsMenuName) lastOriginChildIndex = -1;
+        currentMenuIndex = index;
+        openMenu = null;
+    }
+
+    private void GoToMenuItem(string menu, int index, string href)
+    {
+        RememberMenuItem(menu, index);
+        Navigation.NavigateTo(href);
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (GlobalOperations.IsBusy) return;
+        if (e.CtrlKey && (e.Key == " " || e.Code == "Space"))
+        {
+            if (assistantPanel is not null) await assistantPanel.ToggleAsync();
+            return;
+        }
+        if (e.AltKey && e.Key.Equals("m", StringComparison.OrdinalIgnoreCase))
+        {
+            ToggleMenu(MastersMenuName);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (e.AltKey && (e.Key.Equals("t", StringComparison.OrdinalIgnoreCase) ||
+                         e.Key.Equals("e", StringComparison.OrdinalIgnoreCase)))
+        {
+            ToggleMenu(EntriesMenuName);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (e.AltKey && e.Key.Equals("r", StringComparison.OrdinalIgnoreCase))
+        {
+            ToggleMenu(ReportsMenuName);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (openMenu == MastersMenuName)
+        {
+            var group = MasterGroups[currentMenuIndex];
+            var navigatingChildren = openMasterGroup == group.Key && currentMasterChildIndex >= 0;
+
+            if (e.Key == "Escape" && openMasterGroup is not null)
+            {
+                openMasterGroup = null;
+                currentMasterChildIndex = -1;
+                pendingFocusId = $"masters-item-{currentMenuIndex}";
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            if (navigatingChildren)
+            {
+                if (e.Key is "ArrowDown" or "Down")
+                {
+                    currentMasterChildIndex = (currentMasterChildIndex + 1) % group.Items.Length;
+                    SetPendingMenuFocus();
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+                if (e.Key is "ArrowUp" or "Up")
+                {
+                    currentMasterChildIndex = (currentMasterChildIndex - 1 + group.Items.Length) % group.Items.Length;
+                    SetPendingMenuFocus();
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+                if (e.Key == "Home")
+                {
+                    currentMasterChildIndex = 0;
+                    SetPendingMenuFocus();
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+                if (e.Key == "End")
+                {
+                    currentMasterChildIndex = group.Items.Length - 1;
+                    SetPendingMenuFocus();
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+                if (e.Key is "ArrowLeft" or "Left")
+                {
+                    currentMasterChildIndex = -1;
+                    pendingFocusId = $"masters-item-{currentMenuIndex}";
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+                if (e.Key == "Enter")
+                {
+                    GoToMasterChild(currentMenuIndex, currentMasterChildIndex);
+                    return;
+                }
+            }
+            else
+            {
+                if (e.Key is "ArrowDown" or "Down")
+                {
+                    currentMenuIndex = (currentMenuIndex + 1) % MasterGroups.Length;
+                    currentMasterChildIndex = -1;
+                    SetPendingMenuFocus();
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+                if (e.Key is "ArrowUp" or "Up")
+                {
+                    currentMenuIndex = (currentMenuIndex - 1 + MasterGroups.Length) % MasterGroups.Length;
+                    currentMasterChildIndex = -1;
+                    SetPendingMenuFocus();
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+                if (e.Key == "Home")
+                {
+                    currentMenuIndex = 0;
+                    SetPendingMenuFocus();
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+                if (e.Key == "End")
+                {
+                    currentMenuIndex = MasterGroups.Length - 1;
+                    SetPendingMenuFocus();
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+                if (e.Key is "ArrowRight" or "Right" or "Enter")
+                {
+                    openMasterGroup = group.Key;
+                    currentMasterChildIndex = 0;
+                    SetPendingMenuFocus();
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+            }
+        }
+        else if (openMenu == ReportsMenuName)
+        {
+            var node = ReportMenu[currentMenuIndex];
+            var inChildren = openReportGroup == node.Key && currentReportChildIndex >= 0;
+            if (e.Key == "Escape" && openReportGroup is not null)
+            {
+                openReportGroup = null; currentReportChildIndex = -1;
+                pendingFocusId = $"reports-item-{currentMenuIndex}";
+                await InvokeAsync(StateHasChanged); return;
+            }
+            if (inChildren)
+            {
+                if (e.Key is "ArrowDown" or "Down") currentReportChildIndex = (currentReportChildIndex + 1) % node.Items.Length;
+                else if (e.Key is "ArrowUp" or "Up") currentReportChildIndex = (currentReportChildIndex - 1 + node.Items.Length) % node.Items.Length;
+                else if (e.Key == "Home") currentReportChildIndex = 0;
+                else if (e.Key == "End") currentReportChildIndex = node.Items.Length - 1;
+                else if (e.Key is "ArrowLeft" or "Left") { currentReportChildIndex = -1; pendingFocusId = $"reports-item-{currentMenuIndex}"; await InvokeAsync(StateHasChanged); return; }
+                else if (e.Key == "Enter") { GoToReportChild(currentMenuIndex, currentReportChildIndex); return; }
+                else goto ReportKeysDone;
+                SetPendingMenuFocus(); await InvokeAsync(StateHasChanged); return;
+            }
+            if (e.Key is "ArrowDown" or "Down") currentMenuIndex = (currentMenuIndex + 1) % ReportMenu.Length;
+            else if (e.Key is "ArrowUp" or "Up") currentMenuIndex = (currentMenuIndex - 1 + ReportMenu.Length) % ReportMenu.Length;
+            else if (e.Key == "Home") currentMenuIndex = 0;
+            else if (e.Key == "End") currentMenuIndex = ReportMenu.Length - 1;
+            else if (e.Key is "ArrowRight" or "Right" or "Enter") { ActivateCurrentMenuItem(); await InvokeAsync(StateHasChanged); return; }
+            else goto ReportKeysDone;
+            currentReportChildIndex = -1; SetPendingMenuFocus(); await InvokeAsync(StateHasChanged); return;
+        }
+        else if (openMenu == EntriesMenuName)
+        {
+            var itemCount = EntryMenu.Length;
+            if (e.Key is "ArrowDown" or "Down") currentMenuIndex = (currentMenuIndex + 1) % itemCount;
+            else if (e.Key is "ArrowUp" or "Up") currentMenuIndex = (currentMenuIndex - 1 + itemCount) % itemCount;
+            else if (e.Key == "Home") currentMenuIndex = 0;
+            else if (e.Key == "End") currentMenuIndex = itemCount - 1;
+            else if (e.Key == "Enter") { ActivateCurrentMenuItem(); return; }
+            else goto ReportKeysDone;
+            SetPendingMenuFocus(); await InvokeAsync(StateHasChanged); return;
+        }
+        else if (openMenu == SettingsMenuName)
+        {
+            var itemCount = SettingsMenu.Length;
+            if (e.Key is "ArrowDown" or "Down") currentMenuIndex = (currentMenuIndex + 1) % itemCount;
+            else if (e.Key is "ArrowUp" or "Up") currentMenuIndex = (currentMenuIndex - 1 + itemCount) % itemCount;
+            else if (e.Key == "Home") currentMenuIndex = 0;
+            else if (e.Key == "End") currentMenuIndex = itemCount - 1;
+            else if (e.Key == "Enter") { ActivateCurrentMenuItem(); return; }
+            else goto ReportKeysDone;
+            SetPendingMenuFocus(); await InvokeAsync(StateHasChanged); return;
+        }
+        ReportKeysDone:
+
+        if (e.Key == "Escape")
+        {
+            if (openMenu is not null)
+            {
+                CloseMenu();
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            var relativePath = Navigation.ToBaseRelativePath(Navigation.Uri);
+            if (string.IsNullOrWhiteSpace(relativePath)) return;
+
+            if (relativePath.StartsWith("reports/", StringComparison.OrdinalIgnoreCase)) return;
+
+            if (relativePath.StartsWith("vouchers/", StringComparison.OrdinalIgnoreCase))
+            {
+                // First Escape unfocuses the current field back to the page/form
+                // root without leaving the page. Only a second Escape (active
+                // element already at that root) reaches the exit confirmation.
+                var blurred = await JS.InvokeAsync<bool>("texTrackBlurActiveElement");
+                if (blurred) return;
+
+                RequestShellExit();
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            LeaveCurrentPage();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void RequestShellExit()
+    {
+        showExitModal = true;
+        exitModalSelectYes = false;
+        pendingFocusId = "shell-exit-no";
+    }
+
+    private async Task HandleShellExitModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "ArrowLeft" or "Left" or "ArrowRight" or "Right" or "Tab")
+        {
+            exitModalSelectYes = !exitModalSelectYes;
+            pendingFocusId = exitModalSelectYes ? "shell-exit-yes" : "shell-exit-no";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (e.Key == "Enter")
+        {
+            if (exitModalSelectYes) await ConfirmShellExit();
+            else await CancelShellExit();
+            return;
+        }
+
+        if (e.Key == "Escape") await CancelShellExit();
+    }
+
+    private async Task OpenPeriodDialog()
+    {
+        if (showPeriodModal) return;
+        periodReturnFocusId = await JS.InvokeAsync<string?>("texTrackKeyboardContexts.getActiveElementId");
+        draftPeriodFrom = CurrentPeriod.From;
+        draftPeriodTo = CurrentPeriod.To;
+        periodError = null;
+        showPeriodModal = true;
+        pendingFocusId = "tt-period-from";
+    }
+
+    private async Task HandlePeriodDialogKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await CancelPeriodDialog();
+    }
+
+    private void SetDraftPeriodFrom(DateOnly? value)
+    {
+        if (value is not null) draftPeriodFrom = value.Value;
+    }
+
+    private void SetDraftPeriodTo(DateOnly? value)
+    {
+        if (value is not null) draftPeriodTo = value.Value;
+    }
+
+    private async Task ApplyPeriod()
+    {
+        if (!CurrentPeriod.TrySet(draftPeriodFrom, draftPeriodTo, out var validationError))
+        {
+            periodError = validationError;
+            pendingFocusId = "tt-period-from";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        showPeriodModal = false;
+        periodError = null;
+        pendingFocusId = periodReturnFocusId;
+        periodReturnFocusId = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelPeriodDialog()
+    {
+        showPeriodModal = false;
+        periodError = null;
+        pendingFocusId = periodReturnFocusId;
+        periodReturnFocusId = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ConfirmShellExit()
+    {
+        showExitModal = false;
+        LeaveCurrentPage();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelShellExit()
+    {
+        showExitModal = false;
+        // Stay on the voucher page; refocus its own page/form root generically
+        // rather than guessing a specific element id.
+        pendingFocusId = null;
+        pendingPageFocus = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Single, central "leave the current page and return to Dashboard" path.
+    /// Used both for the no-confirmation Escape-from-masters-page flow and for
+    /// the confirmed Escape-from-voucher-page flow (via the shell exit modal).
+    /// </summary>
+    private void LeaveCurrentPage()
+    {
+        Navigation.NavigateTo("/");
+
+        if (lastOriginMenu is not null)
+        {
+            openMenu = lastOriginMenu;
+            currentMenuIndex = lastOriginIndex;
+            if (lastOriginMenu == MastersMenuName && lastOriginChildIndex >= 0)
+            {
+                openMasterGroup = MasterGroups[currentMenuIndex].Key;
+                currentMasterChildIndex = Math.Min(lastOriginChildIndex, MasterGroups[currentMenuIndex].Items.Length - 1);
+                pendingFocusId = $"masters-child-{currentMenuIndex}-{currentMasterChildIndex}";
+            }
+            else if (lastOriginMenu == ReportsMenuName && lastOriginChildIndex >= 0 && ReportMenu[currentMenuIndex].Items.Length > 0)
+            {
+                openReportGroup = ReportMenu[currentMenuIndex].Key;
+                currentReportChildIndex = Math.Min(lastOriginChildIndex, ReportMenu[currentMenuIndex].Items.Length - 1);
+                pendingFocusId = $"reports-child-{currentMenuIndex}-{currentReportChildIndex}";
+            }
+            else
+            {
+                pendingFocusId = $"{lastOriginMenu}-item-{lastOriginIndex}";
+            }
+        }
+        else
+        {
+            // No menu to restore. Leave pendingFocusId untouched here: NavigateTo
+            // above already raised LocationChanged synchronously, which set
+            // pendingPageFocus = true as the generic fallback onto the
+            // destination page's own focusable root (e.g. the Dashboard root).
+        }
+    }
+
+    private void SetPendingMenuFocus()
+    {
+        if (openMenu == MastersMenuName && currentMasterChildIndex >= 0)
+        {
+            pendingFocusId = $"masters-child-{currentMenuIndex}-{currentMasterChildIndex}";
+        }
+        else if (openMenu == ReportsMenuName && currentReportChildIndex >= 0)
+        {
+            pendingFocusId = $"reports-child-{currentMenuIndex}-{currentReportChildIndex}";
+        }
+        else if (openMenu is not null)
+        {
+            pendingFocusId = $"{openMenu}-item-{currentMenuIndex}";
+        }
+    }
+
+    private void ActivateCurrentMenuItem()
+    {
+        if (openMenu == MastersMenuName)
+        {
+            var group = MasterGroups[currentMenuIndex];
+            if (openMasterGroup == group.Key && currentMasterChildIndex >= 0)
+                GoToMasterChild(currentMenuIndex, currentMasterChildIndex);
+            else
+            {
+                openMasterGroup = group.Key;
+                currentMasterChildIndex = 0;
+                SetPendingMenuFocus();
+            }
+        }
+        else if (openMenu == EntriesMenuName)
+        {
+            var item = EntryMenu[currentMenuIndex];
+            GoToMenuItem(EntriesMenuName, currentMenuIndex, item.Href);
+        }
+        else if (openMenu == ReportsMenuName)
+        {
+            var item = ReportMenu[currentMenuIndex];
+            if (item.Href is not null) GoToMenuItem(ReportsMenuName, currentMenuIndex, item.Href);
+            else if (item.Items.Length > 0)
+            {
+                openReportGroup = item.Key; currentReportChildIndex = 0; SetPendingMenuFocus();
+            }
+        }
+        else if (openMenu == SettingsMenuName)
+        {
+            var item = SettingsMenu[currentMenuIndex];
+            GoToMenuItem(SettingsMenuName, currentMenuIndex, item.Href);
+        }
+    }
+
+    private static string GetMenuHeading(string menuName) =>
+        menuName switch
+        {
+            MastersMenuName => "Masters",
+            EntriesMenuName => "Entries",
+            ReportsMenuName => "Reports",
+            SettingsMenuName => "Settings",
+            _ => "Menu"
+        };
+
+    private sealed record MasterGroup(string Key, string Text, (string Href, string Text)[] Items);
+
+    private static readonly MasterGroup[] MasterGroups =
+    {
+        new("accounting", "Accounting Masters", new[]
+        {
+            ("/masters/ledger-groups", "Ledger Groups"),
+            ("/masters/ledgers", "Ledgers"),
+            ("/masters/voucher-types", "Voucher Types")
+        }),
+        new("inventory", "Inventory Masters", new[]
+        {
+            ("/masters/stock-groups", "Stock Groups"),
+            ("/masters/stock-categories", "Stock Categories"),
+            ("/masters/stock-items", "Stock Items"),
+            ("/masters/stock-item-fields", "Stock Item Fields"),
+            ("/masters/colours", "Colours"),
+            ("/masters/sizes", "Sizes"),
+            ("/masters/uqc", "Units (UQC)"),
+            ("/masters/godowns", "Godowns"),
+            ("/masters/tax-classifications", "Tax Classifications")
+        }),
+        new("production", "Production Masters", new[]
+        {
+            ("/masters/job-workers", "Job Workers"),
+            ("/masters/processes", "Processes"),
+            ("/masters/bill-of-materials", "Bill of Materials")
+        })
+    };
+
+    private void ToggleMasterGroupFromMouse(int groupIndex)
+    {
+        if (groupIndex < 0 || groupIndex >= MasterGroups.Length) return;
+
+        currentMenuIndex = groupIndex;
+        currentMasterChildIndex = -1;
+        var key = MasterGroups[groupIndex].Key;
+        openMasterGroup = openMasterGroup == key ? null : key;
+
+        // Mouse users keep focus on the group button. Keyboard users enter the
+        // child list only through Enter/Right Arrow in HandleKeyDown.
+        pendingFocusId = $"masters-item-{groupIndex}";
+    }
+
+    private void FocusMasterGroup(int groupIndex)
+    {
+        currentMenuIndex = groupIndex;
+        currentMasterChildIndex = -1;
+    }
+
+    private void FocusMasterChild(int groupIndex, int childIndex)
+    {
+        currentMenuIndex = groupIndex;
+        currentMasterChildIndex = childIndex;
+    }
+
+    private void RememberMasterChild(int groupIndex, int childIndex)
+    {
+        if (groupIndex < 0 || groupIndex >= MasterGroups.Length) return;
+        var group = MasterGroups[groupIndex];
+        if (childIndex < 0 || childIndex >= group.Items.Length) return;
+        lastOriginChildIndex = childIndex;
+        RememberMenuItem(MastersMenuName, groupIndex);
+    }
+
+    private void GoToMasterChild(int groupIndex, int childIndex)
+    {
+        if (groupIndex < 0 || groupIndex >= MasterGroups.Length) return;
+        var group = MasterGroups[groupIndex];
+        if (childIndex < 0 || childIndex >= group.Items.Length) return;
+        RememberMasterChild(groupIndex, childIndex);
+        Navigation.NavigateTo(group.Items[childIndex].Href);
+    }
+
+    private sealed record ReportNode(string Key, string Text, string? Href, (string Href, string Text)[] Items);
+
+    private static readonly ReportNode[] ReportMenu =
+    {
+        new("job-work-vouchers", "Job Work Reports", null, new[]
+        {
+            ("/reports/job-work/vouchers/master-job-orders", "Master Job Order Register"),
+            ("/reports/job-work/vouchers/job-out-orders", "Job Out Orders"),
+            ("/reports/job-work/vouchers/material-out", "Material Out Register"),
+            ("/reports/job-work/vouchers/material-in", "Material In Register"),
+            ("/reports/job-worker-control", "Job Worker Control"),
+            ("/reports/job-worker-control-t-format", "Job Worker T-Format"),
+            ("/reports/job-work/pending-material-issue", "Pending Material Issue"),
+            ("/reports/audit-trail", "Voucher Audit Trail")
+        }),
+        new("inventory", "Inventory Reports", null, new[]
+        {
+            ("/reports/inventory/closing-stock", "Closing Stock"),
+            ("/reports/inventory/stock-register", "Stock Register")
+        }),
+        new("purchase-vouchers", "Purchase Reports", null, new[]
+        {
+            ("/reports/purchase/vouchers/purchase-order", "Purchase Order Register"),
+            ("/reports/purchase/vouchers/purchase", "Purchase Register"),
+            ("/reports/purchase/vouchers/purchase-return", "Purchase Return Register")
+        })
+    };
+
+    private void FocusReportItem(int index) { currentMenuIndex = index; currentReportChildIndex = -1; }
+    private void FocusReportChild(int index, int child) { currentMenuIndex = index; currentReportChildIndex = child; }
+    private void ToggleReportGroupFromMouse(int index)
+    {
+        currentMenuIndex = index; currentReportChildIndex = -1;
+        var node = ReportMenu[index]; openReportGroup = openReportGroup == node.Key ? null : node.Key;
+        pendingFocusId = $"reports-item-{index}";
+    }
+    private void RememberReportItem(int index) { currentReportChildIndex = -1; lastOriginChildIndex = -1; RememberMenuItem(ReportsMenuName, index); }
+    private void RememberReportChild(int index, int child)
+    {
+        currentReportChildIndex = child; lastOriginChildIndex = child;
+        RememberMenuItem(ReportsMenuName, index);
+    }
+    private void GoToReportChild(int index, int child)
+    {
+        RememberReportChild(index, child); Navigation.NavigateTo(ReportMenu[index].Items[child].Href);
+    }
+
+    private static readonly (string Href, string Text)[] EntryMenu =
+    {
+        ("/vouchers/master-job-order", "Master Job Order"),
+        ("/vouchers/job-work-out-order", "Job Work Out Order"),
+        ("/vouchers/material-out", "Material Out"),
+        ("/vouchers/material-in", "Material In"),
+        ("/vouchers/purchase-order", "Purchase Order"),
+        ("/vouchers/purchase", "Purchase"),
+        ("/vouchers/purchase-return", "Purchase Return"),
+        ("/vouchers/sales", "Sales"),
+        ("/vouchers/payment", "Payment"),
+        ("/vouchers/receipt", "Receipt"),
+        ("/vouchers/contra", "Contra"),
+        ("/vouchers/journal", "Journal"),
+        ("/vouchers/stock-journal", "Stock Journal")
+    };
+
+    private static readonly (string Href, string Text)[] SettingsMenu =
+    {
+        ("/settings/inventory-policy", "Inventory Policy"),
+        ("/settings/ai-assistant", "AI Assistant"),
+        ("/settings/tally-xml", "Tally XML Exchange"),
+        ("/settings/data-maintenance", "Developer Data Maintenance")
+    };
+}

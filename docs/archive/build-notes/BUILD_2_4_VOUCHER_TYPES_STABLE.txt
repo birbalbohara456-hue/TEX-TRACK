@@ -1,0 +1,64 @@
+TexTrack ERP v0.5 Build 2.4 - Voucher Types Master Stable
+=========================================================
+
+Base
+----
+TexTrack_ERP_v0.5_Build2_3_GODOWN_MASTER_STABLE_FULL.zip
+SHA-256: 679A7D7DC0F6435C90261E01EDF676874B531A2CFFAAA815F7D0735B3959DF72
+
+Audit
+-----
+- Voucher Types already have stable ID/company identity, normalized display name,
+  alias, immutable system_type_code, inherited nature/posting, abbreviation,
+  permanent/active flags, parent category, Tally name, numbering configuration,
+  audit fields and concurrency token.
+- Migration 001 seeds 16 permanent categories: the 13 confirmed categories plus
+  Purchase Order, Sales Order and Master Job Order.
+- Migration 006 adds protected parent-category inheritance. Migration 007 adds
+  numbering mode/format/reset fields and per-company/year/type voucher_sequences.
+- Generic voucher headers reference Voucher Type IDs. JWO and Material Out also
+  accept custom children of their permanent base category.
+- No XML export implementation exists in this C# base. JWO lookup data exposes
+  TallyVoucherTypeName; custom persistence existed, while permanent persistence
+  was incomplete.
+- No Voucher Type Python reference was supplied for this build.
+
+Implementation
+--------------
+- Server-side contains search across display name, canonical category, parent/base
+  category and Tally name.
+- F4 search, automatic form focus, list-row/scroll restoration and filtered-save
+  restoration using the frozen KeyboardContextScope.
+- Permanent Alt+D now opens the normal TexTrack dialog and returns the explicit
+  protected-system message without database mutation.
+- Database-derived system/custom enforcement prevents posted flag manipulation.
+- Permanent canonical identity/system/base mapping remain immutable; the already
+  exposed numbering and Tally configuration now persist.
+- Custom display/Tally names remain editable with stable ID/canonical identity.
+- Used custom base-category remapping is blocked by voucher or positive sequence
+  history; unused remapping remains allowed.
+- Transactional delete blocks vouchers, child types and positive numbering history.
+  A zero-only initialized sequence row is safely removed with an otherwise-unused
+  custom type in the same transaction.
+- No migration, CSS, global keyboard, voucher numbering allocation, JWO, Material
+  Out, stock posting, accounting posting or frozen master logic changed.
+
+Verification
+------------
+- dotnet restore: PASS
+- full solution build: PASS
+- PostgreSQL/component tests: 41 passed
+- JavaScript global keyboard tests: 10 passed
+- Real Chrome Voucher Types workflow: PASS
+- Real Chrome 14-screen global keyboard matrix: PASS
+- Repeated enhanced navigation: one live context and one listener
+
+Changed files
+-------------
+- Components/Pages/Masters/VoucherTypes.razor
+- Services/VoucherTypeRepository.cs
+- Tests/TexTrack.Web.IntegrationTests/StockItemUqcImmutabilityTests.cs
+- Tests/TexTrack.Web.IntegrationTests/VoucherTypeMasterStabilizationTests.cs
+- Tests/JavaScript/keyboard-context.browser.cjs
+- Tests/JavaScript/voucher-types.browser.cjs
+- BUILD_2_4_VOUCHER_TYPES_STABLE.txt

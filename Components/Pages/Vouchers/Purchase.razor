@@ -1,0 +1,260 @@
+@page "/vouchers/purchase"
+@implements IAsyncDisposable
+@attribute [Authorize(Policy = SecurityPolicies.OperateVouchers)]
+@using Microsoft.AspNetCore.Components.Web
+@using TexTrack.Web.Components.Vouchers.Shared
+@inject InventoryInwardRepository Repository
+@inject PurchaseOrderRepository PurchaseOrderRepository
+@inject DatabaseStatus Database
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject DeveloperAccessService DeveloperAccess
+
+<PageTitle>Purchase - TexTrack ERP</PageTitle>
+
+<div id="pu-page-root" class="page-card voucher-page pu-voucher-page" tabindex="0"
+     @onkeydown="HandlePageKeyDown" @onkeydown:stopPropagation="true">
+    @if (!Database.IsConnected)
+    {
+        <div class="database-warning"><strong>PostgreSQL setup required</strong><p>@Database.Message</p></div>
+    }
+    else if (loading)
+    {
+        <div class="loading-state">Loading Purchases…</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(initError))
+    {
+        <div class="database-warning"><strong>Could not open Purchase</strong><p>@initError</p></div>
+    }
+    else
+    {
+        <PurchaseFamilyEntryForm @ref="entryForm" IdPrefix="purchase" Options="@formOptions" FormGeneration="formGeneration"
+            Defaults="defaults" State="state" Lookup="lookup"
+            GetItemVariantDetailAsync="(id, ct) => Repository.GetItemVariantDetailAsync(id, ct)"
+            GetOutstandingUpstreamDocumentsAsync="GetOutstandingOrdersAsync"
+            GetUpstreamHydrationAsync="GetPurchaseOrderHydrationAsync"
+            SaveAsync="SaveEntryAsync"
+            CancelVoucherAsync="(reason, ct) => Repository.CancelAsync(editingVoucherId ?? 0, reason)"
+            DeleteVoucherAsync="_ => Repository.DeleteAsync(editingVoucherId ?? 0)"
+            EditingVoucherId="editingVoucherId" EditingConcurrencyToken="editingConcurrencyToken"
+            OnQuit="CloseEntry" OnSaved="HandleSavedAsync" OnDeleted="HandleDeletedAsync" OnCancelledVoucher="HandleCancelledVoucherAsync" />
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "voucherId")] public long? VoucherId { get; set; }
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+
+    private static readonly PurchaseFamilyFormOptions formOptions = PurchaseFamilyFormOptions.For(PurchaseFamilyMode.Purchase);
+
+    private PurchaseFamilyEntryForm? entryForm;
+    private PurchaseVoucherEntryDefaults defaults = new();
+    private PurchaseLineLookupData lookup = new();
+    private PurchaseFamilyFormState state = new();
+    private string? initError;
+    private string? pendingFormMessage;
+    private bool pendingFormMessageIsError;
+    private long? editingVoucherId;
+    private string editingConcurrencyToken = string.Empty;
+    private bool loading = true;
+    private int formGeneration;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Database.IsConnected) { loading = false; return; }
+        try
+        {
+            defaults = await Repository.GetEntryDefaultsAsync();
+            lookup = await Repository.GetLookupsAsync();
+            if (VoucherId is not null) await OpenVoucherAsync(VoucherId.Value);
+            else OpenCreate();
+        }
+        catch (Exception ex) { initError = VoucherErrorMessages.For(ex); }
+        finally { loading = false; }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || pendingFormMessage is null) return;
+        entryForm?.SetStatusMessage(pendingFormMessage, pendingFormMessageIsError);
+        pendingFormMessage = null;
+    }
+
+    private void OpenCreate()
+    {
+        editingVoucherId = null;
+        editingConcurrencyToken = string.Empty;
+        state = new PurchaseFamilyFormState();
+        formGeneration++;
+    }
+
+    private async Task OpenVoucherAsync(long voucherId)
+    {
+        var data = await Repository.GetForEditAsync(voucherId);
+        if (data is null || data.Kind != InventoryInwardVoucherKind.Purchase)
+        {
+            SetPendingFormMessage("The selected Purchase voucher no longer exists.", true);
+            OpenCreate();
+            return;
+        }
+        if (string.Equals(data.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !DeveloperAccess.IsDeveloper)
+        {
+            SetPendingFormMessage("A cancelled Purchase voucher cannot be altered.", true);
+            OpenCreate();
+            return;
+        }
+
+        editingVoucherId = data.VoucherId;
+        editingConcurrencyToken = data.ConcurrencyToken;
+        defaults = new PurchaseVoucherEntryDefaults
+        {
+            VoucherTypeId = data.VoucherTypeId,
+            VoucherTypeName = data.VoucherTypeName,
+            VoucherNumber = data.VoucherNumber,
+            VoucherDate = data.VoucherDate,
+            NumberingMode = defaults.NumberingMode
+        };
+        state = new PurchaseFamilyFormState
+        {
+            SupplierLedgerId = data.SupplierLedgerId ?? 0,
+            SupplierText = data.SupplierLedgerId is long sid ? lookup.Suppliers.FirstOrDefault(x => x.Id == sid)?.Name ?? string.Empty : string.Empty,
+            ReferenceNumber = data.ReferenceNumber,
+            Narration = data.Narration,
+            Lines = PurchaseFamilyLineGrouping.GroupLines(await BuildRawLinesAsync(data.Lines))
+        };
+        formGeneration++;
+    }
+
+    private async Task<List<PurchaseFamilyRawLine>> BuildRawLinesAsync(IEnumerable<InventoryInwardLineInput> lines)
+    {
+        var detailCache = new Dictionary<long, PurchaseItemVariantDetail?>();
+        var raw = new List<PurchaseFamilyRawLine>();
+        foreach (var line in lines)
+        {
+            if (!detailCache.TryGetValue(line.StockItemId, out var detail))
+            {
+                detail = await Repository.GetItemVariantDetailAsync(line.StockItemId);
+                detailCache[line.StockItemId] = detail;
+            }
+            var variant = detail is not null ? PurchaseFamilyLineGrouping.ResolveVariant(detail, line.StockItemVariantId) : null;
+            var godownName = lookup.Godowns.FirstOrDefault(x => x.Id == line.GodownId)?.Name ?? string.Empty;
+            raw.Add(new PurchaseFamilyRawLine(
+                StockItemId: line.StockItemId, StockItemName: detail?.StockItemName ?? string.Empty, StockItemVariantId: line.StockItemVariantId,
+                ColourId: variant?.ColourId, ColourName: variant?.ColourName ?? string.Empty, SizeId: variant?.SizeId, SizeLabel: variant?.SizeLabel ?? string.Empty,
+                UqcId: line.UqcId, UqcShortName: detail?.UqcShortName ?? string.Empty, GodownId: line.GodownId, GodownText: godownName,
+                Quantity: line.Quantity, Rate: line.Rate, Amount: line.Amount,
+                PurchaseOrderLineId: line.PurchaseOrderLineId, PendingCap: null, ExpectedDeliveryDate: null));
+        }
+        return raw;
+    }
+
+    private async Task<IReadOnlyList<UpstreamDocumentSummary>> GetOutstandingOrdersAsync(long supplierLedgerId, CancellationToken ct)
+    {
+        var summaries = await PurchaseOrderRepository.GetOutstandingOrdersForSupplierAsync(supplierLedgerId, ct);
+        return summaries.Select(x => new UpstreamDocumentSummary(x.PurchaseOrderVoucherId, x.PurchaseOrderVoucherNumber, x.VoucherDate, x.PendingLineCount)).ToList();
+    }
+
+    private async Task<UpstreamHydrationResult?> GetPurchaseOrderHydrationAsync(long purchaseOrderVoucherId, CancellationToken ct)
+    {
+        var hydration = await PurchaseOrderRepository.GetPendingLinesForOrderAsync(purchaseOrderVoucherId, ct);
+        if (hydration is null) return null;
+        var detailCache = new Dictionary<long, PurchaseItemVariantDetail?>();
+        var raw = new List<PurchaseFamilyRawLine>();
+        foreach (var line in hydration.Lines)
+        {
+            if (!detailCache.TryGetValue(line.StockItemId, out var detail))
+            {
+                detail = await Repository.GetItemVariantDetailAsync(line.StockItemId, ct);
+                detailCache[line.StockItemId] = detail;
+            }
+            var variant = detail is not null ? PurchaseFamilyLineGrouping.ResolveVariant(detail, line.StockItemVariantId) : null;
+            var godownName = line.GodownId is long gid ? lookup.Godowns.FirstOrDefault(x => x.Id == gid)?.Name ?? string.Empty : string.Empty;
+            raw.Add(new PurchaseFamilyRawLine(
+                StockItemId: line.StockItemId, StockItemName: line.StockItemName, StockItemVariantId: line.StockItemVariantId,
+                ColourId: variant?.ColourId, ColourName: variant?.ColourName ?? string.Empty, SizeId: variant?.SizeId, SizeLabel: variant?.SizeLabel ?? string.Empty,
+                UqcId: line.UqcId, UqcShortName: line.UqcName, GodownId: line.GodownId, GodownText: godownName,
+                Quantity: line.PendingQuantity, Rate: line.Rate, Amount: null,
+                PurchaseOrderLineId: line.PurchaseOrderLineId, PendingCap: line.PendingQuantity, ExpectedDeliveryDate: null));
+        }
+        return new UpstreamHydrationResult(hydration.PurchaseOrderVoucherId, hydration.PurchaseOrderVoucherNumber, raw);
+    }
+
+    private void CloseEntry()
+    {
+        Navigation.NavigateTo(string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl);
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    private async Task<PurchaseFamilySaveOutcome> SaveEntryAsync(PurchaseFamilyFormState formState, CancellationToken ct)
+    {
+        var request = new InventoryInwardSaveRequest
+        {
+            VoucherId = editingVoucherId ?? 0,
+            Kind = InventoryInwardVoucherKind.Purchase,
+            ConcurrencyToken = editingConcurrencyToken,
+            VoucherTypeId = defaults.VoucherTypeId,
+            VoucherNumber = defaults.VoucherNumber,
+            VoucherDate = defaults.VoucherDate,
+            ReferenceNumber = formState.ReferenceNumber,
+            SupplierLedgerId = formState.SupplierLedgerId,
+            Narration = formState.Narration,
+            Lines = PurchaseFamilyLineGrouping.ExpandLines(formState.Lines).Select(x => new InventoryInwardLineInput
+            {
+                StockItemId = x.StockItemId,
+                StockItemVariantId = x.StockItemVariantId,
+                UqcId = x.UqcId,
+                GodownId = x.GodownId ?? 0,
+                Quantity = x.Quantity,
+                Rate = x.Rate,
+                Amount = x.Amount,
+                PurchaseOrderLineId = x.PurchaseOrderLineId
+            }).ToList()
+        };
+        var wasAlteration = editingVoucherId is not null;
+        var result = await Repository.SaveAsync(request);
+        return new PurchaseFamilySaveOutcome
+        {
+            Success = true,
+            Message = $"Purchase {result.VoucherNumber} {(wasAlteration ? "altered" : "saved")} successfully.",
+            VoucherId = result.VoucherId,
+            VoucherNumber = result.VoucherNumber
+        };
+    }
+
+    private async Task HandleSavedAsync(PurchaseFamilySaveOutcome outcome)
+    {
+        if (!string.IsNullOrWhiteSpace(ReturnUrl)) { Navigation.NavigateTo(ReturnUrl); return; }
+        defaults = await Repository.GetEntryDefaultsAsync();
+        OpenCreate();
+        entryForm?.SetStatusMessage(outcome.Message, false);
+    }
+
+    private async Task HandleDeletedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(ReturnUrl)) { Navigation.NavigateTo(ReturnUrl); return; }
+        var voucherNumber = defaults.VoucherNumber;
+        defaults = await Repository.GetEntryDefaultsAsync();
+        OpenCreate();
+        entryForm?.SetStatusMessage($"Purchase {voucherNumber} deleted successfully.", false);
+    }
+
+    private async Task HandleCancelledVoucherAsync()
+    {
+        var voucherNumber = defaults.VoucherNumber;
+        if (!string.IsNullOrWhiteSpace(ReturnUrl)) { Navigation.NavigateTo(ReturnUrl); return; }
+        defaults = await Repository.GetEntryDefaultsAsync();
+        OpenCreate();
+        entryForm?.SetStatusMessage($"Purchase {voucherNumber} cancelled successfully.", false);
+    }
+
+    private async Task HandlePageKeyDown(KeyboardEventArgs e)
+    {
+        if (entryForm is null) return;
+        if (e.AltKey && string.Equals(e.Key, "a", StringComparison.OrdinalIgnoreCase)) await entryForm.RequestSaveAsync();
+        else if (e.AltKey && string.Equals(e.Key, "x", StringComparison.OrdinalIgnoreCase) && editingVoucherId is not null) await entryForm.RequestCancelVoucherAsync();
+        else if (e.Key == "Escape" && !entryForm.Busy) await entryForm.RequestQuitAsync();
+    }
+
+    private void SetPendingFormMessage(string text, bool error) { pendingFormMessage = text; pendingFormMessageIsError = error; }
+}

@@ -1,0 +1,115 @@
+TEXTRACK ERP v0.5 BUILD 2.9
+JOB WORKER, INVENTORY AND MATERIAL IN VISUAL
+Release verification date: 2026-07-24
+
+AUTHORITATIVE BASE
+TexTrack_ERP_v0.5_Build2_8_REPORTING_AND_VOUCHER_CORRECTIONS_FULL.zip
+Base size: 10,263,451 bytes
+Base SHA-256: C8C2C5F7640D9FE0CCE3E6415E1AC3CA357C9E3500A680F23A78B6DD89773348
+
+ARCHITECTURE INSPECTION
+- Stable production identity is Voucher.Id and the JWO/MO/MI relation IDs.
+- Job Worker is the existing Ledger production role (Ledger.IsJobWorker), referenced by Voucher.PartyLedgerId.
+- JWO finished goods/components, Material Out lines, Material In finished goods/consumptions, MI-to-MO allocations and Stock Movements remain authoritative.
+- Reporting uses a dedicated read-only OperationalReportingService with AsNoTracking DTO projections.
+- Material In save/allocation/posting remains in the existing repository and transaction.
+- Migration chain remains 001 through 013. No schema change was needed.
+
+IMPLEMENTED
+1. User report menu: Job Worker Control plus nested Inventory Reports / Closing Stock / Stock Register.
+2. Consolidated JWO -> actual MO -> actual MI Job Worker Control with nullable dates, pending/all toggle, contains filters, stable voucher drill-down, actual FG names, variants and per-FG persisted values/costs.
+3. Material position calculations per stable JWO component: Required, Issued, Consumed, Pending to Issue, Balance with Job Worker.
+4. Browser-visible true two-column T-format, including an honest no-data skeleton.
+5. Closing Stock: group/UQC summary, stable row keys, item/category/UQC totals, dynamic actual size columns, colour child rows, weighted value/quantity rate, safe zero handling, expand/drill-down keys.
+6. Stock Register: required Godown, Item/Category/Godown/Qty/Value hierarchy, opening and closing balances, exact movement columns, deterministic running quantity and stable source-voucher drill-down/return.
+7. Material In: reusable list and persisted-view components; actual FG parent names and variant/component children; FG Qty, consumed value, process charge and FG value columns; original JWO and Godowns preserved.
+8. JWO, MO and MI accept stable voucherId/returnUrl query values for report drill-down and Esc return.
+9. Scoped CSS bundle is now linked. This was required because generated .razor.css rules were previously absent in the browser.
+10. Capture-phase menu Esc now returns from a child report row to its parent group before closing the whole menu.
+11. Visible footer updated to Build 2.9.
+
+ROOT CAUSES
+- The earlier user-facing reports were separate projections rather than one production-control position.
+- Old Material Received display could use aggregate labels; the consolidated report now projects MaterialInFinishedGoods.StockItem.Name for every persisted FG row.
+- The T-format initially appeared stacked because Components/App.razor linked app.css but not the generated TexTrack.Web.styles.css bundle; Chrome computed display:block. Linking the generated bundle makes both halves render simultaneously.
+- Closing Stock numeric selection could become stale after hierarchy changes; the new page selects and resolves stable RowKey DTOs.
+- Nested Reports Esc was intercepted by the existing capture-phase menu handler, which always clicked the overlay. It now detects data-tt-parent, collapses one level and restores parent focus.
+- The JWO Enter sequence in the authoritative base already uses the shared enabled/editable-control navigator. A real-Chrome regression now proves first Enter and second Enter without Tab or mouse; no page-level listener was added.
+
+ENGINE PRESERVATION
+- No Material In save, FIFO allocation, automatic consumption, previous-consumption deduction, MO cap, stock posting, voucher numbering, transaction or rollback code was changed.
+- MaterialInRepository changes are limited to read-only list/view projections for already-persisted totals and hierarchy.
+- No JWO calculation or Material Out posting code was changed.
+- Existing Material Out -> Material In delete dependency validation and foreign key were retained and tested.
+- No stable ID was replaced by name matching.
+
+MIGRATIONS
+None. Existing migrations 001-013 are unchanged. No SQL/checksum applies for Build 2.9.
+
+PERFORMANCE
+- Report queries are server-side, AsNoTracking and DTO-projected.
+- JWC result loading is capped at 200 order blocks.
+- Closing/Stock Register aggregation occurs in PostgreSQL and uses deterministic ordering.
+- No report performs dependency scans during navigation and no hidden full dataset is loaded for Alt+F1.
+
+TEST RESULTS
+- dotnet restore TexTrack.sln: PASS
+- dotnet build TexTrack.sln --no-restore: PASS, 0 errors
+- PostgreSQL integration tests: PASS 66/66
+- JavaScript tests: PASS 22/22
+- Application startup/restart: PASS; HTTP 200
+- Real Chrome: all six browser scripts exited PASS.
+  * Global keyboard-context matrix: all listed masters, JWO and Material Out PASS; one context/one listener after repeated navigation.
+  * Job Worker Control: true side-by-side computed CSS/grid, shortcuts, Alt+D containment, one context/listener PASS.
+  * Closing Stock and Stock Register hierarchy/column order/menu focus PASS.
+  * Material In list/create/persisted view and JWO first/second Enter PASS.
+  * Godown, Job Worker and Voucher Type frozen-master workflows PASS.
+- Browser fixture note: the development database had only completed JWOs, so the Job Worker script explicitly SKIPPED only the pending-JWO-dependent MO save/history branch. Default prefill passed in Chrome; save/history/posting rules are covered by PostgreSQL integration tests.
+
+KNOWN LIMITATIONS / DELIBERATE SAFETY CHOICES
+- Posted Material In remains a safe read-only persisted view; no unsafe reverse/reallocate/repost alteration was introduced.
+- The schema stores one process-charge total per FG, so the report shows that honest total and per-unit cost; no named process rows are fabricated and no migration was added.
+- Direct Stock Register requires a Godown as specified. Its parent/child summary therefore reconciles within the selected Godown; cross-Godown detail remains available through Closing Stock navigation and movement data.
+
+FILES ADDED
+- Components/Pages/Reports/InventoryClosingStock.razor
+- Components/Pages/Reports/InventoryClosingStock.razor.css
+- Components/Pages/Reports/JobWorkerControl.razor
+- Components/Pages/Reports/JobWorkerControl.razor.css
+- Components/Pages/Reports/StockRegister.razor
+- Components/Pages/Reports/StockRegister.razor.css
+- Components/Vouchers/MaterialIn/MaterialInPersistedView.razor
+- Components/Vouchers/MaterialIn/MaterialInPersistedView.razor.css
+- Components/Vouchers/MaterialIn/MaterialInVoucherList.razor
+- Components/Vouchers/MaterialIn/MaterialInVoucherList.razor.css
+- Models/OperationalReportingModels.cs
+- Services/OperationalReportingService.cs
+- BUILD_2_9_JOB_WORKER_INVENTORY_AND_MI_VISUAL.txt
+
+FILES CHANGED
+- Components/App.razor
+- Components/Layout/MainLayout.razor
+- Components/Pages/Reports/ProductionReports.razor
+- Components/Pages/Vouchers/JobWorkOutOrder.razor
+- Components/Pages/Vouchers/MaterialIn.razor
+- Components/Pages/Vouchers/MaterialOut.razor
+- Models/MaterialInModels.cs
+- Program.cs
+- Services/MaterialInRepository.cs
+- Tests/JavaScript/godown-master.browser.cjs
+- Tests/JavaScript/job-worker-master.browser.cjs
+- Tests/JavaScript/production-reports.browser.cjs
+- Tests/JavaScript/production-reports.test.cjs
+- Tests/JavaScript/reporting-voucher-corrections.browser.cjs
+- Tests/JavaScript/voucher-types.browser.cjs
+- Tests/TexTrack.Web.IntegrationTests/ProductionReportingTests.cs
+- Tests/TexTrack.Web.IntegrationTests/StockItemUqcImmutabilityTests.cs
+
+PROTECTED MODULES NOT CHANGED
+- Data/Migrations/*
+- Domain/Entities.cs
+- Services/JobWorkOrderRepository.cs
+- Services/MaterialOutRepository.cs
+- Stock posting and voucher numbering implementations
+- Ledger Groups, Ledgers, UQC, Stock Groups, Stock Categories, Stock Items, Godown and Voucher Type business repositories
+- NuGet/.NET target versions

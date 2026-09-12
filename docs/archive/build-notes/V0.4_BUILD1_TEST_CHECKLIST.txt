@@ -1,0 +1,79 @@
+TexTrack ERP v0.4 Build 1 — Voucher Core + Job Work Out Order
+ACCEPTANCE TEST CHECKLIST
+
+IMPORTANT
+- Use the existing PostgreSQL database. Do not run database setup again.
+- Migration 005 is applied automatically on first start.
+- JWO is an order/planning voucher only. Saving it must not change stock or ledger balances.
+
+A. STARTUP AND MIGRATION
+[ ] Extract into a new folder and open TexTrack.sln.
+[ ] Build -> Clean Solution, then Build -> Rebuild Solution.
+[ ] Run with Ctrl+F5.
+[ ] Footer shows: v0.4 Build 1 Voucher Core + JWO.
+[ ] Database status shows PostgreSQL Connected.
+[ ] Existing Ledgers, Stock Items and other masters remain available.
+
+B. REQUIRED MASTER PREPARATION
+[ ] At least one non-system Ledger exists for use as Job Worker.
+[ ] At least one Finished Goods Stock Item exists.
+[ ] Finished Goods item has valid hidden variants for its selected Colour/Size combinations.
+[ ] Optional: Raw Material or WIP Stock Items exist for Components.
+
+C. CREATE FIRST JWO
+[ ] Open Entries -> Job Work Out Order.
+[ ] Press Alt+C to create.
+[ ] Voucher Number is generated from the Job Work Out Order voucher type unless manual numbering is enabled.
+[ ] Enter moves through Date, Job Worker, Batch, Due Date and Reference.
+[ ] Select a Finished Good.
+[ ] When the item has Colours, Colour selection appears and is mandatory.
+[ ] Size/quantity fields are created from the active hidden variants.
+[ ] Enter quantities against one or more sizes.
+[ ] Add optional Components using Alt+R or the Add Component button.
+[ ] Component UQC comes automatically from the selected Stock Item.
+[ ] Enter reaches Narration and then the Save button.
+[ ] Press Enter on Save or Alt+S.
+[ ] JWO saves and appears in the list.
+
+D. MULTI-FG TEST
+[ ] Create another JWO and add at least two Finished Goods using Alt+C inside the form.
+[ ] Each Finished Good maintains its own Colour, Size quantities and Components.
+[ ] The total shown for each FG is correct.
+[ ] The overall total is correct.
+[ ] Save succeeds.
+
+E. VALIDATION TESTS
+[ ] Saving without Job Worker is blocked.
+[ ] Saving without Batch is blocked.
+[ ] Saving without a Finished Good is blocked.
+[ ] Saving an FG without positive quantity is blocked.
+[ ] Negative quantities are blocked.
+[ ] Same FG + same Colour repeated twice is blocked.
+[ ] Invalid or incomplete Component rows are blocked.
+[ ] Due Date earlier than Voucher Date is blocked.
+[ ] Voucher Date outside the active Financial Year is blocked.
+[ ] Validation errors preserve the form and entered rows.
+
+F. LIST AND KEYBOARD TEST
+[ ] Arrow Up/Down changes the selected JWO row.
+[ ] Page Up/Page Down, Home and End work.
+[ ] Selected row remains visible through automatic internal scrolling.
+[ ] F4 focuses the search field.
+[ ] Search works by Voucher Number, Batch, Job Worker and Finished Good.
+[ ] Enter opens the selected JWO for alteration.
+[ ] Esc returns to the list with focus restored.
+
+G. EDIT AND DELETE TEST
+[ ] Edit an unlinked JWO and save changes.
+[ ] Close TexTrack, reopen it, and confirm changes persisted.
+[ ] Delete an unlinked JWO successfully.
+[ ] Existing Ledger/Stock Item dependency protection remains active after JWO use.
+[ ] Stock Group and UQC cannot be changed for a Stock Item used in JWO.
+[ ] Used hidden variants cannot be removed from a Stock Item.
+
+H. NO-POSTING SAFETY TEST
+[ ] Creating/editing/deleting a JWO does not change stock quantities.
+[ ] Creating/editing/deleting a JWO does not create accounting entries or change Ledger balances.
+
+PASS CONDITION
+All checks above pass without mouse dependency for the core entry workflow and without data loss.

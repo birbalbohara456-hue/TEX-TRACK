@@ -1,0 +1,171 @@
+@namespace TexTrack.Web.Components
+
+<div class="age-band-filter">
+    <button id="@ButtonId" type="button" class="age-band-trigger @(Value.IsActive ? "filtered" : null)"
+            aria-haspopup="dialog" aria-expanded="@isOpen" @onclick="Toggle">
+        @Label: @Value.Summary <span aria-hidden="true">▾</span>
+    </button>
+    @if (isOpen)
+    {
+        <section class="age-band-popover" role="dialog" aria-label="@Label" @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+            <header>
+                <strong>@Label</strong>
+                <small>@Description</small>
+            </header>
+
+            <div class="age-band-options" aria-label="Available age bands">
+                @for (var index = 0; index < bands.Count; index++)
+                {
+                    var bandIndex = index;
+                    <label>
+                        <input type="checkbox" checked="@selectedIndexes.Contains(bandIndex)"
+                               @onchange="eventArgs => ToggleSelection(bandIndex, eventArgs)" />
+                        <span>@BandLabel(bands[bandIndex])</span>
+                    </label>
+                }
+            </div>
+
+            <details>
+                <summary>Customize bands (1–4)</summary>
+                <div class="age-band-editor">
+                    @for (var index = 0; index < bands.Count; index++)
+                    {
+                        var bandIndex = index;
+                        <div class="age-band-editor-row">
+                            <span>@(bandIndex + 1)</span>
+                            <label>From<input type="number" min="0" @bind="bands[bandIndex].MinimumDays" /></label>
+                            <label>To<input type="number" min="0" placeholder="No limit" @bind="bands[bandIndex].MaximumDays" /></label>
+                            <button type="button" title="Remove this band" aria-label="Remove age band @(bandIndex + 1)"
+                                    disabled="@(bands.Count == 1)" @onclick="() => RemoveBand(bandIndex)">×</button>
+                        </div>
+                    }
+                    <button type="button" class="age-band-add" disabled="@(bands.Count == 4)" @onclick="AddBand">+ Add band</button>
+                </div>
+            </details>
+
+            @if (!string.IsNullOrWhiteSpace(error))
+            {
+                <p class="age-band-error" role="alert">@error</p>
+            }
+
+            <footer>
+                <button type="button" @onclick="Reset">All ages</button>
+                <span></span>
+                <button type="button" @onclick="Cancel">Cancel</button>
+                <button type="button" class="primary" @onclick="Apply">Apply</button>
+            </footer>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public string ButtonId { get; set; } = "age-band-filter";
+    [Parameter] public string Label { get; set; } = "Age";
+    [Parameter] public string Description { get; set; } = "Select one or more ranges. Leave all clear to include every age.";
+    [Parameter] public AgeBandFilterValue Value { get; set; } = AgeBandFilterValue.All();
+    [Parameter] public EventCallback<AgeBandFilterValue> ValueChanged { get; set; }
+
+    private readonly List<EditableBand> bands = [];
+    private readonly HashSet<int> selectedIndexes = [];
+    private AgeBandFilterValue? loadedValue;
+    private bool isOpen;
+    private string error = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Value, loadedValue)) return;
+        loadedValue = Value;
+        LoadValue(Value);
+    }
+
+    private void Toggle()
+    {
+        if (!isOpen) LoadValue(Value);
+        isOpen = !isOpen;
+    }
+
+    private void LoadValue(AgeBandFilterValue value)
+    {
+        bands.Clear();
+        bands.AddRange(value.Bands.Select(x => new EditableBand(x.MinimumDays, x.MaximumDays)));
+        selectedIndexes.Clear();
+        selectedIndexes.UnionWith(value.SelectedBandIndexes);
+        error = string.Empty;
+    }
+
+    private void ToggleSelection(int index, ChangeEventArgs eventArgs)
+    {
+        if (eventArgs.Value is true) selectedIndexes.Add(index);
+        else selectedIndexes.Remove(index);
+    }
+
+    private void AddBand()
+    {
+        if (bands.Count >= 4) return;
+        var last = bands[^1];
+        var nextMinimum = (last.MaximumDays ?? last.MinimumDays + 44) + 1;
+        if (last.MaximumDays is null) last.MaximumDays = nextMinimum - 1;
+        bands.Add(new EditableBand(nextMinimum, null));
+    }
+
+    private void RemoveBand(int index)
+    {
+        if (bands.Count == 1) return;
+        bands.RemoveAt(index);
+        var adjusted = selectedIndexes
+            .Where(x => x != index)
+            .Select(x => x > index ? x - 1 : x)
+            .ToArray();
+        selectedIndexes.Clear();
+        selectedIndexes.UnionWith(adjusted);
+    }
+
+    private async Task Apply()
+    {
+        try
+        {
+            var next = AgeBandFilterValue.Create(
+                bands.Select(x => new AgeBandRange(x.MinimumDays, x.MaximumDays)),
+                selectedIndexes);
+            loadedValue = next;
+            error = string.Empty;
+            isOpen = false;
+            await ValueChanged.InvokeAsync(next);
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message.Split(" (Parameter", StringSplitOptions.None)[0];
+        }
+    }
+
+    private async Task Reset()
+    {
+        var next = AgeBandFilterValue.All();
+        selectedIndexes.Clear();
+        loadedValue = next;
+        error = string.Empty;
+        isOpen = false;
+        await ValueChanged.InvokeAsync(next);
+    }
+
+    private void Cancel()
+    {
+        LoadValue(Value);
+        isOpen = false;
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs eventArgs)
+    {
+        if (eventArgs.Key == "Escape") Cancel();
+    }
+
+    private static string BandLabel(EditableBand band) => band.MaximumDays is null
+        ? $"{band.MinimumDays}+ Days"
+        : $"{band.MinimumDays}–{band.MaximumDays} Days";
+
+    private sealed class EditableBand(int minimumDays, int? maximumDays)
+    {
+        public int MinimumDays { get; set; } = minimumDays;
+        public int? MaximumDays { get; set; } = maximumDays;
+    }
+}

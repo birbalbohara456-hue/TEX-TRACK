@@ -1,0 +1,117 @@
+TexTrack ERP v0.5 Build2_5 - JOB WORKER MASTER PARITY AND STABILIZATION
+Build date: 2026-07-23
+Base: TexTrack_ERP_v0.5_Build2_4_VOUCHER_TYPES_STABLE_FULL.zip
+Base SHA-256: EC6853B677B0EA468C1825B4C83FF84A66C443FE7263DD2EECBD757CBEE96405
+
+1. Architecture discovered
+- Job Worker is architecture B: a Ledger identity with production-specific extension fields.
+- No dedicated JobWorker table or duplicate party identity was introduced.
+- JWO and Material Out preserve stable ID links through vouchers.party_ledger_id -> ledgers.id.
+- Material Out derives the worker and pending JWO records through that Ledger ID.
+
+2. Existing schema/migration findings
+- Base source contained migrations 001-010. The deployed development database also contained version 011, which was not present in the supplied base ZIP.
+- The new migration therefore uses version 012 to avoid collision with the deployed chain.
+- Existing JWO/MO Ledgers are backfilled as Job Workers.
+
+3. Python versus C# parity
+- Python also treats Job Worker as a Ledger (JWO lookup parent hint: Job Work Liability) and has a separate Tally ledger name facility.
+- Python stores JWO/MO worker identity as display text; C# already has stronger ID-based links.
+- Python has no dedicated Job Worker default-Godown mapping. Its default_godown belongs to Stock Item, so it was not copied.
+
+4. Fields implemented
+- Existing Ledger fields remain authoritative for Name, Alias, Address, City, State, GSTIN, Contact Person and Mobile.
+- Production extensions: Is Job Worker, Tally Ledger Name, Default Material Out Destination Godown, and Default Material In Consumption Godown.
+- Ledger balances and accounting posting were not duplicated or changed.
+
+5. Godown defaults and precedence
+- Both defaults are nullable Ledger foreign keys to active Godowns with ON DELETE RESTRICT.
+- Material Out precedence is: saved alteration value; current-session user selection; worker default on first worker selection; existing JWO fallback when still blank; validation.
+- A user selection is not overwritten by JWO selection or rerender.
+- Changing a worker default changes future prefilling only; saved Material Out details, JWO, stock movements and history are untouched.
+- Material In was not built; the nullable MI default is the smallest future-compatible field.
+
+6. Validation
+- Shared server-side create/update validation requires a trimmed nonblank Name (max 200) and an active Ledger Group.
+- Duplicate Ledger name is rejected with normalized company-level comparison while display casing is preserved.
+- Duplicate nonblank Job Worker Tally Ledger Name is rejected.
+- GSTIN uses the existing project convention and must be unique when supplied.
+- Both selected default Godowns must exist and be active.
+- Repeated save is guarded by the page busy state and transactional repository operation.
+- A used Job Worker's Ledger Group cannot change; name, contacts, Tally name and future defaults can change without changing its ID.
+
+7. Deletion dependencies
+- Hard delete is permitted only for an unused Job Worker Ledger.
+- Any voucher whose party_ledger_id is the worker ID blocks deletion, covering current JWO, Material Out and future voucher classes.
+- Database foreign keys provide the transactional fallback for other production, accounting, mapping or history dependencies.
+- Dependency checks use IDs, execute in the same serializable transaction, and never mutate linked records.
+
+8. Search/list/keyboard
+- Dedicated Job Worker list/create/alteration route: /masters/job-workers.
+- Server-side contains search covers name, alias, Ledger Group, Tally name, city, state, contact and mobile without N+1 lookups.
+- Uses the frozen shared KeyboardContextScope; no page-specific JavaScript or CSS was added.
+- Search Enter propagation and Blazor caret-reset defects were corrected with stable binding and state-driven focus.
+- Create/alteration initial focus is owned once by the shared scope; validation refocus remains page-local.
+
+9. JWO and Material Out integration
+- Both lookups now accept active IsJobWorker Ledgers only.
+- Rename retains the same Ledger ID and all historical references.
+- Material Out applies the worker MO default once when its destination is still blank.
+- Material Out destination typing uses stable Blazor binding so a keyboard override is resolved before JWO selection.
+- Posting, stock policy, negative-stock rules, numbering, cancellation and reports were not changed.
+
+10. Migration
+- File: Data/Migrations/012_job_worker_master.sql
+- Final SHA-256: 8A9AC01AB99EDEE92191C99F7DBA8086E9E1700BA0A1F2650BD2652B58C6C8AD
+- Adds four Ledger columns, two Restrict foreign keys and three justified indexes, then backfills used worker identities.
+- Empty isolated schema verified versions 1,2,3,4,5,6,7,8,9,10,12; all four columns and both Restrict FKs were present.
+- Existing development database upgrade from versions 1-11 to 12 was verified.
+
+11. Test results
+- dotnet restore: PASS.
+- Full solution build: PASS, 0 errors; clean compilation reported 3 existing nullable-analysis warnings in frozen Ledger/Material Out code.
+- PostgreSQL/component integration: 52 passed, 0 failed, 0 skipped.
+- JavaScript keyboard tests: 14 passed, 0 failed.
+- Real Chrome Job Worker workflow: 7/7 acceptance groups passed.
+- Real Chrome shared-context regression: 15/15 screens passed, including Ledger, Job Worker, JWO and Material Out.
+- Repeated enhanced navigation: one live context and one global listener passed.
+- Browser test fixtures were removed; Jobber1 defaults and JWO-0001 status were restored.
+
+12. Real-browser acceptance groups
+- Keyboard-only create with defaults.
+- Stable-ID alteration and list-row focus restoration.
+- Unused delete modal re-entry blocking and Esc focus restoration.
+- Used JWO dependency deletion blocked.
+- Material Out default, keyboard override and save.
+- Historical saved Material Out Godown preserved after default changes.
+- Repeated navigation cleanup with one listener/context.
+
+13. Exact changed files versus the supplied Build 2.4 ZIP
+- Components/Layout/MainLayout.razor
+- Components/Pages/Home.razor
+- Components/Pages/Masters/JobWorkers.razor (new)
+- Components/Pages/Vouchers/MaterialOut.razor
+- Data/Migrations/012_job_worker_master.sql (new)
+- Data/TexTrackDbContext.cs
+- Domain/Entities.cs
+- Models/JobWorkerMasterModels.cs (new)
+- Models/JobWorkOrderModels.cs
+- Program.cs
+- Services/JobWorkerRepository.cs (new)
+- Services/JobWorkOrderRepository.cs
+- Services/MaterialOutRepository.cs
+- Tests/JavaScript/job-worker-master.browser.cjs (new)
+- Tests/JavaScript/job-worker-master.test.cjs (new)
+- Tests/JavaScript/keyboard-context.browser.cjs
+- Tests/TexTrack.Web.IntegrationTests/JobWorkerMasterStabilizationTests.cs (new)
+- Tests/TexTrack.Web.IntegrationTests/StockItemUqcImmutabilityTests.cs
+- BUILD_2_5_JOB_WORKER_MASTER_STABLE_REPORT.txt (new)
+
+14. Frozen modules
+- No changes to global keyboard JavaScript/framework, Ledger business rules, UQC, stock masters, Godown rules, Voucher Type rules, JWO business rules, posting, reports, Tally XML, CSS or Backspace behavior.
+- Voucher Type list search remains intentionally deferred.
+
+15. Unresolved product decisions
+- Material In remains future work; only its nullable default-Godown reference is reserved.
+- Tally Ledger Name is stored for parity but Tally XML/export remains frozen.
+- No automatic Ledger creation or accounting-balance copying was introduced.

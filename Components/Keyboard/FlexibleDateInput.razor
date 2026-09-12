@@ -1,0 +1,43 @@
+@using System.Globalization
+
+<input id="@Id"
+       class="@Class"
+       style="@Style"
+       type="text"
+       inputmode="numeric"
+       autocomplete="off"
+       maxlength="11"
+       data-tt-voucher-date="true"
+       data-tt-voucher-date-value="@BasisIsoValue"
+       value="@DisplayValue"
+       disabled="@Disabled"
+       @onchange="HandleChange"
+       @attributes="AdditionalAttributes" />
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public DateOnly? Value { get; set; }
+    [Parameter] public EventCallback<DateOnly?> ValueChanged { get; set; }
+    [Parameter] public DateOnly? BasisDate { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? Style { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)]
+    public IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private DateOnly Basis => Value ?? BasisDate ?? DateOnly.FromDateTime(DateTime.Today);
+    private string DisplayValue => Value?.ToString("dd-MMM-yyyy", CultureInfo.InvariantCulture) ?? string.Empty;
+    private string BasisIsoValue => Basis.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private async Task HandleChange(ChangeEventArgs e)
+    {
+        var text = e.Value?.ToString()?.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            await ValueChanged.InvokeAsync(null);
+            return;
+        }
+        if (FlexibleDateParser.TryParse(text, Basis, out var parsed))
+            await ValueChanged.InvokeAsync(parsed);
+    }
+}

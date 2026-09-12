@@ -1,0 +1,43 @@
+TexTrack ERP v0.5 Build 2.0 — Material Out Alter, Delete and Cancel
+
+Base
+- Built from v0.5 Build 1.9 supplied by the user.
+
+Material Out list
+- Enter or double-click opens a saved voucher.
+- Alt+C creates.
+- Alt+D requests eligible deletion.
+- Esc returns to Dashboard.
+
+Alteration
+- Loads header, JWO/component links, quantities, rates, statutory details and narration.
+- Voucher number is immutable after save.
+- Existing voucher quantity is excluded from pending validation during alteration.
+- Reposts stock movements atomically.
+- Blocks alteration when an active downstream voucher such as Material In is linked.
+- Uses concurrency-token protection.
+
+Deletion
+- Native TexTrack confirmation modal.
+- Allowed only for an active, unlinked Material Out voucher.
+- Deletes linked stock movements and JWO link in one transaction.
+- Reopens JWO pending quantity and updates JWO status.
+- Cancelled vouchers remain protected from deletion.
+
+Cancellation
+- Open voucher and press Alt+X.
+- Native modal with mandatory reason.
+- Preserves voucher and voucher number.
+- Adds reversal stock movements and reopens JWO pending quantity.
+- Records reason, user, date/time and audit entry.
+- Blocks cancellation when an active downstream Material In/dependent voucher exists.
+
+Universal shortcut foundation
+- App.razor now recognises data-voucher-cancel-action="true" for Alt+X.
+- Material Out uses the shared shortcut contract. Future voucher pages should expose the same attribute.
+
+Migration
+- 010_material_out_alter_cancel.sql expands allowed stock movement kinds for cancellation reversals.
+
+Compilation note
+- .NET SDK was unavailable in the packaging environment. No compilation claim is made.

@@ -1,0 +1,19 @@
+@namespace TexTrack.Web.Components.Vouchers.Shared
+
+<aside class="tt-voucher-command-rail" aria-label="Voucher commands">
+    @if (!string.IsNullOrWhiteSpace(Title))
+    {
+        <div class="tt-command-rail-title">@Title</div>
+    }
+    <div class="tt-command-rail-primary">@ChildContent</div>
+    @if (FooterContent is not null)
+    {
+        <div class="tt-command-rail-footer">@FooterContent</div>
+    }
+</aside>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? FooterContent { get; set; }
+}

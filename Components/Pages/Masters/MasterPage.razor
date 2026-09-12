@@ -1,0 +1,702 @@
+@namespace TexTrack.Web.Components.Pages.Masters
+@inject MasterRepository Repository
+@inject DatabaseStatus Database
+@inject IJSRuntime JS
+
+<div id="@PageRootId" class="page-card master-page" tabindex="0" @ref="pageRoot" @onkeydown="HandlePageKeyDown" @onkeydown:preventDefault="true">
+    <KeyboardContextScope ContextId="@ListContextId" RootElementId="@PageRootId"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="@(selectedIndex >= 0 && !busy)" DeleteAsync="DeleteSelected" />
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">PERSISTENT MASTER</p>
+            <h1>@definition.Title</h1>
+        </div>
+        <div class="header-actions">
+            <button class="primary-button" type="button" @onclick="OpenCreate" disabled="@(!Database.IsConnected || busy)">Alt+C Create</button>
+            <button type="button" @onclick="OpenEdit" disabled="@(selectedIndex < 0 || busy)">Enter Edit</button>
+            <button type="button" class="danger-button" @onclick="DeleteSelected" disabled="@(selectedIndex < 0 || busy)">Alt+D Delete</button>
+        </div>
+    </div>
+
+    @if (!Database.IsConnected)
+    {
+        <div class="database-warning">
+            <strong>PostgreSQL setup required</strong>
+            <p>@Database.Message</p>
+            <p>Close TexTrack, run <code>1_SETUP_POSTGRESQL_DATABASE.bat</code>, and start the application again.</p>
+        </div>
+    }
+    else
+    {
+        <div class="database-ok">● PostgreSQL connected · changes are saved permanently</div>
+        @if (Kind == MasterKind.LedgerGroup)
+        {
+            <div class="master-context-note">Permanent accounting groups are hidden from this maintenance list. They remain available as parent groups and will appear read-only in Chart of Accounts.</div>
+        }
+
+        @if (showForm)
+        {
+            <KeyboardContextScope ContextId="@FormContextId" RootElementId="@FormRootId"
+                                  ContextType="KeyboardContextType.Form"
+                                  Mode="@(editModel.Id == 0 ? KeyboardContextMode.Create : KeyboardContextMode.Alteration)"
+                                  CanDelete="@(editModel.Id != 0 && !busy)" DeleteAsync="DeleteCurrent"
+                                  InitialFocusTarget="@FormInitialFocusTarget" />
+            <div id="@FormRootId" class="compact-form master-edit-form" tabindex="-1" data-enter-navigation="true" @onkeydown="HandleFormKeyDown" @onkeydown:stopPropagation="true">
+                <div class="form-heading">
+                    <strong>@(editModel.Id == 0 ? $"Create {definition.SingularTitle}" : $"Edit {definition.SingularTitle}")</strong>
+                    <span>Alt+S Save · Esc Cancel</span>
+                </div>
+
+                @if (editModel.IsIdentityLocked)
+                {
+                    <div class="master-context-note">
+                        Used in saved transactions. Identity fields are permanent; deactivate this value to hide it from new vouchers.
+                    </div>
+                }
+
+                <label>
+                    Name
+                    <input id="master-name-input" maxlength="200" @bind="editModel.Name" @bind:event="oninput" disabled="@(SystemIdentityLocked || editModel.IsIdentityLocked)" />
+                </label>
+
+                <label>
+                    Alias
+                    <input maxlength="200" @bind="editModel.Alias" @bind:event="oninput" disabled="@(SystemIdentityLocked && Kind == MasterKind.StockGroup)" />
+                </label>
+
+                @if (definition.SupportsParent)
+                {
+                    <label>
+                        @ParentCaption
+                        <select value="@ParentValue" @onchange="ParentChanged" disabled="@SystemIdentityLocked">
+                            <option value="">-- Select Parent --</option>
+                            @foreach (var parent in ParentChoices)
+                            {
+                                <option value="@parent.Id">@parent.Name</option>
+                            }
+                        </select>
+                    </label>
+                }
+
+                @if (definition.SupportsUqcFields)
+                {
+                    <label>
+                        Short Name
+                        <input maxlength="20" @bind="editModel.ShortName" @bind:event="oninput" />
+                    </label>
+                    <label>
+                        Decimal Points
+                        <input type="number" min="0" max="6" @bind="editModel.DecimalPlaces" />
+                    </label>
+                }
+
+                @if (definition.SupportsGodownFields)
+                {
+                    <label>
+                        Address Line 1
+                        <input maxlength="250" @bind="editModel.AddressLine1" @bind:event="oninput" />
+                    </label>
+                    <label>
+                        Address Line 2
+                        <input maxlength="250" @bind="editModel.AddressLine2" @bind:event="oninput" />
+                    </label>
+                    <label>
+                        City
+                        <input maxlength="100" @bind="editModel.City" @bind:event="oninput" />
+                    </label>
+                    <label>
+                        State
+                        <input maxlength="100" @bind="editModel.State" @bind:event="oninput" />
+                    </label>
+                }
+
+                @if (definition.SupportsColourCode)
+                {
+                    <label>
+                        Colour Code
+                        <input maxlength="30" @bind="editModel.ColourCode" @bind:event="oninput" disabled="@editModel.IsIdentityLocked" />
+                    </label>
+                }
+
+                @if (definition.SupportsDisplayOrder)
+                {
+                    <label>
+                        Display Order
+                        <input type="number" min="1" max="9999" @bind="editModel.DisplayOrder" />
+                    </label>
+                }
+
+                @if (definition.SupportsActivation)
+                {
+                    <label>
+                        Available for New Vouchers
+                        <input id="@ActivationInputId" type="checkbox" @bind="editModel.IsActive" />
+                    </label>
+                }
+
+                @if (definition.SupportsTaxMode)
+                {
+                    <label>
+                        Tax Mode
+                        <select @bind="editModel.TaxMode">
+                            <option value="NotApplicable">Not Applicable</option>
+                            <option value="InventoryTaxGroup">Use Inventory Tax Group</option>
+                            <option value="DirectRates">Enter IGST/CGST/SGST Rates</option>
+                        </select>
+                    </label>
+                }
+
+                <div class="form-actions">
+                    <button type="button" class="primary-button" data-enter-save="true" @onclick="SaveAsync" disabled="@busy">Alt+S Save</button>
+                    <button type="button" @onclick="CloseForm" disabled="@busy">Esc Cancel</button>
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p class="notice @(messageIsError ? "notice-error" : "notice-success")">@message</p>
+        }
+
+        @if (loading)
+        {
+            <p class="muted">Loading @definition.Title.ToLowerInvariant()…</p>
+        }
+        else
+        {
+            <div class="grid-wrap" id="@GridContainerId">
+                <table class="data-grid selectable-grid">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Alias</th>
+                            @if (definition.SupportsParent)
+                            {
+                                <th>@ParentCaption</th>
+                            }
+                            @if (definition.SupportsUqcFields)
+                            {
+                                <th>Short Name</th>
+                                <th>Decimals</th>
+                            }
+                            @if (definition.SupportsGodownFields)
+                            {
+                                <th>City / State</th>
+                            }
+                            @if (definition.SupportsColourCode)
+                            {
+                                <th>Colour Code</th>
+                            }
+                            @if (definition.SupportsDisplayOrder)
+                            {
+                                <th>Display Order</th>
+                            }
+                            @if (definition.SupportsTaxMode)
+                            {
+                                <th>Tax Mode</th>
+                            }
+                            @if (definition.SupportsActivation)
+                            {
+                                <th>Status</th>
+                            }
+                            @if (ShowTypeColumn)
+                            {
+                                <th>Type</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (rows.Count == 0)
+                        {
+                            <tr><td colspan="@GridColumnCount" class="empty-cell">@(Kind == MasterKind.LedgerGroup ? "No user-created ledger groups." : "No records created.")</td></tr>
+                        }
+                        else
+                        {
+                            @for (var i = 0; i < rows.Count; i++)
+                            {
+                                var index = i;
+                                var row = rows[index];
+                                <tr @key="row.Id"
+                                    id="@GetRowId(row.Id)"
+                                    class="@(selectedIndex == index ? "selected-row" : null)"
+                                    @onclick="() => SelectRow(index)"
+                                    @ondblclick="OpenEdit">
+                                    <td>@row.Name</td>
+                                    <td>@row.Alias</td>
+                                    @if (definition.SupportsParent)
+                                    {
+                                        <td>@(string.IsNullOrWhiteSpace(row.ParentName) ? PrimaryParentLabel : row.ParentName)</td>
+                                    }
+                                    @if (definition.SupportsUqcFields)
+                                    {
+                                        <td>@row.ShortName</td>
+                                        <td>@row.DecimalPlaces</td>
+                                    }
+                                    @if (definition.SupportsGodownFields)
+                                    {
+                                        <td>@LocationLabel(row)</td>
+                                    }
+                                    @if (definition.SupportsColourCode)
+                                    {
+                                        <td>@row.ColourCode</td>
+                                    }
+                                    @if (definition.SupportsDisplayOrder)
+                                    {
+                                        <td>@row.DisplayOrder</td>
+                                    }
+                                    @if (definition.SupportsTaxMode)
+                                    {
+                                        <td>@TaxModeLabel(row.TaxMode)</td>
+                                    }
+                                    @if (definition.SupportsActivation)
+                                    {
+                                        <td>@(row.IsActive ? "Active" : "Inactive")</td>
+                                    }
+                                    @if (ShowTypeColumn)
+                                    {
+                                        <td>@(row.IsSystem ? "System" : "User")</td>
+                                    }
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="master-list-pager">
+                <button type="button" @onclick="PreviousMasterPage" disabled="@(pageNumber <= 1)">PgUp Previous</button>
+                <span>Page @pageNumber of @totalPages · @totalCount record@(totalCount == 1 ? "" : "s")</span>
+                <button type="button" @onclick="NextMasterPage" disabled="@(pageNumber >= totalPages)">PgDn Next</button>
+            </div>
+            <p class="master-help">↑/↓ Select · PgUp/PgDn Page · Home/End · Enter Edit · Alt+C Create · Alt+D Delete · Esc Back</p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public MasterKind Kind { get; set; }
+
+    private MasterDefinition definition = MasterDefinitions.Get(MasterKind.LedgerGroup);
+    private const int PageSize = 100;
+    private List<MasterListItem> allRows = new();
+    private List<MasterListItem> rows = new();
+    private List<MasterListItem> parentRows = new();
+    private MasterEditModel editModel = new();
+    private int selectedIndex = -1;
+    private bool loading = true;
+    private bool busy;
+    private bool showForm;
+    private bool pendingNameFocus;
+    private bool pendingRowScroll;
+    private string message = string.Empty;
+    private bool messageIsError;
+    private ElementReference pageRoot;
+    private int pageNumber = 1;
+    private int totalPages = 1;
+    private int totalCount;
+
+    private string ContextKey => Kind.ToString().ToLowerInvariant();
+    private string PageRootId => $"master-{ContextKey}-page-root";
+    private string FormRootId => $"master-{ContextKey}-form-root";
+    private string ListContextId => $"master-{ContextKey}-list";
+    private string FormContextId => $"master-{ContextKey}-form";
+    private string ActivationInputId => $"master-{ContextKey}-active";
+    private string FormInitialFocusTarget => editModel.IsIdentityLocked
+        ? ActivationInputId
+        : SystemIdentityLocked ? FormRootId : "master-name-input";
+    private string GridContainerId => $"master-grid-{Kind}";
+    private string GetRowId(long id) => $"master-row-{Kind}-{id}";
+
+    private IEnumerable<MasterListItem> ParentChoices =>
+        parentRows.Where(x => x.Id != editModel.Id &&
+            (Kind != MasterKind.StockGroup || !x.Name.Equals("Work In Progress", StringComparison.OrdinalIgnoreCase)))
+        .OrderByDescending(x => x.IsSystem).ThenBy(x => x.Name);
+
+    private string ParentValue => editModel.ParentId?.ToString() ?? string.Empty;
+
+    private bool ShowTypeColumn => Kind != MasterKind.LedgerGroup;
+
+    private int GridColumnCount =>
+        2
+        + (definition.SupportsParent ? 1 : 0)
+        + (definition.SupportsUqcFields ? 2 : 0)
+        + (definition.SupportsGodownFields ? 1 : 0)
+        + (definition.SupportsColourCode ? 1 : 0)
+        + (definition.SupportsDisplayOrder ? 1 : 0)
+        + (definition.SupportsTaxMode ? 1 : 0)
+        + (definition.SupportsActivation ? 1 : 0)
+        + (ShowTypeColumn ? 1 : 0);
+
+    private bool SelectedRecordIsSystem =>
+        editModel.Id != 0 && rows.FirstOrDefault(x => x.Id == editModel.Id)?.IsSystem == true;
+
+    private bool SystemIdentityLocked =>
+        SelectedRecordIsSystem && Kind == MasterKind.StockGroup;
+
+    private string ParentCaption => "Parent Group";
+
+    private string PrimaryParentLabel => "Primary Group";
+
+    private int NextDisplayOrder => rows.Count == 0
+        ? 10
+        : Math.Min(9999, (rows.Max(x => x.DisplayOrder ?? 0) / 10 + 1) * 10);
+
+    protected override void OnParametersSet()
+    {
+        definition = MasterDefinitions.Get(Kind);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await pageRoot.FocusAsync();
+        }
+
+        if (pendingNameFocus)
+        {
+            pendingNameFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusById", FormInitialFocusTarget);
+        }
+
+        if (pendingRowScroll && selectedIndex >= 0 && selectedIndex < rows.Count)
+        {
+            pendingRowScroll = false;
+            await JS.InvokeVoidAsync(
+                "texTrackScrollRowIntoView",
+                GetRowId(rows[selectedIndex].Id),
+                GridContainerId);
+        }
+    }
+
+    private async Task LoadAsync(long? selectId = null)
+    {
+        if (!Database.IsConnected)
+        {
+            loading = false;
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            var loadedRows = (await Repository.GetListAsync(Kind)).ToList();
+            parentRows = definition.SupportsParent ? loadedRows : new List<MasterListItem>();
+
+            // Permanent Ledger Groups are structural roots. They remain available in
+            // Parent Group selectors and Ledger creation, but are not editable master rows.
+            allRows = Kind == MasterKind.LedgerGroup
+                ? loadedRows.Where(x => !x.IsSystem).ToList()
+                : loadedRows;
+            totalCount = allRows.Count;
+            totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)PageSize));
+            if (selectId is not null)
+            {
+                var absoluteIndex = allRows.FindIndex(x => x.Id == selectId.Value);
+                if (absoluteIndex >= 0) pageNumber = absoluteIndex / PageSize + 1;
+            }
+            pageNumber = Math.Clamp(pageNumber, 1, totalPages);
+            rows = allRows.Skip((pageNumber - 1) * PageSize).Take(PageSize).ToList();
+
+            if (rows.Count == 0)
+            {
+                selectedIndex = -1;
+            }
+            else if (selectId is not null)
+            {
+                selectedIndex = rows.FindIndex(x => x.Id == selectId.Value);
+                if (selectedIndex < 0)
+                {
+                    selectedIndex = 0;
+                }
+            }
+            else if (selectedIndex < 0 || selectedIndex >= rows.Count)
+            {
+                selectedIndex = 0;
+            }
+
+            pendingRowScroll = selectedIndex >= 0;
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void SelectRow(int index)
+    {
+        selectedIndex = index;
+        message = string.Empty;
+        pendingRowScroll = true;
+    }
+
+    private void PreviousMasterPage()
+    {
+        if (pageNumber <= 1) return;
+        pageNumber--; ApplyMasterPage();
+    }
+
+    private void NextMasterPage()
+    {
+        if (pageNumber >= totalPages) return;
+        pageNumber++; ApplyMasterPage();
+    }
+
+    private void ApplyMasterPage()
+    {
+        rows = allRows.Skip((pageNumber - 1) * PageSize).Take(PageSize).ToList();
+        selectedIndex = rows.Count == 0 ? -1 : 0;
+        pendingRowScroll = selectedIndex >= 0;
+    }
+
+    private void OpenCreate()
+    {
+        if (!Database.IsConnected || busy)
+        {
+            return;
+        }
+
+        editModel = new MasterEditModel
+        {
+            DecimalPlaces = definition.SupportsUqcFields ? 2 : 0,
+            TaxMode = "NotApplicable",
+            DisplayOrder = definition.SupportsDisplayOrder ? NextDisplayOrder : 100,
+            IsActive = true,
+            ParentId = definition.SupportsParent
+                ? parentRows.FirstOrDefault(x => x.IsSystem)?.Id
+                : null
+        };
+        showForm = true;
+        message = string.Empty;
+        pendingNameFocus = true;
+    }
+
+    private async Task OpenEdit()
+    {
+        if (selectedIndex < 0 || selectedIndex >= rows.Count || busy)
+        {
+            return;
+        }
+
+        var selected = rows[selectedIndex];
+        var model = await Repository.GetForEditAsync(Kind, selected.Id);
+        if (model is null)
+        {
+            ShowError("The selected record no longer exists.");
+            await LoadAsync();
+            return;
+        }
+
+        editModel = model;
+        showForm = true;
+        message = string.Empty;
+        pendingNameFocus = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var result = await Repository.SaveAsync(Kind, editModel);
+            if (!result.Success)
+            {
+                ShowError(result.Message);
+                pendingNameFocus = true;
+                return;
+            }
+
+            showForm = false;
+            ShowSuccess(result.Message);
+            await LoadAsync(result.EntityId);
+            await pageRoot.FocusAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private Task DeleteSelected() => DeleteSelectedCore(null);
+
+    private Task DeleteCurrent() => DeleteSelectedCore(FormInitialFocusTarget);
+
+    private async Task DeleteSelectedCore(string? returnFocusId)
+    {
+        if (selectedIndex < 0 || selectedIndex >= rows.Count || busy)
+        {
+            return;
+        }
+
+        var selected = rows[selectedIndex];
+        var confirmed = await JS.InvokeAsync<bool>(
+            "texTrackConfirmDelete",
+            "Delete Master?",
+            $"Delete '{selected.Name}'? This is allowed only when it is completely unused.",
+            returnFocusId ?? GetRowId(selected.Id));
+        if (!confirmed)
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var result = await Repository.DeleteAsync(Kind, selected.Id);
+            if (!result.Success)
+            {
+                ShowError(result.Message);
+                return;
+            }
+
+            ShowSuccess(result.Message);
+            await LoadAsync();
+            if (selectedIndex >= rows.Count)
+            {
+                selectedIndex = rows.Count - 1;
+            }
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task CloseForm()
+    {
+        showForm = false;
+        editModel = new MasterEditModel();
+        message = string.Empty;
+        pendingRowScroll = selectedIndex >= 0;
+        await pageRoot.FocusAsync();
+    }
+
+    private void ParentChanged(ChangeEventArgs args)
+    {
+        var value = args.Value?.ToString();
+        editModel.ParentId = long.TryParse(value, out var id) ? id : null;
+    }
+
+    private async Task HandlePageKeyDown(KeyboardEventArgs e)
+    {
+        if (showForm)
+        {
+            return;
+        }
+
+        if (e.AltKey && e.Key.Equals("c", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenCreate();
+            return;
+        }
+
+
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var selectionChanged = false;
+
+        if (e.Key is "ArrowDown" or "Down")
+        {
+            selectedIndex = Math.Min(selectedIndex + 1, rows.Count - 1);
+            selectionChanged = true;
+        }
+        else if (e.Key is "ArrowUp" or "Up")
+        {
+            selectedIndex = Math.Max(selectedIndex - 1, 0);
+            selectionChanged = true;
+        }
+        else if (e.Key == "PageDown")
+        {
+            if (pageNumber < totalPages) { NextMasterPage(); selectionChanged = true; }
+        }
+        else if (e.Key == "PageUp")
+        {
+            if (pageNumber > 1) { PreviousMasterPage(); selectionChanged = true; }
+        }
+        else if (e.Key == "Home")
+        {
+            selectedIndex = 0;
+            selectionChanged = true;
+        }
+        else if (e.Key == "End")
+        {
+            selectedIndex = rows.Count - 1;
+            selectionChanged = true;
+        }
+        else if (e.Key == "Enter")
+        {
+            await OpenEdit();
+        }
+
+        if (selectionChanged)
+        {
+            pendingRowScroll = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandleFormKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await CloseForm();
+        }
+        else if (e.AltKey && e.Key.Equals("s", StringComparison.OrdinalIgnoreCase))
+        {
+            await SaveAsync();
+        }
+    }
+
+    private void ShowSuccess(string text)
+    {
+        message = text;
+        messageIsError = false;
+    }
+
+    private void ShowError(string text)
+    {
+        message = text;
+        messageIsError = true;
+    }
+
+    private static string LocationLabel(MasterListItem row)
+    {
+        var parts = new[] { row.City, row.State }.Where(x => !string.IsNullOrWhiteSpace(x));
+        var value = string.Join(", ", parts);
+        return string.IsNullOrWhiteSpace(value) ? "—" : value;
+    }
+
+    private static string TaxModeLabel(string mode) => mode switch
+    {
+        "InventoryTaxGroup" => "Inventory Tax Group",
+        "DirectRates" => "Direct GST Rates",
+        _ => "Not Applicable"
+    };
+}

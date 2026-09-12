@@ -1,0 +1,25 @@
+.age-band-filter { position: relative; margin-left: auto; }
+.age-band-trigger { padding: 6px 10px; border: 1px solid #9eb2c7; border-radius: 4px; background: #fff; color: #132d51; font-size: .78rem; font-weight: 700; }
+.age-band-trigger.filtered { border-color: #2d69ad; background: #e7f1fc; color: #123d70; }
+.age-band-popover { position: absolute; z-index: 700; top: calc(100% + 5px); right: 0; width: min(390px, calc(100vw - 40px)); padding: 12px; border: 1px solid #8fa5bb; border-radius: 5px; background: #fff; color: #142b49; box-shadow: 0 10px 28px rgba(10,31,57,.25); }
+.age-band-popover header { display: grid; gap: 3px; margin-bottom: 10px; }
+.age-band-popover header strong { font-size: .85rem; text-transform: uppercase; }
+.age-band-popover header small { color: #5d7187; line-height: 1.35; }
+.age-band-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.age-band-options label { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 7px 8px; border: 1px solid #c7d3df; border-radius: 3px; background: #f7f9fc; font-weight: 700; }
+.age-band-options input { width: auto; }
+.age-band-popover details { margin-top: 10px; border-top: 1px solid #d5dee8; padding-top: 8px; }
+.age-band-popover summary { cursor: pointer; color: #214f83; font-size: .78rem; font-weight: 800; }
+.age-band-editor { display: grid; gap: 6px; margin-top: 8px; }
+.age-band-editor-row { display: grid; grid-template-columns: 22px 1fr 1fr 30px; gap: 6px; align-items: end; }
+.age-band-editor-row > span { align-self: center; text-align: center; font-weight: 800; }
+.age-band-editor-row label { display: grid; gap: 2px; color: #5d7187; font-size: .68rem; font-weight: 700; }
+.age-band-editor-row input { width: 100%; min-width: 0; padding: 5px 6px; }
+.age-band-editor-row button, .age-band-add { min-height: 29px; border: 1px solid #a8bacb; background: #fff; color: #17385f; font-weight: 800; }
+.age-band-editor-row button:disabled, .age-band-add:disabled { opacity: .45; }
+.age-band-add { justify-self: start; padding: 5px 9px; }
+.age-band-error { margin: 8px 0 0; color: #a32121; font-size: .75rem; font-weight: 700; }
+.age-band-popover footer { display: grid; grid-template-columns: auto 1fr auto auto; gap: 6px; margin-top: 12px; padding-top: 9px; border-top: 1px solid #d5dee8; }
+.age-band-popover footer button { padding: 6px 9px; border: 1px solid #9eb2c7; border-radius: 3px; background: #fff; color: #132d51; font-weight: 700; }
+.age-band-popover footer button.primary { background: #17385f; color: #fff; }
+@media (max-width: 560px) { .age-band-options { grid-template-columns: 1fr; } }

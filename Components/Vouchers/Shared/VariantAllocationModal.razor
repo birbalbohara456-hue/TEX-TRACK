@@ -1,0 +1,170 @@
+@namespace TexTrack.Web.Components.Vouchers.Shared
+@using Microsoft.AspNetCore.Components.Web
+@using TexTrack.Web.Models
+
+@if (IsOpen)
+{
+    <div class="tt-dialog-overlay va-modal-overlay" role="presentation">
+        <section class="tt-dialog va-modal" role="dialog" aria-modal="true" aria-labelledby="va-modal-title" tabindex="0"
+                 data-enter-navigation="true" data-tt-voucher-form-root="true"
+                 @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+            <header class="tt-dialog-titlebar"><strong id="va-modal-title">@Item.StockItemName &middot; Allocate Quantity</strong></header>
+            <div class="tt-dialog-body va-modal-body">
+                <label class="va-po-ref-field">
+                    <span>P.O. Ref No.</span>
+                    <input class="tally-input" maxlength="100" placeholder="e.g. PO/2026-27/0041 (optional)"
+                           value="@poRefNo" @onchange="e => poRefNo = Convert.ToString(e.Value) ?? string.Empty" />
+                </label>
+                <table class="va-matrix">
+                    <thead>
+                        <tr>
+                            @if (Item.HasColourAxis)
+                            {
+                                <th class="va-colour-header">Colour</th>
+                            }
+                            @foreach (var col in Columns)
+                            {
+                                <th>@col.SizeLabel</th>
+                            }
+                            <th class="va-total-header">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var group in Item.ColourGroups)
+                        {
+                            <tr @key="group.ColourId ?? -1">
+                                @if (Item.HasColourAxis)
+                                {
+                                    <td class="va-colour-name">@group.ColourName</td>
+                                }
+                                @foreach (var col in Columns)
+                                {
+                                    var cell = group.SizeCells.FirstOrDefault(c => c.SizeId == col.SizeId);
+                                    <td class="va-cell">
+                                        @if (cell is not null)
+                                        {
+                                            var cap = GetCap(cell.StockItemVariantId);
+                                            <input type="number" min="0" step="0.0001" max="@cap"
+                                                   class="tally-input va-qty-input"
+                                                   value="@GetQuantity(cell.StockItemVariantId)"
+                                                   @onchange="e => QuantityChanged(cell.StockItemVariantId, e)" />
+                                            @if (cap is not null)
+                                            {
+                                                <small class="va-pending-hint">Pending @cap.Value.ToString("0.####")</small>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="va-cell-empty">&mdash;</span>
+                                        }
+                                    </td>
+                                }
+                                <td class="va-row-total">@RowTotal(group).ToString("0.####")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <footer class="tt-dialog-actions">
+                <button type="button" class="compact-action action-secondary" tabindex="-1" @onclick="HandleCancel">Cancel</button>
+                <button type="button" class="compact-action action-save" data-enter-save="true" disabled="@(TotalQuantity <= 0)" @onclick="HandleConfirm">Confirm</button>
+            </footer>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public bool IsOpen { get; set; }
+    [Parameter, EditorRequired] public PurchaseItemVariantDetail Item { get; set; } = default!;
+    [Parameter] public IReadOnlyList<VariantAllocationCell> ExistingAllocations { get; set; } = [];
+    [Parameter] public decimal InitialRate { get; set; }
+    [Parameter] public decimal InitialDiscountPercent { get; set; }
+    [Parameter] public string InitialPoRefNo { get; set; } = string.Empty;
+    [Parameter] public bool CapsApply { get; set; }
+    [Parameter] public IReadOnlyDictionary<long, decimal>? PendingCapsByVariantId { get; set; }
+    [Parameter, EditorRequired] public EventCallback<VariantAllocationResult> Confirmed { get; set; }
+    [Parameter, EditorRequired] public EventCallback Cancelled { get; set; }
+
+    private Dictionary<long, decimal> quantityByVariant = new();
+    private decimal rate;
+    private decimal discountPercent;
+    private string poRefNo = string.Empty;
+    private bool wasOpen;
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen && !wasOpen)
+        {
+            quantityByVariant = ExistingAllocations.ToDictionary(a => a.StockItemVariantId, a => a.Quantity);
+            rate = InitialRate;
+            discountPercent = InitialDiscountPercent;
+            poRefNo = InitialPoRefNo;
+        }
+        wasOpen = IsOpen;
+    }
+
+    private IReadOnlyList<(long? SizeId, string SizeLabel, int DisplayOrder)> Columns =>
+        Item.ColourGroups
+            .SelectMany(g => g.SizeCells)
+            .Select(c => (c.SizeId, c.SizeLabel, c.DisplayOrder))
+            .Distinct()
+            .OrderBy(c => c.DisplayOrder)
+            .ToList();
+
+    private decimal GetQuantity(long variantId) => quantityByVariant.GetValueOrDefault(variantId);
+
+    private decimal? GetCap(long variantId) =>
+        CapsApply ? PendingCapsByVariantId?.GetValueOrDefault(variantId) : null;
+
+    private decimal RowTotal(PurchaseItemColourGroup group) =>
+        group.SizeCells.Sum(c => GetQuantity(c.StockItemVariantId));
+
+    private decimal TotalQuantity => quantityByVariant.Values.Sum();
+
+    private void QuantityChanged(long variantId, ChangeEventArgs e)
+    {
+        if (decimal.TryParse(Convert.ToString(e.Value), out var value) && value > 0)
+        {
+            var cap = GetCap(variantId);
+            if (cap is decimal c) value = Math.Min(value, c);
+            quantityByVariant[variantId] = value;
+        }
+        else
+        {
+            quantityByVariant.Remove(variantId);
+        }
+    }
+
+    private async Task HandleCancel() => await Cancelled.InvokeAsync();
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await HandleCancel();
+    }
+
+    private async Task HandleConfirm()
+    {
+        if (TotalQuantity <= 0) return;
+        var allocations = Item.ColourGroups
+            .SelectMany(g => g.SizeCells.Select(c => (Group: g, Cell: c)))
+            .Where(x => GetQuantity(x.Cell.StockItemVariantId) > 0)
+            .Select(x => new VariantAllocationCell
+            {
+                StockItemVariantId = x.Cell.StockItemVariantId,
+                ColourId = x.Group.ColourId,
+                ColourName = x.Group.ColourName,
+                SizeId = x.Cell.SizeId,
+                SizeLabel = x.Cell.SizeLabel,
+                Quantity = GetQuantity(x.Cell.StockItemVariantId),
+                PendingCap = GetCap(x.Cell.StockItemVariantId)
+            })
+            .ToList();
+        await Confirmed.InvokeAsync(new VariantAllocationResult
+        {
+            Allocations = allocations,
+            Rate = rate,
+            DiscountPercent = discountPercent,
+            PoRefNo = poRefNo
+        });
+    }
+}

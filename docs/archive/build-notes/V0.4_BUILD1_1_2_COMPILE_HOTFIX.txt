@@ -1,0 +1,13 @@
+TexTrack ERP v0.4 Build 1.1.2 - Compile Hotfix
+
+Fixes:
+- Corrected Razor variable scope for visibleComponents in JobWorkOutOrder.razor.
+- No database migration or data changes.
+- Preserves 12px text, due-date defaulting, searchable typed fields, and Tally-style component allocation.
+
+Run:
+1. Build > Clean Solution
+2. Build > Rebuild Solution
+3. Ctrl+F5
+
+Expected footer: v0.4 Build 1.1.2 Compile Hotfix

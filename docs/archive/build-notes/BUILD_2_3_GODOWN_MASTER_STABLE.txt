@@ -1,0 +1,51 @@
+TexTrack ERP v0.5 Build 2.3 - Godown Master Stable
+==================================================
+
+Base
+----
+TexTrack_ERP_v0.5_Build2_2_GLOBAL_KEYBOARD_CONTEXT_FULL.zip
+
+Audit and parity
+----------------
+- The approved C# schema already stores Godown ID, company, name/normalized name,
+  alias, address lines, city, state, active/audit fields and concurrency token.
+- Migration 004 intentionally flattened Godowns and removed parent_id. No hierarchy
+  migration was added.
+- Typed C# references exist in JWO finished goods/components, Material Out lines/detail,
+  and stock movements. No Job Worker default mapping, Material In, purchase, sales,
+  stock journal, opening-stock, pending-production, or Tally Godown mapping table exists
+  in the approved schema.
+- The supplied Python reference was v0.36.2.3, not requested v0.36.2.21. Its Godown
+  screen provides name/parent create, alter and contains search, but no safe-delete
+  dependency workflow. Its parent is free text, conflicting with the approved flat C#
+  model. The C# alias/address data was preserved.
+
+Implementation
+--------------
+- Dedicated Godown list/create/alter page using the frozen KeyboardContextScope.
+- Server-side contains search across name, alias, address lines, city and state.
+- Keyboard row navigation, F4 search, stable selection and scroll restoration.
+- Create and alteration focus the Godown name without mouse activation.
+- Alt+D remains owned by the shared global capture framework.
+- Explicit transactional delete checks for JWO, Material Out and stock-movement history.
+- Zero stock balance does not permit deletion when movement history exists.
+- No changes to migrations, CSS, global keyboard code, vouchers or stock posting.
+
+Verification
+------------
+- dotnet restore: PASS
+- full solution build: PASS
+- PostgreSQL/component tests: 25 passed
+- JavaScript global keyboard tests: 10 passed
+- Real Chrome Godown workflow: create/alter/unused delete/linked block/focus/navigation PASS
+- Real Chrome 14-screen global keyboard matrix: PASS
+
+Changed files
+-------------
+- Components/Pages/Masters/Godowns.razor
+- Services/MasterRepository.cs
+- Tests/TexTrack.Web.IntegrationTests/StockItemUqcImmutabilityTests.cs
+- Tests/TexTrack.Web.IntegrationTests/GodownMasterStabilizationTests.cs
+- Tests/JavaScript/keyboard-context.browser.cjs
+- Tests/JavaScript/godown-master.browser.cjs
+- BUILD_2_3_GODOWN_MASTER_STABLE.txt

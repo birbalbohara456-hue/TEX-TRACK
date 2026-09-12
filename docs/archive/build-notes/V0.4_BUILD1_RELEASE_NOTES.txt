@@ -1,0 +1,27 @@
+TexTrack ERP v0.4 Build 1 — Voucher Core + Job Work Out Order
+
+WHAT IS NEW
+- Generic PostgreSQL voucher header foundation.
+- First fully working Job Work Out Order voucher.
+- Automatic/manual voucher numbering foundation.
+- Multiple Finished Goods in one JWO.
+- Per-FG Colour and Size quantities through hidden variants.
+- Optional Components beneath each Finished Good.
+- Batch, Job Worker, Due Date, Reference and Narration.
+- Create, alter, search and delete for unlinked JWO.
+- Audit records and concurrency protection.
+- Generic voucher-link table for later Material Out and Material In.
+- Dependency protection added to Stock Items and used variants.
+
+IMPORTANT BUSINESS BEHAVIOUR
+- JWO is an order/planning voucher only.
+- JWO does not post stock.
+- JWO does not post accounting entries.
+- Linked JWO deletion is blocked.
+- Alteration of linked JWO is currently blocked safely until the guided reconciliation engine is introduced.
+
+KNOWN SCOPE LIMITS OF THIS BUILD
+- Material Out and Material In are not yet implemented.
+- Guided reconciliation is not yet implemented.
+- Master Job Order remains optional and is not implemented yet.
+- User/role security is not yet implemented; audit user currently records Developer.

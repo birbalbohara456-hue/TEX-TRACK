@@ -1,0 +1,52 @@
+TexTrack ERP v0.5 Build 2.9A — JWO Visual Separation
+=====================================================
+
+Base:
+TexTrack_ERP_v0.5_Build2_9_JOB_WORKER_INVENTORY_AND_MI_VISUAL_FULL.zip
+
+Purpose:
+Separate the Job Work Out Order page-specific visual styling from the global
+application stylesheet so JWO field sizes and layout can be edited safely.
+
+Changes:
+1. Added:
+   Components/Pages/Vouchers/JobWorkOutOrder.razor.css
+
+2. Moved all JWO-only CSS selectors out of wwwroot/css/app.css, including:
+   - .jwo-*
+   - .voucher-master-fields
+   - .compact-action
+   - .line-remove
+   - .component-allocation-*
+   - .component-close-button
+   - .component-popup-message
+   - .keyboard-action-proxy
+
+3. Shared application styles remain in wwwroot/css/app.css, including:
+   - application shell
+   - shared page header/actions
+   - shared lookup panel
+   - shared master/list grid
+   - reusable messages and warnings
+
+4. No C# business engine, repository, model, database migration, voucher posting,
+   numbering, Material Out, Material In, or reporting logic was changed.
+
+Editing JWO visuals now:
+- Markup: Components/Pages/Vouchers/JobWorkOutOrder.razor
+- JWO visual CSS: Components/Pages/Vouchers/JobWorkOutOrder.razor.css
+- Shared application visuals only: wwwroot/css/app.css
+
+Important:
+This build separates JWO-specific CSS from the global stylesheet. The Razor file
+still contains the page markup and its page-level interaction/state code. A later
+controlled refactor can move the @code block into JobWorkOutOrder.razor.cs and
+split FG/components/process visual sections into child components, but that was
+not done here because it would enlarge the regression surface.
+
+Validation:
+- CSS parsed and separated programmatically.
+- Confirmed no JWO-specific selectors remain in app.css.
+- .NET compilation could not be executed in the packaging environment because
+  the dotnet SDK is not installed. Run BUILD_AND_RUN.bat or build in Visual Studio
+  before treating this package as frozen.

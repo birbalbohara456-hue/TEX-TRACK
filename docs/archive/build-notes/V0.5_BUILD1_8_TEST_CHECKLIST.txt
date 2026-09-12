@@ -1,0 +1,19 @@
+TexTrack ERP v0.5 Build 1.8 — Focused Test Checklist
+
+A. Exit modal
+1. Open Material Out and load a JWO.
+2. Press Esc once.
+3. Confirm the voucher remains open and the native Exit Voucher modal appears.
+4. Press Enter while No is selected: modal closes, voucher stays open.
+5. Open modal again, choose Yes using Left/Right or Tab, press Enter: return to Dashboard.
+6. Confirm no modal remains visible after navigation and keyboard focus is active on Dashboard.
+
+B. Rate
+1. Create a JWO component with a non-zero rate and save it.
+2. Load it in Material Out.
+3. Confirm Rate is prefilled from JWO.
+4. Edit Rate using keyboard.
+5. Confirm Amount immediately follows Quantity × Rate.
+6. Press Enter from Quantity: focus moves to Rate.
+7. Press Enter from Rate: focus moves to next component Quantity or GST/e-Way Bill.
+8. Save and verify the Material Out line stores the edited rate without changing the JWO rate.

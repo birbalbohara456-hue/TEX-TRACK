@@ -1,0 +1,1044 @@
+@page "/masters/stock-items"
+@attribute [Authorize(Policy = SecurityPolicies.ManageMasters)]
+@using System.Globalization
+@inject StockItemRepository Repository
+@inject DatabaseStatus Database
+@inject IJSRuntime JS
+
+<PageTitle>Stock Items</PageTitle>
+
+<div id="stock-items-page-root" class="page-card stock-item-page" tabindex="0" @ref="pageRoot" @onkeydown="HandlePageKeyDown" @onkeydown:preventDefault="true">
+    <KeyboardContextScope ContextId="stock-items-list" RootElementId="stock-items-page-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="@(selectedIndex >= 0 && !busy)" DeleteAsync="DeleteSelected" />
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">INVENTORY MASTER</p>
+            <h1>Stock Items</h1>
+        </div>
+        <div class="header-actions">
+            <button class="primary-button" type="button" @onclick="OpenCreate" disabled="@(!Database.IsConnected || busy)">Alt+C Create</button>
+            <button type="button" @onclick="OpenEdit" disabled="@(selectedIndex < 0 || busy)">Enter Edit</button>
+            <button type="button" class="danger-button" @onclick="DeleteSelected" disabled="@(selectedIndex < 0 || busy)">Alt+D Delete</button>
+        </div>
+    </div>
+
+    @if (!Database.IsConnected)
+    {
+        <div class="database-warning">
+            <strong>PostgreSQL setup required</strong>
+            <p>@Database.Message</p>
+        </div>
+    }
+    else
+    {
+        <div class="database-ok">● PostgreSQL connected · Stock Items and hidden variants are saved permanently</div>
+
+        @if (showForm)
+        {
+            <KeyboardContextScope ContextId="stock-items-form" RootElementId="stock-items-form-root"
+                                  ContextType="KeyboardContextType.Form"
+                                  Mode="@(editModel.Id == 0 ? KeyboardContextMode.Create : KeyboardContextMode.Alteration)"
+                                  CanDelete="@(editModel.Id != 0 && !busy)" DeleteAsync="DeleteCurrent"
+                                  InitialFocusTarget="stock-item-name-input" />
+            <div id="stock-items-form-root" class="stock-item-edit-form" data-enter-navigation="true" @onkeydown="HandleFormKeyDown" @onkeydown:stopPropagation="true">
+                @if (zoomedPhotoUrl is not null)
+                {
+                    <div class="stock-item-photo-zoom-overlay" @onclick="CloseZoom">
+                        <img src="@zoomedPhotoUrl" alt="Enlarged photo" />
+                        <button type="button" class="stock-item-photo-zoom-close" title="Close (Esc)" @onclick="CloseZoom">×</button>
+                    </div>
+                }
+                <div class="form-heading stock-item-form-heading">
+                    <strong>@(editModel.Id == 0 ? "Create Stock Item" : "Edit Stock Item")</strong>
+                    <span class="stock-item-heading-actions">
+                        <button type="button" class="stock-item-heading-btn stock-item-heading-btn-primary" data-enter-save="true" @onclick="SaveAsync" disabled="@busy">Alt+S Save</button>
+                        <button type="button" class="stock-item-heading-btn" @onclick="CloseForm" disabled="@busy">Esc Cancel</button>
+                        <span class="stock-item-heading-sep">·</span>
+                        Hidden variants: <strong>@CalculatedVariantCount</strong>
+                    </span>
+                </div>
+
+                <div class="stock-item-tabs" role="tablist">
+                    <button type="button" role="tab" aria-selected="@(activeTab == "item")" class="@(activeTab == "item" ? "active" : null)" @onclick='() => SwitchTab("item")'>Item &amp; Attributes</button>
+                    <button type="button" role="tab" aria-selected="@(activeTab == "variants")" class="@(activeTab == "variants" ? "active" : null)" @onclick='() => SwitchTab("variants")'>Variants</button>
+                    <button type="button" role="tab" aria-selected="@(activeTab == "tax")" class="@(activeTab == "tax" ? "active" : null)" @onclick='() => SwitchTab("tax")'>Tax</button>
+                    <button type="button" role="tab" aria-selected="@(activeTab == "opening")" class="@(activeTab == "opening" ? "active" : null)" @onclick='() => SwitchTab("opening")'>Opening Stock</button>
+                    <span class="stock-item-tab-hint">Ctrl+PgUp / Ctrl+PgDn switch tabs</span>
+                </div>
+
+                <div class="stock-item-tab-panel @(activeTab is "opening" or "variants" ? "stock-item-tab-panel-scrolls" : null)">
+                @if (activeTab == "item")
+                {
+                <section class="form-section stock-item-item-section stock-item-v2">
+                    <div class="stock-item-field-strip">
+                        <div class="stock-item-field-cell" style="flex:2.2">
+                            <span class="stock-item-field-label">Stock Item Name <b>*</b></span>
+                            <input id="stock-item-name-input" class="stock-item-field-input" maxlength="200" @bind="editModel.Name" @bind:event="oninput" />
+                        </div>
+                        <div class="stock-item-field-cell" style="flex:1.2">
+                            <span class="stock-item-field-label">Alias</span>
+                            <input class="stock-item-field-input" maxlength="200" @bind="editModel.Alias" @bind:event="oninput" />
+                        </div>
+                        <div class="stock-item-field-cell" style="flex:1.8">
+                            <span class="stock-item-field-label">Stock Group <b>*</b></span>
+                            <select class="stock-item-field-input" value="@editModel.StockGroupId" @onchange="StockGroupChanged">
+                                <option value="0">-- Select Stock Group --</option>
+                                @foreach (var group in lookups.StockGroups)
+                                {
+                                    <option value="@group.Id">@group.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="stock-item-field-cell" style="flex:1.6">
+                            <span class="stock-item-field-label">
+                                UQC <b>*</b>
+                                @if (editModel.IsUqcLocked)
+                                {
+                                    <span class="optional-field">(Locked)</span>
+                                }
+                            </span>
+                            <select class="stock-item-field-input" value="@editModel.UqcId"
+                                    @onchange="UqcChanged"
+                                    disabled="@editModel.IsUqcLocked"
+                                    title="@(editModel.IsUqcLocked ? "UQC cannot be changed after this Stock Item has transactional usage." : null)">
+                                <option value="0">-- Select UQC --</option>
+                                @foreach (var unit in lookups.Uqcs)
+                                {
+                                    <option value="@unit.Id">@unit.Name (@unit.SecondaryText)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <table class="stock-item-v2-table">
+                        <thead>
+                            <tr><th class="col-num">#</th><th class="col-field">Field</th><th class="col-left">Value</th><th class="col-price">Cost Price</th><th class="col-price">Sale Price</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="col-num">1</td>
+                                <td class="col-field">Stock Category</td>
+                                <td>
+                                    <select class="stock-item-v2-input" value="@(editModel.StockCategoryId?.ToString() ?? string.Empty)" @onchange="StockCategoryChanged">
+                                        <option value="">-- Not Selected --</option>
+                                        @foreach (var category in lookups.StockCategories)
+                                        {
+                                            <option value="@category.Id">@category.Name</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>
+                                    <input class="stock-item-v2-input align-right" type="number" min="0" step="0.0001" placeholder="0.00" value="@editModel.CostPrice"
+                                           @oninput="e => editModel.CostPrice = ParseOptionalDecimal(e.Value)" />
+                                </td>
+                                <td>
+                                    <input class="stock-item-v2-input align-right" type="number" min="0" step="0.0001" placeholder="0.00" value="@editModel.SalePrice"
+                                           @oninput="e => editModel.SalePrice = ParseOptionalDecimal(e.Value)" />
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="stock-item-v2-flex">
+                        <div class="stock-item-v2-main">
+                            @if (editModel.CustomFields.Count > 0)
+                            {
+                                <div class="stock-item-v2-section-header">
+                                    <span>Attributes</span>
+                                    <span class="stock-item-v2-section-sub">— Company-configured custom fields</span>
+                                </div>
+                                <table class="stock-item-v2-table">
+                                    <thead>
+                                        <tr><th class="col-num">#</th><th class="col-field">Attribute</th><th class="col-left">Value</th><th class="col-type">Type</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @{ var attrIndex = 0; }
+                                        @foreach (var field in editModel.CustomFields)
+                                        {
+                                            attrIndex++;
+                                            <tr @key="field.DefinitionId">
+                                                <td class="col-num">@attrIndex</td>
+                                                <td class="col-field">@field.Name @if (field.IsRequired) { <b>*</b> }</td>
+                                                <td>
+                                                    @if (field.FieldType == "Photo")
+                                                    {
+                                                        <div class="stock-item-photo-upload">
+                                                            <InputFile OnChange="e => AddPhotosAsync(field, e)"
+                                                                       multiple="@field.AllowMultiple"
+                                                                       accept="image/jpeg,image/png,image/webp" />
+                                                            <div class="stock-item-photo-strip">
+                                                                @foreach (var photo in field.Photos)
+                                                                {
+                                                                    var photoUrl = photo.NewContent is not null ? ToDataUrl(photo) : $"/api/stock-item-photos/{photo.Id}";
+                                                                    <figure @key="photo">
+                                                                        <img src="@photoUrl" alt="@field.Name" title="Click to enlarge" @onclick="() => OpenZoom(photoUrl)" />
+                                                                        <figcaption title="@photo.FileName">@photo.FileName</figcaption>
+                                                                        <button type="button" title="Remove photo" @onclick="() => RemovePhoto(field, photo)">×</button>
+                                                                    </figure>
+                                                                }
+                                                            </div>
+                                                            <small>JPG, PNG or WebP · max 5 MB@(field.AllowMultiple ? " · up to 12" : "")</small>
+                                                        </div>
+                                                    }
+                                                    else if (field.FieldType == "Choice")
+                                                    {
+                                                        <select class="stock-item-v2-input" @bind="field.Value">
+                                                            <option value="">-- Not selected --</option>
+                                                            @foreach (var option in FieldOptions(field.OptionsText)) { <option value="@option">@option</option> }
+                                                        </select>
+                                                    }
+                                                    else if (field.FieldType == "YesNo")
+                                                    {
+                                                        <select class="stock-item-v2-input" @bind="field.Value"><option value="">-- Not selected --</option><option value="Yes">Yes</option><option value="No">No</option></select>
+                                                    }
+                                                    else
+                                                    {
+                                                        <input class="stock-item-v2-input stock-item-udf-autofit" type="@(field.FieldType == "Number" ? "number" : field.FieldType == "Date" ? "date" : "text")"
+                                                               maxlength="4000" title="@field.Value" @bind="field.Value" @bind:event="oninput" />
+                                                    }
+                                                </td>
+                                                <td class="col-type">@field.FieldType</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                        </div>
+
+                        <div class="stock-item-v2-photo-panel">
+                            <div class="stock-item-v2-section-header"><span>Design Photo</span></div>
+                            <div class="stock-item-v2-photo-body">
+                                @{ var hasDesignPhoto = editModel.DesignPhoto is not null && !editModel.DesignPhoto.Remove; }
+                                @if (hasDesignPhoto)
+                                {
+                                    var designPhotoUrl = editModel.DesignPhoto!.NewContent is not null
+                                        ? ToDataUrl(editModel.DesignPhoto)
+                                        : $"/api/stock-item-design-photos/{editModel.Id}";
+                                    <figure class="stock-item-photo-preview">
+                                        <img src="@designPhotoUrl" alt="Design photo" title="Click to enlarge" @onclick="() => OpenZoom(designPhotoUrl)" />
+                                        <button type="button" title="Remove Design Photo" @onclick="RemoveDesignPhoto">×</button>
+                                    </figure>
+                                }
+                                else
+                                {
+                                    <div class="stock-item-photo-placeholder stock-item-v2-dropzone">
+                                        <span>No photo<br />Click to upload</span>
+                                    </div>
+                                }
+                                <InputFile OnChange="AddDesignPhotoAsync" accept="image/jpeg,image/png,image/webp" />
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                }
+                else if (activeTab == "variants")
+                {
+                <section class="form-section stock-item-variants-section">
+                    <h2>Variants</h2>
+                    <div class="stock-item-panel-row">
+                        <div class="stock-item-panel">
+                            <span class="stock-item-subhead">Colours <small>(@editModel.ColourIds.Count selected)</small></span>
+                            @if (lookups.Colours.Count == 0)
+                            {
+                                <p class="empty-option-note">No Colours created - base or size-only variant will be used.</p>
+                            }
+                            else
+                            {
+                                <div class="stock-item-panel-list">
+                                    @foreach (var colour in lookups.Colours)
+                                    {
+                                        <label class="form-check stock-item-check">
+                                            <input id="stock-colour-@colour.Id"
+                                                   class="form-check-input"
+                                                   type="checkbox"
+                                                   checked="@editModel.ColourIds.Contains(colour.Id)"
+                                                   @onchange="e => ToggleColour(colour.Id, e.Value is true)" />
+                                            <span class="form-check-label">@colour.Name</span>
+                                        </label>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <div class="stock-item-panel">
+                            <span class="stock-item-subhead">Sizes <small>(@editModel.SizeIds.Count selected)</small></span>
+                            @if (lookups.Sizes.Count == 0)
+                            {
+                                <p class="empty-option-note">No Sizes created - base or colour-only variant will be used.</p>
+                            }
+                            else
+                            {
+                                <div class="stock-item-panel-list">
+                                    @foreach (var size in lookups.Sizes)
+                                    {
+                                        <label class="form-check stock-item-check">
+                                            <input id="stock-size-@size.Id"
+                                                   class="form-check-input"
+                                                   type="checkbox"
+                                                   checked="@editModel.SizeIds.Contains(size.Id)"
+                                                   @onchange="e => ToggleSize(size.Id, e.Value is true)" />
+                                            <span class="form-check-label">@size.Name</span>
+                                        </label>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <p class="variant-summary">Creates <strong>@CalculatedVariantCount hidden variant(s)</strong> - internal only, later carrying stock, voucher and report links.</p>
+                </section>
+                }
+                else if (activeTab == "tax")
+                {
+                <section class="form-section">
+                    <h2>Tax classification</h2>
+                    <div class="stock-item-form-grid">
+                        <label>
+                            HSN Code <span class="optional-field">(Optional)</span>
+                            <input class="code-input" maxlength="20" @bind="editModel.HsnCode" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            Tax Mode <b>*</b>
+                            <select value="@editModel.TaxMode" @onchange="TaxModeChanged">
+                                <option value="NotApplicable">Not Applicable</option>
+                                <option value="InventoryTaxGroup">Use Inventory Tax Group</option>
+                                <option value="DirectRates">Enter IGST / CGST / SGST</option>
+                            </select>
+                        </label>
+
+                        @if (editModel.TaxMode == "InventoryTaxGroup")
+                        {
+                            <label>
+                                Inventory Tax Group <b>*</b>
+                                <select value="@(editModel.TaxClassificationId?.ToString() ?? string.Empty)" @onchange="TaxClassificationChanged">
+                                    <option value="">-- Select Inventory Tax Group --</option>
+                                    @foreach (var tax in InventoryTaxGroups)
+                                    {
+                                        <option value="@tax.Id">@tax.Name</option>
+                                    }
+                                </select>
+                            </label>
+                        }
+
+                        @if (editModel.TaxMode == "DirectRates")
+                        {
+                            <label>
+                                IGST %
+                                <input type="number" min="0" max="100" step="0.01" @bind="editModel.IgstRate" />
+                            </label>
+                            <label>
+                                CGST %
+                                <input type="number" min="0" max="100" step="0.01" @bind="editModel.CgstRate" />
+                            </label>
+                            <label>
+                                SGST %
+                                <input type="number" min="0" max="100" step="0.01" @bind="editModel.SgstRate" />
+                            </label>
+                        }
+                    </div>
+                    <p class="section-note">HSN Code is optional and may be added or updated later.</p>
+                </section>
+                }
+                else
+                {
+                <section class="form-section stock-item-opening-section">
+                    <h2>Opening Inventory</h2>
+                    <div class="opening-inventory-heading">
+                        <p class="section-note">
+                            As at <strong>@lookups.BooksBeginningDate.ToString("dd-MMM-yyyy")</strong> (Books Beginning Date).
+                            Enter Rate or Value; TexTrack calculates the other field.
+                        </p>
+                        <button type="button" @onclick="AddOpeningAllocation" disabled="@(lookups.Godowns.Count == 0)">+ Allocation</button>
+                    </div>
+                    @if (lookups.Godowns.Count == 0)
+                    {
+                        <p class="empty-option-note">Create at least one Godown before entering opening inventory.</p>
+                    }
+                    else
+                    {
+                        <div class="opening-inventory-grid-wrap">
+                            <table class="opening-inventory-grid">
+                                <thead>
+                                    <tr>
+                                        <th>Colour / Size Variant</th>
+                                        <th>Godown</th>
+                                        <th>Opening Qty</th>
+                                        <th>UQC</th>
+                                        <th>Rate</th>
+                                        <th>Opening Value</th>
+                                        <th aria-label="Remove"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var opening in editModel.OpeningInventory)
+                                    {
+                                        <tr @key="opening">
+                                            <td>
+                                                <select value="@opening.VariantKey" @onchange="e => OpeningVariantChanged(opening, e)">
+                                                    @if (!OpeningVariants.Any(x => x.Key == opening.VariantKey))
+                                                    {
+                                                        <option value="@opening.VariantKey">Selection changed — choose again</option>
+                                                    }
+                                                    @foreach (var variant in OpeningVariants)
+                                                    {
+                                                        <option value="@variant.Key">@variant.Label</option>
+                                                    }
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <select value="@opening.GodownId" @onchange="e => opening.GodownId = ParseRequiredId(e.Value)">
+                                                    <option value="0">-- Select Godown --</option>
+                                                    @foreach (var godown in lookups.Godowns)
+                                                    {
+                                                        <option value="@godown.Id">@godown.Name</option>
+                                                    }
+                                                </select>
+                                            </td>
+                                            <td><input type="number" min="0" step="0.0001" @bind="opening.Quantity" @bind:event="oninput" @bind:after="() => RecalculateOpening(opening)" /></td>
+                                            <td class="opening-uqc">@SelectedUqc</td>
+                                            <td><input type="number" min="0" step="0.0001" @bind="opening.Rate" @bind:event="oninput" @bind:after="() => SetOpeningRateBasis(opening)" /></td>
+                                            <td><input type="number" min="0" step="0.0001" @bind="opening.Value" @bind:event="oninput" @bind:after="() => SetOpeningValueBasis(opening)" /></td>
+                                            <td><button type="button" class="opening-remove" title="Remove allocation" @onclick="() => RemoveOpeningAllocation(opening)">×</button></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <th colspan="2">Opening totals</th>
+                                        <th>@OpeningQuantityTotal.ToString("0.####")</th>
+                                        <th>@SelectedUqc</th>
+                                        <th></th>
+                                        <th>@OpeningValueTotal.ToString("0.00##")</th>
+                                        <th></th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        <p class="section-note">Multiple rows may allocate the same variant across different Godowns. Saving or altering these values updates an internal audited Opening Stock posting.</p>
+                    }
+                </section>
+                }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="stock-item-list-toolbar" @onkeydown="IgnoreToolbarKeyDown" @onkeydown:stopPropagation="true">
+                <label>
+                    <span>Search by Name, Alias or HSN</span>
+                    <input id="stock-item-search" data-tt-filter-input="true"
+                           placeholder="F4 Search"
+                           @bind="searchText"
+                           @bind:event="oninput"
+                           @onkeydown="HandleSearchKeyDown" />
+                </label>
+                <button type="button" @onclick="ApplySearch" disabled="@busy">Search</button>
+                <button type="button" @onclick="ClearSearch" disabled="@busy">Clear</button>
+                <span>@totalCount item(s)</span>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p class="notice @(messageIsError ? "notice-error" : "notice-success")">@message</p>
+        }
+
+        @if (!showForm)
+        {
+            @if (loading)
+            {
+                <p class="muted">Loading Stock Items…</p>
+            }
+            else
+            {
+                <div class="grid-wrap stock-item-grid-wrap" id="stock-item-grid">
+                    <table class="data-grid selectable-grid stock-item-grid">
+                        <thead>
+                            <tr>
+                                <th>Stock Item</th>
+                                <th>Stock Group</th>
+                                <th>UQC</th>
+                                <th>Category</th>
+                                <th>HSN</th>
+                                <th>Tax Mode</th>
+                                <th>Colours</th>
+                                <th>Sizes</th>
+                                <th>Variants</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (rows.Count == 0)
+                            {
+                                <tr><td colspan="9" class="empty-cell">No Stock Items created.</td></tr>
+                            }
+                            else
+                            {
+                                @for (var i = 0; i < rows.Count; i++)
+                                {
+                                    var index = i;
+                                    var row = rows[index];
+                                    <tr @key="row.Id"
+                                        id="stock-item-row-@row.Id"
+                                        class="@(selectedIndex == index ? "selected-row" : null)"
+                                        @onclick="() => SelectRow(index)"
+                                        @ondblclick="OpenEdit">
+                                        <td><strong>@row.Name</strong><small>@row.Alias</small></td>
+                                        <td>@row.StockGroupName</td>
+                                        <td>@row.UqcShortName</td>
+                                        <td>@(string.IsNullOrWhiteSpace(row.StockCategoryName) ? "—" : row.StockCategoryName)</td>
+                                        <td>@row.HsnCode</td>
+                                        <td>@TaxModeLabel(row.TaxMode)</td>
+                                        <td>@row.ColourCount</td>
+                                        <td>@row.SizeCount</td>
+                                        <td>@row.VariantCount</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="master-pager" aria-label="Stock Item pages">
+                    <button type="button" @onclick="PreviousPage" disabled="@(busy || loading || pageNumber <= 1)">PgUp Previous</button>
+                    <span>Page @pageNumber of @totalPages</span>
+                    <button type="button" @onclick="NextPage" disabled="@(busy || loading || pageNumber >= totalPages)">PgDn Next</button>
+                </div>
+                <p class="master-help">↑/↓ Select · PgUp/PgDn Jump · Home/End · Enter Edit · F4 Search · Alt+C Create · Alt+D Delete · Esc Back</p>
+            }
+        }
+    }
+</div>
+
+@code {
+    private List<StockItemListItem> rows = new();
+    private StockItemLookupData lookups = new();
+    private StockItemEditModel editModel = new();
+    private int selectedIndex = -1;
+    private const int PageSize = 100;
+    private int pageNumber = 1;
+    private int totalPages = 1;
+    private int totalCount;
+    private bool loading = true;
+    private bool busy;
+    private bool showForm;
+    private string activeTab = "item";
+    private bool pendingNameFocus;
+    private bool pendingSearchFocus;
+    private bool pendingRowScroll;
+    private string searchText = string.Empty;
+    private string message = string.Empty;
+    private bool messageIsError;
+    private ElementReference pageRoot;
+
+    private IEnumerable<LookupItem> InventoryTaxGroups =>
+        lookups.TaxClassifications.Where(x => x.SecondaryText == "InventoryTaxGroup");
+
+    private int CalculatedVariantCount =>
+        Math.Max(1, editModel.ColourIds.Count) * Math.Max(1, editModel.SizeIds.Count);
+
+    private IReadOnlyList<OpeningVariantChoice> OpeningVariants => BuildOpeningVariants();
+    private decimal OpeningQuantityTotal => editModel.OpeningInventory.Sum(x => x.Quantity);
+    private decimal OpeningValueTotal => editModel.OpeningInventory.Sum(x => x.Value);
+    private string SelectedUqc => lookups.Uqcs.FirstOrDefault(x => x.Id == editModel.UqcId)?.SecondaryText ?? "—";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Database.IsConnected)
+        {
+            lookups = await Repository.GetLookupsAsync();
+        }
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await pageRoot.FocusAsync();
+        }
+        if (pendingNameFocus)
+        {
+            pendingNameFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusById", "stock-item-name-input");
+        }
+        if (pendingSearchFocus)
+        {
+            pendingSearchFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusById", "stock-item-search");
+        }
+        if (pendingRowScroll && selectedIndex >= 0 && selectedIndex < rows.Count)
+        {
+            pendingRowScroll = false;
+            await JS.InvokeVoidAsync("texTrackScrollRowIntoView", $"stock-item-row-{rows[selectedIndex].Id}", "stock-item-grid");
+        }
+    }
+
+    private async Task LoadAsync(long? selectId = null)
+    {
+        if (!Database.IsConnected)
+        {
+            loading = false;
+            return;
+        }
+        loading = true;
+        try
+        {
+            var result = await Repository.GetPageAsync(searchText, pageNumber, PageSize);
+            rows = result.Rows;
+            pageNumber = result.Page;
+            totalPages = result.TotalPages;
+            totalCount = result.TotalCount;
+            if (rows.Count == 0)
+            {
+                selectedIndex = -1;
+            }
+            else if (selectId is not null)
+            {
+                selectedIndex = rows.FindIndex(x => x.Id == selectId.Value);
+                if (selectedIndex < 0) selectedIndex = 0;
+            }
+            else if (selectedIndex < 0 || selectedIndex >= rows.Count)
+            {
+                selectedIndex = 0;
+            }
+            pendingRowScroll = selectedIndex >= 0;
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void SelectRow(int index)
+    {
+        selectedIndex = index;
+        message = string.Empty;
+        pendingRowScroll = true;
+    }
+
+    private void OpenCreate()
+    {
+        if (busy || !Database.IsConnected) return;
+        if (lookups.Uqcs.Count == 0)
+        {
+            ShowError("Create at least one UQC before creating a Stock Item.");
+            return;
+        }
+        if (lookups.StockGroups.Count == 0)
+        {
+            ShowError("No Stock Groups are available.");
+            return;
+        }
+        editModel = new StockItemEditModel
+        {
+            TaxMode = "NotApplicable",
+            CustomFields = lookups.CustomFieldDefinitions.Select(ToCustomField).ToList()
+        };
+        EnsureOpeningAllocation();
+        showForm = true;
+        activeTab = "item";
+        message = string.Empty;
+        pendingNameFocus = true;
+        zoomedPhotoUrl = null;
+    }
+
+    private async Task OpenEdit()
+    {
+        if (selectedIndex < 0 || selectedIndex >= rows.Count || busy) return;
+        var model = await Repository.GetForEditAsync(rows[selectedIndex].Id);
+        if (model is null)
+        {
+            ShowError("The selected Stock Item no longer exists.");
+            await LoadAsync();
+            return;
+        }
+        editModel = model;
+        EnsureOpeningAllocation();
+        showForm = true;
+        activeTab = "item";
+        message = string.Empty;
+        pendingNameFocus = true;
+        zoomedPhotoUrl = null;
+    }
+
+    private void SwitchTab(string tab)
+    {
+        if (activeTab == tab) return;
+        activeTab = tab;
+    }
+
+    private static decimal? ParseOptionalDecimal(object? value) =>
+        decimal.TryParse(value?.ToString(), NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign,
+            CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+
+    private async Task SaveAsync()
+    {
+        if (busy) return;
+        busy = true;
+        try
+        {
+            var result = await Repository.SaveAsync(editModel);
+            if (!result.Success)
+            {
+                ShowError(result.Message);
+                pendingNameFocus = true;
+                return;
+            }
+            showForm = false;
+            ShowSuccess(result.Message);
+            lookups = await Repository.GetLookupsAsync();
+            await LoadAsync(result.EntityId);
+            await pageRoot.FocusAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private Task DeleteSelected() => DeleteSelectedCore(null);
+
+    private Task DeleteCurrent() => DeleteSelectedCore("stock-item-name-input");
+
+    private async Task DeleteSelectedCore(string? returnFocusId)
+    {
+        if (selectedIndex < 0 || selectedIndex >= rows.Count || busy) return;
+        var selected = rows[selectedIndex];
+        var confirmed = await JS.InvokeAsync<bool>(
+            "texTrackConfirmDelete",
+            "Delete Stock Item?",
+            $"Delete '{selected.Name}' and its unused hidden variants?",
+            returnFocusId ?? $"stock-item-row-{selected.Id}");
+        if (!confirmed) return;
+
+        busy = true;
+        try
+        {
+            var result = await Repository.DeleteAsync(selected.Id);
+            if (!result.Success)
+            {
+                ShowError(result.Message);
+                return;
+            }
+            ShowSuccess(result.Message);
+            await LoadAsync();
+            if (selectedIndex >= rows.Count) selectedIndex = rows.Count - 1;
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task CloseForm()
+    {
+        showForm = false;
+        editModel = new StockItemEditModel();
+        message = string.Empty;
+        pendingRowScroll = selectedIndex >= 0;
+        zoomedPhotoUrl = null;
+        await pageRoot.FocusAsync();
+    }
+
+    private async Task ApplySearch()
+    {
+        pageNumber = 1;
+        selectedIndex = -1;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private async Task ClearSearch()
+    {
+        searchText = string.Empty;
+        pageNumber = 1;
+        selectedIndex = -1;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private async Task PreviousPage()
+    {
+        if (busy || loading || pageNumber <= 1) return;
+        pageNumber--;
+        selectedIndex = 0;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private async Task NextPage()
+    {
+        if (busy || loading || pageNumber >= totalPages) return;
+        pageNumber++;
+        selectedIndex = 0;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private static void IgnoreToolbarKeyDown(KeyboardEventArgs e)
+    {
+        // Keep typing and button keyboard behavior inside the toolbar.
+    }
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ApplySearch();
+        else if (e.Key == "Escape") await ClearSearch();
+    }
+
+    private async Task HandlePageKeyDown(KeyboardEventArgs e)
+    {
+        if (showForm) return;
+        if (e.AltKey && e.Key.Equals("c", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenCreate();
+            return;
+        }
+        if (e.Key == "F4")
+        {
+            pendingSearchFocus = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        if (rows.Count == 0) return;
+
+        var changed = false;
+        if (e.Key is "ArrowDown" or "Down") { selectedIndex = Math.Min(selectedIndex + 1, rows.Count - 1); changed = true; }
+        else if (e.Key is "ArrowUp" or "Up") { selectedIndex = Math.Max(selectedIndex - 1, 0); changed = true; }
+        else if (e.Key == "PageDown") { await NextPage(); return; }
+        else if (e.Key == "PageUp") { await PreviousPage(); return; }
+        else if (e.Key == "Home") { selectedIndex = 0; changed = true; }
+        else if (e.Key == "End") { selectedIndex = rows.Count - 1; changed = true; }
+        else if (e.Key == "Enter") { await OpenEdit(); }
+
+        if (changed)
+        {
+            pendingRowScroll = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static readonly string[] TabOrder = { "item", "variants", "tax", "opening" };
+
+    private async Task HandleFormKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && zoomedPhotoUrl is not null) { CloseZoom(); return; }
+        if (e.Key == "Escape") { await CloseForm(); return; }
+        if (e.AltKey && e.Key.Equals("s", StringComparison.OrdinalIgnoreCase)) { await SaveAsync(); return; }
+        if (e.CtrlKey && e.Key is "PageDown" or "PageUp")
+        {
+            var index = Array.IndexOf(TabOrder, activeTab);
+            var next = e.Key == "PageDown" ? index + 1 : index - 1;
+            if (next >= 0 && next < TabOrder.Length) SwitchTab(TabOrder[next]);
+        }
+    }
+
+    private void StockGroupChanged(ChangeEventArgs e) => editModel.StockGroupId = ParseRequiredId(e.Value);
+    private void UqcChanged(ChangeEventArgs e) => editModel.UqcId = ParseRequiredId(e.Value);
+    private void StockCategoryChanged(ChangeEventArgs e) => editModel.StockCategoryId = ParseOptionalId(e.Value);
+    private void TaxClassificationChanged(ChangeEventArgs e) => editModel.TaxClassificationId = ParseOptionalId(e.Value);
+
+    private void TaxModeChanged(ChangeEventArgs e)
+    {
+        editModel.TaxMode = e.Value?.ToString() ?? "NotApplicable";
+        if (editModel.TaxMode != "InventoryTaxGroup") editModel.TaxClassificationId = null;
+        if (editModel.TaxMode != "DirectRates")
+        {
+            editModel.IgstRate = 0;
+            editModel.CgstRate = 0;
+            editModel.SgstRate = 0;
+        }
+    }
+
+    private void ToggleColour(long id, bool selected)
+    {
+        if (selected) editModel.ColourIds.Add(id); else editModel.ColourIds.Remove(id);
+        EnsureOpeningAllocation();
+    }
+
+    private void ToggleSize(long id, bool selected)
+    {
+        if (selected) editModel.SizeIds.Add(id); else editModel.SizeIds.Remove(id);
+        EnsureOpeningAllocation();
+    }
+
+    private void EnsureOpeningAllocation()
+    {
+        var variant = OpeningVariants.FirstOrDefault();
+        if (variant is null || lookups.Godowns.Count == 0) return;
+        foreach (var row in editModel.OpeningInventory.Where(x =>
+                     x.Quantity == 0 && x.Rate == 0 && x.Value == 0 &&
+                     !OpeningVariants.Any(v => v.Key == x.VariantKey)))
+        {
+            row.VariantKey = variant.Key;
+        }
+        if (editModel.OpeningInventory.Count > 0) return;
+        editModel.OpeningInventory.Add(new StockItemOpeningAllocationEditModel
+        {
+            VariantKey = variant.Key,
+            GodownId = lookups.Godowns[0].Id
+        });
+    }
+
+    private void AddOpeningAllocation()
+    {
+        foreach (var variant in OpeningVariants)
+        {
+            foreach (var godown in lookups.Godowns)
+            {
+                if (editModel.OpeningInventory.Any(x => x.VariantKey == variant.Key && x.GodownId == godown.Id)) continue;
+                editModel.OpeningInventory.Add(new StockItemOpeningAllocationEditModel
+                {
+                    VariantKey = variant.Key,
+                    GodownId = godown.Id
+                });
+                return;
+            }
+        }
+        ShowError("Every selected Colour/Size variant is already allocated to every available Godown.");
+    }
+
+    private void RemoveOpeningAllocation(StockItemOpeningAllocationEditModel row) =>
+        editModel.OpeningInventory.Remove(row);
+
+    private static void OpeningVariantChanged(StockItemOpeningAllocationEditModel row, ChangeEventArgs e) =>
+        row.VariantKey = e.Value?.ToString() ?? "BASE";
+
+    private static void SetOpeningBasis(StockItemOpeningAllocationEditModel row, string basis)
+    {
+        row.CalculationBasis = basis;
+        RecalculateOpening(row);
+    }
+
+    private static void SetOpeningRateBasis(StockItemOpeningAllocationEditModel row) => SetOpeningBasis(row, "Rate");
+    private static void SetOpeningValueBasis(StockItemOpeningAllocationEditModel row) => SetOpeningBasis(row, "Value");
+
+    private static void RecalculateOpening(StockItemOpeningAllocationEditModel row)
+    {
+        row.Quantity = decimal.Round(row.Quantity, 4, MidpointRounding.AwayFromZero);
+        if (row.CalculationBasis == "Value")
+        {
+            row.Value = decimal.Round(row.Value, 4, MidpointRounding.AwayFromZero);
+            row.Rate = row.Quantity > 0
+                ? decimal.Round(row.Value / row.Quantity, 4, MidpointRounding.AwayFromZero)
+                : 0;
+        }
+        else
+        {
+            row.Rate = decimal.Round(row.Rate, 4, MidpointRounding.AwayFromZero);
+            row.Value = decimal.Round(row.Quantity * row.Rate, 4, MidpointRounding.AwayFromZero);
+        }
+    }
+
+    private IReadOnlyList<OpeningVariantChoice> BuildOpeningVariants()
+    {
+        var colours = editModel.ColourIds.Count == 0
+            ? new (long? Id, string Name)[] { (null, string.Empty) }
+            : lookups.Colours.Where(x => editModel.ColourIds.Contains(x.Id))
+                .OrderBy(x => x.Id).Select(x => (Id: (long?)x.Id, Name: x.Name)).ToArray();
+        var sizes = editModel.SizeIds.Count == 0
+            ? new (long? Id, string Name)[] { (null, string.Empty) }
+            : lookups.Sizes.Where(x => editModel.SizeIds.Contains(x.Id))
+                .OrderBy(x => x.Id).Select(x => (Id: (long?)x.Id, Name: x.Name)).ToArray();
+        return colours.SelectMany(colour => sizes.Select(size =>
+        {
+            var key = colour.Id is null && size.Id is null
+                ? "BASE"
+                : $"C:{colour.Id?.ToString() ?? "-"}|S:{size.Id?.ToString() ?? "-"}";
+            var label = colour.Id is null && size.Id is null
+                ? "Not Applicable"
+                : string.Join(" / ", new[] { colour.Name, size.Name }.Where(x => !string.IsNullOrWhiteSpace(x)));
+            return new OpeningVariantChoice(key, label);
+        })).ToList();
+    }
+
+    private async Task AddPhotosAsync(StockItemCustomFieldEditModel field, InputFileChangeEventArgs e)
+    {
+        var files = field.AllowMultiple ? e.GetMultipleFiles(12) : new[] { e.File };
+        if (!field.AllowMultiple) field.Photos.Clear();
+        foreach (var file in files)
+        {
+            if (field.Photos.Count >= 12) break;
+            if (file.Size > 5 * 1024 * 1024 || file.ContentType is not ("image/jpeg" or "image/png" or "image/webp"))
+            {
+                ShowError($"{field.Name}: use JPG, PNG or WebP images up to 5 MB.");
+                continue;
+            }
+            await using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            field.Photos.Add(new StockItemPhotoModel
+            {
+                FileName = Path.GetFileName(file.Name), ContentType = file.ContentType, NewContent = memory.ToArray()
+            });
+        }
+    }
+
+    private static void RemovePhoto(StockItemCustomFieldEditModel field, StockItemPhotoModel photo) => field.Photos.Remove(photo);
+    private static string ToDataUrl(StockItemPhotoModel photo) => $"data:{photo.ContentType};base64,{Convert.ToBase64String(photo.NewContent!)}";
+
+    private async Task AddDesignPhotoAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file.Size > 5 * 1024 * 1024 || file.ContentType is not ("image/jpeg" or "image/png" or "image/webp"))
+        {
+            ShowError("Design Photo: use a JPG, PNG or WebP image up to 5 MB.");
+            return;
+        }
+        await using var stream = file.OpenReadStream(5 * 1024 * 1024);
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory);
+        editModel.DesignPhoto = new StockItemDesignPhotoModel
+        {
+            Id = editModel.DesignPhoto?.Id ?? 0,
+            FileName = Path.GetFileName(file.Name),
+            ContentType = file.ContentType,
+            NewContent = memory.ToArray()
+        };
+    }
+
+    private void RemoveDesignPhoto()
+    {
+        if (editModel.DesignPhoto is null) return;
+        editModel.DesignPhoto.Remove = true;
+        editModel.DesignPhoto.NewContent = null;
+    }
+
+    private static string ToDataUrl(StockItemDesignPhotoModel photo) => $"data:{photo.ContentType};base64,{Convert.ToBase64String(photo.NewContent!)}";
+
+    private string? zoomedPhotoUrl;
+    private void OpenZoom(string url) => zoomedPhotoUrl = url;
+    private void CloseZoom() => zoomedPhotoUrl = null;
+    private static IEnumerable<string> FieldOptions(string options) => options.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    private static StockItemCustomFieldEditModel ToCustomField(StockItemFieldDefinitionModel definition) => new()
+    {
+        DefinitionId = definition.Id, Name = definition.Name, FieldType = definition.FieldType,
+        IsRequired = definition.IsRequired, AllowMultiple = definition.AllowMultiple, OptionsText = definition.OptionsText
+    };
+
+    private static long ParseRequiredId(object? value) => long.TryParse(value?.ToString(), out var id) ? id : 0;
+    private static long? ParseOptionalId(object? value) => long.TryParse(value?.ToString(), out var id) ? id : null;
+
+    private void ShowSuccess(string text) { message = text; messageIsError = false; }
+    private void ShowError(string text) { message = text; messageIsError = true; }
+
+    private static string TaxModeLabel(string mode) => mode switch
+    {
+        "InventoryTaxGroup" => "Inventory Tax Group",
+        "DirectRates" => "Direct GST Rates",
+        _ => "Not Applicable"
+    };
+
+    private sealed record OpeningVariantChoice(string Key, string Label);
+}

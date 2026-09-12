@@ -1,0 +1,797 @@
+@page "/masters/ledgers"
+@inject LedgerRepository Repository
+@inject DatabaseStatus Database
+@inject IJSRuntime JS
+
+
+@attribute [Authorize(Policy = SecurityPolicies.ManageMasters)]
+<PageTitle>Ledgers</PageTitle>
+
+<div id="ledger-page-root" class="page-card ledger-page" tabindex="0" @ref="pageRoot" @onkeydown="HandlePageKeyDown" @onkeydown:preventDefault="true">
+    <KeyboardContextScope ContextId="ledgers-list" RootElementId="ledger-page-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="@(selectedIndex >= 0 && !busy)" DeleteAsync="DeleteSelected" />
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">ACCOUNTING MASTER</p>
+            <h1>Ledgers</h1>
+        </div>
+        <div class="header-actions">
+            <button class="primary-button" type="button" @onclick="OpenCreate" disabled="@(!Database.IsConnected || busy)">Alt+C Create</button>
+            <button type="button" @onclick="OpenEdit" disabled="@(selectedIndex < 0 || busy)">Enter Edit</button>
+            <button type="button" class="danger-button" @onclick="DeleteSelected" disabled="@(selectedIndex < 0 || busy)">Alt+D Delete</button>
+        </div>
+    </div>
+
+    @if (!Database.IsConnected)
+    {
+        <div class="database-warning">
+            <strong>PostgreSQL setup required</strong>
+            <p>@Database.Message</p>
+            <p>Close TexTrack, run <code>1_SETUP_POSTGRESQL_DATABASE.bat</code>, and start the application again.</p>
+        </div>
+    }
+    else
+    {
+        <div class="database-ok">● PostgreSQL connected · Ledger migration active · changes are permanent</div>
+
+        @if (showForm)
+        {
+            <KeyboardContextScope ContextId="ledgers-form" RootElementId="ledger-form-root"
+                                  ContextType="KeyboardContextType.Form"
+                                  Mode="@(editModel.Id == 0 ? KeyboardContextMode.Create : KeyboardContextMode.Alteration)"
+                                  CanDelete="@(editModel.Id != 0 && !busy)" DeleteAsync="DeleteCurrent"
+                                  InitialFocusTarget="ledger-name-input" />
+            <div id="ledger-form-root" class="ledger-edit-form" data-enter-navigation="true" @onkeydown="HandleFormKeyDown" @onkeydown:stopPropagation="true">
+                <div class="form-heading ledger-form-heading">
+                    <div>
+                        <strong>@(editModel.Id == 0 ? "Create Ledger" : "Edit Ledger")</strong>
+                        @if (editModel.IsSystem)
+                        {
+                            <span class="system-badge">Permanent system ledger</span>
+                        }
+                    </div>
+                    <span>Alt+S Save · Esc Cancel</span>
+                </div>
+
+                <section class="form-section">
+                    <h2>General</h2>
+                    <div class="ledger-form-grid">
+                        <label>
+                            Ledger Name <b>*</b>
+                            <input id="ledger-name-input" maxlength="200" @bind="editModel.Name" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            Alias
+                            <input maxlength="200" @bind="editModel.Alias" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            Ledger Group <b>*</b>
+                            <select value="@GroupValue" @onchange="GroupChanged" disabled="@editModel.IsSystem">
+                                <option value="">-- Select Ledger Group --</option>
+                                @foreach (var group in groups)
+                                {
+                                    <option value="@group.Id">@group.Name</option>
+                                }
+                            </select>
+                        </label>
+                        <label>
+                            Accounting Classification
+                            <input value="@SelectedRootLabel" readonly />
+                        </label>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h2>Mailing & Contact</h2>
+                    <div class="ledger-form-grid">
+                        <label>
+                            Mailing Name
+                            <input maxlength="200" @bind="editModel.MailingName" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            Contact Person
+                            <input maxlength="150" @bind="editModel.ContactPerson" @bind:event="oninput" />
+                        </label>
+                        <label class="wide-field">
+                            Address Line 1
+                            <input maxlength="250" @bind="editModel.AddressLine1" @bind:event="oninput" />
+                        </label>
+                        <label class="wide-field">
+                            Address Line 2
+                            <input maxlength="250" @bind="editModel.AddressLine2" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            City
+                            <input maxlength="100" @bind="editModel.City" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            State
+                            <input maxlength="100" @bind="editModel.State" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            Country
+                            <input maxlength="100" @bind="editModel.Country" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            PIN Code
+                            <input maxlength="20" @bind="editModel.PinCode" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            Mobile
+                            <input maxlength="50" @bind="editModel.Mobile" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            Phone
+                            <input maxlength="50" @bind="editModel.Phone" @bind:event="oninput" />
+                        </label>
+                        <label class="wide-field">
+                            Email
+                            <input maxlength="200" @bind="editModel.Email" @bind:event="oninput" />
+                        </label>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h2>GST & Tax Identity</h2>
+                    <div class="ledger-form-grid">
+                        <label>
+                            GST Registration Type
+                            <select @bind="editModel.GstRegistrationType">
+                                <option value="Unregistered">Unregistered</option>
+                                <option value="Regular">Regular</option>
+                                <option value="Composition">Composition</option>
+                                <option value="Consumer">Consumer</option>
+                                <option value="Overseas">Overseas</option>
+                                <option value="SEZ">Special Economic Zone</option>
+                            </select>
+                        </label>
+                        <label>
+                            GSTIN
+                            <input maxlength="15" class="code-input" @bind="editModel.Gstin" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            PAN
+                            <input maxlength="10" class="code-input" @bind="editModel.Pan" @bind:event="oninput" />
+                        </label>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h2>Credit & Opening Balance</h2>
+                    <div class="ledger-form-grid">
+                        <label class="checkbox-field">
+                            <input type="checkbox" @bind="editModel.MaintainBillWise" />
+                            Maintain balances bill-by-bill
+                        </label>
+                        <label>
+                            Credit Period (Days)
+                            <input type="number" min="0" max="3650" @bind="editModel.CreditPeriodDays" />
+                        </label>
+                        <label>
+                            Credit Limit
+                            <input type="number" min="0" step="0.01" @bind="editModel.CreditLimit" />
+                        </label>
+                        <label>
+                            Opening Balance
+                            <input type="number" min="0" step="0.01" @bind="editModel.OpeningBalance" />
+                        </label>
+                        <label>
+                            Dr / Cr
+                            <select @bind="editModel.OpeningBalanceType">
+                                <option value="Dr">Dr</option>
+                                <option value="Cr">Cr</option>
+                            </select>
+                        </label>
+                    </div>
+                    <p class="section-note">Opening balance stores the amount and Dr/Cr side separately. The opening-voucher posting engine will be activated in the voucher foundation build.</p>
+                </section>
+
+                @if (IsBankGroup)
+                {
+                    <section class="form-section bank-section">
+                        <h2>Bank Details</h2>
+                        <div class="ledger-form-grid">
+                            <label>
+                                Bank Name
+                                <input maxlength="150" @bind="editModel.BankName" @bind:event="oninput" />
+                            </label>
+                            <label>
+                                Branch
+                                <input maxlength="150" @bind="editModel.BankBranch" @bind:event="oninput" />
+                            </label>
+                            <label>
+                                Account Number
+                                <input maxlength="50" class="code-input" @bind="editModel.BankAccountNumber" @bind:event="oninput" />
+                            </label>
+                            <label>
+                                IFSC
+                                <input maxlength="20" class="code-input" @bind="editModel.BankIfsc" @bind:event="oninput" />
+                            </label>
+                        </div>
+                    </section>
+                }
+
+                <div class="form-actions sticky-form-actions">
+                    <button type="button" class="primary-button" data-enter-save="true" @onclick="SaveAsync" disabled="@busy">Alt+S Save</button>
+                    <button type="button" @onclick="CloseForm" disabled="@busy">Esc Cancel</button>
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p class="notice @(messageIsError ? "notice-error" : "notice-success")">@message</p>
+        }
+
+        @if (!showForm)
+        {
+            <div class="ledger-list-toolbar">
+                <label>
+                    <span>F4 Search</span>
+                    <input id="ledger-search-input" data-tt-filter-input="true"
+                           value="@searchText"
+                           placeholder="Contains ledger, alias, group or GSTIN"
+                           @oninput="SearchTextChanged"
+                           @onkeydown="HandleSearchKeyDown"
+                           @onkeydown:stopPropagation="true" />
+                </label>
+                <button type="button" @onclick="ApplySearch" disabled="@busy">Search</button>
+                <button type="button" @onclick="ClearSearch" disabled="@(busy || string.IsNullOrWhiteSpace(searchText))">Clear</button>
+                <span>@totalCount ledger(s)</span>
+            </div>
+
+            @if (loading)
+            {
+                <p class="muted">Loading ledgers…</p>
+            }
+            else
+            {
+                <div class="grid-wrap ledger-grid-wrap" id="@GridContainerId">
+                    <table class="data-grid selectable-grid ledger-grid">
+                        <thead>
+                            <tr>
+                                <th>Ledger Name</th>
+                                <th>Group</th>
+                                <th>Alias</th>
+                                <th>GST Type</th>
+                                <th>GSTIN</th>
+                                <th class="amount-cell">Opening</th>
+                                <th>Bill-wise</th>
+                                <th>Type</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (rows.Count == 0)
+                            {
+                                <tr><td colspan="8" class="empty-cell">No matching ledgers.</td></tr>
+                            }
+                            else
+                            {
+                                @for (var i = 0; i < rows.Count; i++)
+                                {
+                                    var index = i;
+                                    var row = rows[index];
+                                    <tr @key="row.Id"
+                                        id="@GetRowId(row.Id)"
+                                        class="@(selectedIndex == index ? "selected-row" : null)"
+                                        @onclick="() => SelectRow(index)"
+                                        @ondblclick="OpenEdit">
+                                        <td>@row.Name</td>
+                                        <td>@row.LedgerGroupName</td>
+                                        <td>@row.Alias</td>
+                                        <td>@RegistrationLabel(row.GstRegistrationType)</td>
+                                        <td>@row.Gstin</td>
+                                        <td class="amount-cell">@OpeningText(row)</td>
+                                        <td>@(row.MaintainBillWise ? "Yes" : "No")</td>
+                                        <td>@(row.IsSystem ? "System" : "User")</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="master-pager" aria-label="Ledger pages">
+                    <button type="button" @onclick="PreviousPage" disabled="@(busy || loading || pageNumber <= 1)">PgUp Previous</button>
+                    <span>Page @pageNumber of @totalPages</span>
+                    <button type="button" @onclick="NextPage" disabled="@(busy || loading || pageNumber >= totalPages)">PgDn Next</button>
+                </div>
+
+                <p class="master-help">↑/↓ Select · PgUp/PgDn Jump · Home/End · Enter Edit · Alt+C Create · Alt+D Delete · F4 Search · Esc Back</p>
+            }
+        }
+    }
+</div>
+
+@code {
+    private List<LedgerListItem> rows = new();
+    private List<LedgerGroupChoice> groups = new();
+    private LedgerEditModel editModel = NewLedgerModel();
+    private int selectedIndex = -1;
+    private const int PageSize = 100;
+    private int pageNumber = 1;
+    private int totalPages = 1;
+    private int totalCount;
+    private bool loading = true;
+    private bool busy;
+    private bool showForm;
+    private bool pendingNameFocus;
+    private bool pendingSearchFocus;
+    private bool pendingRowScroll;
+    private string? pendingReturnFocusId;
+    private string searchText = string.Empty;
+    private string message = string.Empty;
+    private bool messageIsError;
+    private ElementReference pageRoot;
+
+    private const string GridContainerId = "ledger-grid-container";
+    private static string GetRowId(long id) => $"ledger-row-{id}";
+
+    private string GroupValue => editModel.LedgerGroupId?.ToString() ?? string.Empty;
+    private LedgerGroupChoice? SelectedGroup => groups.FirstOrDefault(x => x.Id == editModel.LedgerGroupId);
+    private string SelectedRootLabel => SelectedGroup is null ? string.Empty : RootLabel(SelectedGroup.RootClassification);
+    private bool IsBankGroup => SelectedGroup?.RootClassification is "BankAccounts" or "BankOverdraftOCC";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGroupsAsync();
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await pageRoot.FocusAsync();
+        }
+
+        if (pendingReturnFocusId is not null)
+        {
+            var id = pendingReturnFocusId;
+            pendingReturnFocusId = null;
+            await JS.InvokeVoidAsync("texTrackFocusById", id);
+        }
+
+        if (pendingNameFocus)
+        {
+            pendingNameFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusById", "ledger-name-input");
+        }
+
+        if (pendingSearchFocus)
+        {
+            pendingSearchFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusById", "ledger-search-input");
+        }
+
+        if (pendingRowScroll && selectedIndex >= 0 && selectedIndex < rows.Count)
+        {
+            pendingRowScroll = false;
+            await JS.InvokeVoidAsync(
+                "texTrackScrollRowIntoView",
+                GetRowId(rows[selectedIndex].Id),
+                GridContainerId);
+        }
+    }
+
+    private async Task LoadGroupsAsync()
+    {
+        if (!Database.IsConnected)
+        {
+            return;
+        }
+
+        groups = (await Repository.GetGroupChoicesAsync()).ToList();
+    }
+
+    private async Task LoadAsync(long? selectId = null)
+    {
+        if (!Database.IsConnected)
+        {
+            loading = false;
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            var result = await Repository.GetPageAsync(searchText, pageNumber, PageSize);
+            rows = result.Rows.ToList();
+            pageNumber = result.Page;
+            totalCount = result.TotalCount;
+            totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)PageSize));
+            if (rows.Count == 0)
+            {
+                selectedIndex = -1;
+            }
+            else if (selectId is not null)
+            {
+                selectedIndex = rows.FindIndex(x => x.Id == selectId.Value);
+                if (selectedIndex < 0)
+                {
+                    selectedIndex = 0;
+                }
+            }
+            else if (selectedIndex < 0 || selectedIndex >= rows.Count)
+            {
+                selectedIndex = 0;
+            }
+
+            pendingRowScroll = selectedIndex >= 0;
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void SelectRow(int index)
+    {
+        selectedIndex = index;
+        message = string.Empty;
+        pendingRowScroll = true;
+    }
+
+    private void OpenCreate()
+    {
+        if (!Database.IsConnected || busy)
+        {
+            return;
+        }
+
+        editModel = NewLedgerModel();
+        showForm = true;
+        message = string.Empty;
+        pendingNameFocus = true;
+    }
+
+    private async Task OpenEdit()
+    {
+        if (selectedIndex < 0 || selectedIndex >= rows.Count || busy)
+        {
+            return;
+        }
+
+        var selected = rows[selectedIndex];
+        var model = await Repository.GetForEditAsync(selected.Id);
+        if (model is null)
+        {
+            ShowError("The selected ledger no longer exists.");
+            await LoadAsync();
+            return;
+        }
+
+        editModel = model;
+        showForm = true;
+        message = string.Empty;
+        pendingNameFocus = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var result = await Repository.SaveAsync(editModel);
+            if (!result.Success)
+            {
+                ShowError(result.Message);
+                pendingNameFocus = true;
+                return;
+            }
+
+            showForm = false;
+
+            ShowSuccess(result.Message);
+            await LoadAsync(result.EntityId);
+            await pageRoot.FocusAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task DeleteSelected()
+    {
+        if (selectedIndex < 0 || selectedIndex >= rows.Count || busy)
+        {
+            return;
+        }
+
+        var selected = rows[selectedIndex];
+        var confirmed = await JS.InvokeAsync<bool>(
+            "texTrackConfirmDelete",
+            "Delete Ledger?",
+            $"Delete ledger '{selected.Name}'? This is allowed only while the ledger is completely unused.",
+            GetRowId(selected.Id));
+        if (!confirmed)
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var result = await Repository.DeleteAsync(selected.Id);
+            if (!result.Success)
+            {
+                ShowError(result.Message);
+                return;
+            }
+
+            ShowSuccess(result.Message);
+            await LoadAsync();
+            if (selectedIndex >= rows.Count)
+            {
+                selectedIndex = rows.Count - 1;
+            }
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task DeleteCurrent()
+    {
+        if (editModel.Id == 0 || busy) return;
+
+        var confirmed = await JS.InvokeAsync<bool>(
+            "texTrackConfirmDelete",
+            "Delete Ledger?",
+            $"Delete ledger '{editModel.Name}'? This is allowed only while the ledger is completely unused.",
+            "ledger-name-input");
+        if (!confirmed) return;
+
+        busy = true;
+        try
+        {
+            var result = await Repository.DeleteAsync(editModel.Id);
+            if (!result.Success)
+            {
+                ShowError(result.Message);
+                pendingNameFocus = true;
+                return;
+            }
+
+            showForm = false;
+
+            editModel = NewLedgerModel();
+            ShowSuccess(result.Message);
+            await LoadAsync();
+            if (selectedIndex >= rows.Count) selectedIndex = rows.Count - 1;
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+            pendingNameFocus = true;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task CloseForm()
+    {
+        showForm = false;
+        editModel = NewLedgerModel();
+        message = string.Empty;
+        pendingRowScroll = selectedIndex >= 0;
+        pendingReturnFocusId = selectedIndex >= 0 && selectedIndex < rows.Count
+            ? GetRowId(rows[selectedIndex].Id)
+            : "ledger-page-root";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void GroupChanged(ChangeEventArgs args)
+    {
+        var value = args.Value?.ToString();
+        editModel.LedgerGroupId = long.TryParse(value, out var id) ? id : null;
+    }
+
+    private void SearchTextChanged(ChangeEventArgs args)
+    {
+        searchText = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private async Task ApplySearch()
+    {
+        pageNumber = 1;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private async Task ClearSearch()
+    {
+        searchText = string.Empty;
+        pageNumber = 1;
+        await LoadAsync();
+        pendingSearchFocus = true;
+    }
+
+    private async Task PreviousPage()
+    {
+        if (pageNumber <= 1 || loading || busy) return;
+        pageNumber--;
+        selectedIndex = 0;
+        await LoadAsync();
+    }
+
+    private async Task NextPage()
+    {
+        if (pageNumber >= totalPages || loading || busy) return;
+        pageNumber++;
+        selectedIndex = 0;
+        await LoadAsync();
+    }
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await ApplySearch();
+        }
+        else if (e.Key == "Escape")
+        {
+            if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                await ClearSearch();
+            }
+            else
+            {
+                await pageRoot.FocusAsync();
+            }
+        }
+    }
+
+    private async Task HandlePageKeyDown(KeyboardEventArgs e)
+    {
+        if (showForm)
+        {
+            return;
+        }
+
+        if (e.AltKey && e.Key.Equals("c", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenCreate();
+            return;
+        }
+
+
+        if (e.Key == "F4")
+        {
+            pendingSearchFocus = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var selectionChanged = false;
+
+        if (e.Key is "ArrowDown" or "Down")
+        {
+            selectedIndex = Math.Min(selectedIndex + 1, rows.Count - 1);
+            selectionChanged = true;
+        }
+        else if (e.Key is "ArrowUp" or "Up")
+        {
+            selectedIndex = Math.Max(selectedIndex - 1, 0);
+            selectionChanged = true;
+        }
+        else if (e.Key == "PageDown")
+        {
+            await NextPage();
+            return;
+        }
+        else if (e.Key == "PageUp")
+        {
+            await PreviousPage();
+            return;
+        }
+        else if (e.Key == "Home")
+        {
+            selectedIndex = 0;
+            selectionChanged = true;
+        }
+        else if (e.Key == "End")
+        {
+            selectedIndex = rows.Count - 1;
+            selectionChanged = true;
+        }
+        else if (e.Key == "Enter")
+        {
+            await OpenEdit();
+        }
+
+        if (selectionChanged)
+        {
+            pendingRowScroll = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandleFormKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await CloseForm();
+        }
+        else if (e.AltKey && e.Key.Equals("s", StringComparison.OrdinalIgnoreCase))
+        {
+            await SaveAsync();
+        }
+    }
+
+    private void ShowSuccess(string text)
+    {
+        message = text;
+        messageIsError = false;
+    }
+
+    private void ShowError(string text)
+    {
+        message = text;
+        messageIsError = true;
+    }
+
+    private static LedgerEditModel NewLedgerModel() => new()
+    {
+        Country = "India",
+        GstRegistrationType = "Unregistered",
+        OpeningBalanceType = "Dr"
+    };
+
+    private static string OpeningText(LedgerListItem row) =>
+        row.OpeningBalance == 0 ? "—" : $"{row.OpeningBalance:N2} {row.OpeningBalanceType}";
+
+    private static string RegistrationLabel(string value) => value switch
+    {
+        "SEZ" => "SEZ",
+        "Composition" => "Composition",
+        "Regular" => "Regular",
+        "Consumer" => "Consumer",
+        "Overseas" => "Overseas",
+        _ => "Unregistered"
+    };
+
+    private static string RootLabel(string value) => value switch
+    {
+        "BankAccounts" => "Bank Accounts",
+        "BankOverdraftOCC" => "Bank Overdraft / OCC",
+        "CashInHand" => "Cash-in-Hand",
+        "SundryDebtors" => "Sundry Debtors",
+        "SundryCreditors" => "Sundry Creditors",
+        "SalesAccounts" => "Sales Accounts",
+        "PurchaseAccounts" => "Purchase Accounts",
+        "DirectIncome" => "Direct Income",
+        "DirectExpenses" => "Direct Expenses",
+        "IndirectIncome" => "Indirect Income",
+        "IndirectExpenses" => "Indirect Expenses",
+        "DutiesTaxes" => "Duties & Taxes",
+        _ => value
+    };
+}

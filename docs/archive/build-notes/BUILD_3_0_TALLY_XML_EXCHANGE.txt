@@ -1,0 +1,39 @@
+TexTrack ERP - Build 3.0 Tally XML Exchange
+Date: 02-Aug-2026
+
+DELIVERED
+- Settings > Tally XML Exchange.
+- Manual XML preview and atomic import.
+- Separate JWO export and combined Material Out / Material In export.
+- Exact UQC names; exact voucher-number identity; independent order references.
+- Automatic creation of related Ledgers, Ledger Groups, Units, Stock Groups,
+  Stock Categories, Stock Items, Godowns and Voucher Types.
+- Company identity confirmation and company-scoped sync records.
+- New / Updated / Unchanged / Cancelled / Exception classification.
+- Missing-JWO rejection into Import Exceptions.
+- Variant Allocation Pending when a Material In receipt is not assigned to Others.
+- Import/export history and UpdatedNotExported tracking after voucher alteration.
+- Authentic Tally IN/OUT inventory-list directions and cancellation flags.
+- TexTrack colour/size details appended to exported narration.
+
+WORKFLOW
+1. Import required focused master XML files if required.
+2. Import/export Job Work Out Orders first.
+3. Import/export Material Out and Material In only after the referenced JWO exists.
+4. Review the preview, confirm the Tally company, then press Alt+A Apply Import.
+
+INTENTIONAL V1 LIMITS
+- Manual file exchange only; no live TallyPrime HTTP/cloud connection.
+- Tally deletions are not inferred from a missing voucher. The user verifies and
+  updates TexTrack manually.
+- A Material In row deliberately held for colour/size allocation is displayed in
+  Variant Allocation Pending; interactive allocation completion is a later step.
+- The browser import control is capped at 256 MB. Use focused master exports rather
+  than a single 1 GB all-masters file.
+
+VERIFICATION
+- dotnet restore: passed.
+- full solution build: passed, 0 warnings, 0 errors.
+- .NET/PostgreSQL tests: 92 passed.
+- JavaScript keyboard/UI tests: 69 passed.
+- clean migration chain: migrations 001 through 018 passed.

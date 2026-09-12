@@ -1,0 +1,25 @@
+TexTrack ERP v0.4 Build 2.0.15 - Lookup Enter Regression Fix
+
+Scope
+- Corrected the global lookup Enter priority introduced by the previous blank-component fix.
+- No database, repository, migration, master, or JWO business rules were changed.
+
+Root cause
+- The global Enter handler executed data-enter-empty-action before checking whether Arrow Up/Down had deliberately highlighted a lookup option.
+- Therefore Enter on a highlighted drill-down option could close/skip the blank field and leave it empty.
+
+Correct behaviour
+1. Lookup open + Arrow-highlighted option + Enter: select the highlighted option.
+2. Blank field + no highlighted option + Enter: execute the configured blank action.
+3. Typed lookup text + Enter + no highlighted option: select the first visible filtered match.
+4. Blank lookup with no highlighted option never auto-selects the first item.
+
+Changed file
+- Components/App.razor
+
+Required manual tests
+- Any UDF/lookup: open, Arrow Down/Up, Enter -> highlighted item is selected.
+- JWO blank Component Stock Item + Enter without Arrow keys -> allocation closes.
+- JWO blank Component Stock Item + Arrow Down + Enter -> highlighted component is selected and focus moves to Component Godown.
+- Typed Component name + Enter -> matching visible component is selected.
+- Repeat for Job Worker, FG, Colour, Godown, Component Godown and other drill-down fields.

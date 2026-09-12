@@ -1,0 +1,24 @@
+TexTrack ERP v0.5 Build 2.6B — Material In Create Voucher UI
+
+Scope:
+- Activated Material In create screen.
+- Job Worker first selection.
+- Pending JWO selection filtered by Job Worker.
+- Batch snapshot display.
+- Consumption and Receiving Godown selection.
+- Job Worker default Material In consumption Godown prefill.
+- Multi-FG finished-goods receipt.
+- Colour/size variant allocation.
+- Per-FG process charge.
+- Actual MO issued / prior MI consumed / available component display.
+- Raw-material consumption entry.
+- Alt+S atomic save through MaterialInRepository.
+- Esc back.
+
+Intentionally deferred:
+- Material In list screen.
+- Alteration/reversal/repost.
+- Deletion.
+- Cancellation.
+- Automatic accounting journal.
+- Print and Tally XML export.

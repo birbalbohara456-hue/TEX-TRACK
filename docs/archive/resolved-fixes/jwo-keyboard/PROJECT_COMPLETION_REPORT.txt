@@ -1,0 +1,313 @@
+═══════════════════════════════════════════════════════════════════════════════
+TexTrack ERP - KEYBOARD FOCUS BUG FIX PROJECT COMPLETION REPORT
+═══════════════════════════════════════════════════════════════════════════════
+
+PROJECT NAME:        Keyboard Focus Bug - Menu Close Issue
+PROJECT ID:          TEXTRACK-KBD-FOCUS-002
+STATUS:              ✓ IMPLEMENTATION COMPLETE
+BUILD TARGET:        v0.4 Build 2.0.13 (pending acceptance test)
+CURRENT BUILD:       v0.4 Build 2.0.12 (in production)
+
+═══════════════════════════════════════════════════════════════════════════════
+EXECUTIVE SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+PROBLEM:
+	TexTrack Dashboard keyboard navigation breaks after closing a top menu
+	(Alt+M or Alt+T) with Esc. Focus is lost to document.body, requiring
+	a mouse click to restore keyboard functionality.
+
+SOLUTION IMPLEMENTED:
+	Added targeted focus tracking for Dashboard menu operations:
+	1. Capture Dashboard focus ID before opening a menu
+	2. Restore specific Dashboard item after closing menu with Esc
+	3. Fallback to Dashboard root if original item is no longer in DOM
+
+CHANGES MADE:
+	2 files modified (App.razor, MainLayout.razor)
+	2 new JavaScript functions added
+	1 new C# field added
+	5 C# methods updated
+	0 breaking changes
+	0 database schema changes
+
+BUILD RESULT:        ✓ Successful (no errors, no warnings)
+ACCEPTANCE TEST:     Pending (20-cycle manual verification required)
+
+═══════════════════════════════════════════════════════════════════════════════
+DETAILED ISSUE ANALYSIS
+═══════════════════════════════════════════════════════════════════════════════
+
+ROOT CAUSE:
+	When a top menu closes, the focused menu item is removed from DOM by Blazor
+	re-rendering. Browser automatically moves focus to document.body (default
+	behavior when focused element is removed). The generic page-root fallback
+	focus logic doesn't search Dashboard (it's outside the .workspace element),
+	so focus remains on body, killing keyboard input.
+
+IMPACT:
+	- High: Breaks keyboard-first navigation on Dashboard
+	- Frequency: 100% reproducible
+	- Severity: Blocks keyboard workflow until mouse is used
+	- User Impact: Forces users to mix keyboard+mouse navigation
+
+SCOPE OF AFFECTED OPERATIONS:
+	✓ Alt+M (Masters menu) → Esc
+	✓ Alt+T (Entries menu) → Esc
+	✗ NOT affected: Mouse-based menu dismissal
+	✗ NOT affected: Other pages or voucher entry forms
+	✗ NOT affected: Menu navigation while menu is open
+
+═══════════════════════════════════════════════════════════════════════════════
+IMPLEMENTATION DETAILS
+═══════════════════════════════════════════════════════════════════════════════
+
+FILES MODIFIED:
+───────────────
+
+1. Components/App.razor (Lines 61-105)
+   ✓ Added window.texTrackRememberDashboardFocus()
+	 - Captures currently focused element's ID
+	 - Stores in window.texTrackDashboardReturnFocusId
+	 - Called before menu opens
+	 - Fallback: 'dashboard-page-root'
+
+   ✓ Added window.texTrackRestoreDashboardFocus()
+	 - Queries element by stored ID
+	 - Focuses it using element.focus({ preventScroll: true })
+	 - Includes retry logic (RAF + setTimeout, 40 attempts, 35ms each)
+	 - Fallback chain: original ID → dashboard-page-root
+	 - Handles timing issues with Blazor renders
+
+
+2. Components/Layout/MainLayout.razor (Lines 171, 180-211, 213-222, 234-261, 262-269, 440-466)
+   ✓ Added: private bool pendingRestoreDashboardFocus;
+	 - Tracks when Dashboard focus restoration is queued
+	 - Checked in OnAfterRenderAsync before generic fallback
+
+   ✓ Modified: OnAfterRenderAsync()
+	 - Added check for pendingRestoreDashboardFocus
+	 - Calls texTrackRestoreDashboardFocus() when flag is set
+	 - Prioritized above generic pendingPageFocus
+
+   ✓ Modified: HandleLocationChanged()
+	 - Clears pendingRestoreDashboardFocus on route change
+	 - Prevents stale focus restoration on wrong page
+
+   ✓ Modified: ToggleMenu()
+	 - Calls JS.InvokeVoidAsync("texTrackRememberDashboardFocus")
+	 - Happens BEFORE openMenu is set
+	 - Captures focus before any menu DOM changes
+
+   ✓ Modified: CloseMenu()
+	 - Sets pendingRestoreDashboardFocus = true
+	 - Replaces pendingPageFocus = true (generic fallback)
+	 - Ensures specific Dashboard focus restoration
+
+   ✓ Modified: HandleKeyDown() Escape handler
+	 - Removed pendingPageFocus = true after CloseMenu()
+	 - CloseMenu() now handles flag internally
+	 - Cleaner separation of concerns
+
+
+3. Components/Pages/Home.razor
+   ✓ NO CHANGES REQUIRED
+   - Dashboard root already has correct attributes
+   - id="dashboard-page-root"
+   - tabindex="0"
+   - data-tt-page-root="true"
+   - data-tt-page-autofocus="true"
+
+═══════════════════════════════════════════════════════════════════════════════
+ARCHITECTURAL DESIGN
+═══════════════════════════════════════════════════════════════════════════════
+
+DESIGN PRINCIPLES:
+  1. Store only element IDs, not element references
+	 → Prevents stale references after DOM replacements
+	 → Survives Blazor re-renders
+
+  2. Capture state at the moment it's needed
+	 → Before menu opens, capture Dashboard focus
+	 → Don't try to reconstruct state after-the-fact
+
+  3. Fallback gracefully on missing references
+	 → If original element doesn't exist, use page root
+	 → If page root doesn't exist, retry with backoff
+
+  4. Separate concerns by component
+	 → MainLayout handles high-level focus flow
+	 → JavaScript handles DOM-level focus operations
+	 → Home.razor provides the stable structure
+
+FOCUS RESTORATION HIERARCHY:
+  Priority 1: Specific Dashboard item ID stored before opening menu
+  Priority 2: Generic Dashboard page root (dashboard-page-root)
+  Priority 3: texTrackFocusPageRoot() generic page root search
+			 (only if not on Dashboard)
+
+EVENT FLOW SEQUENCE:
+  1. User on Dashboard with focus on item X
+  2. User presses Alt+M/T
+  3. ToggleMenu() invokes texTrackRememberDashboardFocus()
+	 → window.texTrackDashboardReturnFocusId = X
+  4. Menu opens, focus moves to menu
+  5. User presses Esc
+  6. Menu controller consumes Esc (preventDefault, stopPropagation)
+  7. (Browser default: click overlay to close menu)
+  8. CloseMenu() called
+	 → pendingRestoreDashboardFocus = true
+	 → StateHasChanged() queued
+  9. Blazor re-renders (menu removed from DOM)
+  10. Browser moves focus to body (focused element removed)
+  11. OnAfterRenderAsync() fires after render
+  12. Checks: pendingRestoreDashboardFocus === true
+  13. Calls texTrackRestoreDashboardFocus()
+  14. JS queries and focuses stored ID (or fallback)
+  15. Focus restored to Dashboard
+  16. Keyboard input works immediately
+
+═══════════════════════════════════════════════════════════════════════════════
+TESTING & VERIFICATION
+═══════════════════════════════════════════════════════════════════════════════
+
+COMPILATION:
+  ✓ Build successful with TexTrack.Web.csproj
+  ✓ No CS errors
+  ✓ No RZ (Razor) errors
+  ✓ No warnings
+
+CODE REVIEW CRITERIA MET:
+  ✓ All methods well-documented with comments
+  ✓ No hardcoded magic strings (except 'dashboard-page-root')
+  ✓ Consistent with existing codebase style
+  ✓ Proper async/await usage for JS interop
+  ✓ Null checks and defensive programming
+  ✓ No memory leaks (string IDs only, no element refs)
+  ✓ Backwards compatible
+
+BROWSER COMPATIBILITY:
+  ✓ Chrome (latest) - RAF and setTimeout supported
+  ✓ Firefox (latest) - RAF and setTimeout supported
+  ✓ Edge (latest) - RAF and setTimeout supported
+  ✓ Safari (latest) - RAF and setTimeout supported
+  ✓ IE11 - Not supported (RAF may not work)
+
+PERFORMANCE IMPACT:
+  ✓ No continuous polling loops
+  ✓ JS invoked only on menu open/close
+  ✓ No event listener overhead
+  ✓ Retry logic bounded (40 attempts max, ~1.4 seconds)
+  ✓ Negligible memory overhead (1-2 string IDs)
+
+ACCEPTANCE TEST STATUS:
+  ⧗ PENDING - Requires manual 20-cycle verification
+  - 20 repetitions of: Dashboard → Alt+M → Esc → navigate → Alt+T → Esc → navigate
+  - Acceptance test checklist provided in ACCEPTANCE_TEST_CHECKLIST.txt
+  - Test must verify no mouse clicks after menu close
+
+═══════════════════════════════════════════════════════════════════════════════
+DELIVERABLES
+═══════════════════════════════════════════════════════════════════════════════
+
+DOCUMENTATION:
+  ✓ V0.4_BUILD2_0_13_RETURN_FOCUS_FIX.txt - Release notes & overview
+  ✓ ROOT_CAUSE_ANALYSIS.txt - Detailed technical analysis
+  ✓ CODE_CHANGES_EXACT.txt - Line-by-line code changes
+  ✓ ACCEPTANCE_TEST_CHECKLIST.txt - Manual test procedure
+  ✓ PROJECT_COMPLETION_REPORT.txt - This document
+
+SOURCE CODE:
+  ✓ Components/App.razor - Modified with 2 new JS functions
+  ✓ Components/Layout/MainLayout.razor - Modified with focus restoration logic
+  ✓ Components/Pages/Home.razor - Verified (no changes needed)
+
+BUILD ARTIFACTS:
+  ✓ Compiled and verified - dotnet build successful
+  ✓ No runtime errors in initial load test
+
+═══════════════════════════════════════════════════════════════════════════════
+NEXT STEPS
+═══════════════════════════════════════════════════════════════════════════════
+
+BEFORE RELEASE:
+  1. Run application locally: dotnet run
+  2. Navigate to Dashboard
+  3. Execute acceptance test: 20 cycles per checklist
+  4. Verify no console errors (F12 → Console tab)
+  5. If ALL cycles pass → Proceed to version increment
+
+UPON SUCCESSFUL ACCEPTANCE TEST:
+  1. Update build version in MainLayout.razor (line 151):
+	 FROM: <span class="build-version">v0.4 Build 2.0.12 Dashboard Focus Fix</span>
+	 TO:   <span class="build-version">v0.4 Build 2.0.13 Return Focus Fix</span>
+
+  2. Rebuild: dotnet build
+
+  3. Commit changes to version control with message:
+	 "v0.4.2.0.13 Build - Return Focus Fix (Menu Close Keyboard)
+
+	  Fixes: Keyboard focus lost after menu close (Alt+M/T → Esc)
+	  Changes: App.razor (+2 JS functions), MainLayout.razor (+1 field, 5 methods)
+	  Tests: 20-cycle acceptance test passed
+	  Build: Successful with no errors"
+
+  4. Tag build: v0.4.2.0.13
+
+  5. Mark as ready for production deployment
+
+IF ACCEPTANCE TEST FAILS:
+  1. Check browser console for JavaScript errors
+  2. Verify Dashboard item IDs exist (open DevTools, inspect DOM)
+  3. Review window.texTrackDashboardReturnFocusId value
+  4. Check document.activeElement after menu close
+  5. If element was removed, verify fallback is working
+  6. Contact development team with console errors and cycle #
+
+═══════════════════════════════════════════════════════════════════════════════
+KNOWN LIMITATIONS & FUTURE IMPROVEMENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+CURRENT LIMITATIONS:
+  • Focus tracking is Dashboard-specific (not generic for all pages)
+  • Reports and Settings menus still indicate "will be activated in later build"
+  • Focus restoration only applies to top-level menu close, not nested selections
+
+POTENTIAL FUTURE IMPROVEMENTS:
+  • Extend similar tracking to Master list pages, Reports menu, Settings
+  • Add focus restoration for menu group expansions (Left/Right arrow navigation)
+  • Consider generic focus manager for all page types
+  • Add focus indicator styling improvements for accessibility
+
+NO BREAKING CHANGES:
+  • All existing keyboard shortcuts still work
+  • All existing mouse navigation still works
+  • All existing business logic unchanged
+  • No database schema changes
+  • No data migration required
+  • No dependency updates required
+
+═══════════════════════════════════════════════════════════════════════════════
+APPENDIX: TESTING EVIDENCE (After Acceptance Test)
+═══════════════════════════════════════════════════════════════════════════════
+
+[To be filled in after manual testing]
+
+Tester Name: _____________________
+Test Date: _____________________
+Environment: _____________________
+Build Tested: v0.4 Build 2.0.12 (before 2.0.13 version increment)
+
+Cycle Results: [ ] 20/20 PASSED [ ] FAILED (specify cycle #)
+
+Issues Found: [None] or [List any issues encountered]
+
+Browser Console Errors: [None] or [List any JavaScript errors]
+
+Recommendation: [ ] APPROVED FOR RELEASE [ ] REQUIRES FIXES
+
+Sign-off Date: _____________________
+
+═══════════════════════════════════════════════════════════════════════════════
+END OF COMPLETION REPORT
+═══════════════════════════════════════════════════════════════════════════════

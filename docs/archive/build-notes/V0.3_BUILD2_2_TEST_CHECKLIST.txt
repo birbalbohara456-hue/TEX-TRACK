@@ -1,0 +1,24 @@
+TEXTRACK ERP v0.3 BUILD 2.2 — ACCEPTANCE TEST CHECKLIST
+
+A. HSN OPTIONAL
+1. Open Stock Items and create an item without entering an HSN Code.
+2. Confirm the item saves successfully.
+3. Edit the item, add an HSN Code, save, reopen, and confirm it persists.
+4. Confirm an HSN longer than 20 characters is still refused.
+
+B. ENTER-TO-NEXT-FIELD
+1. Open Create Ledger.
+2. Enter a Ledger Name and press Enter repeatedly.
+3. Confirm focus moves through every enabled editable field in visible screen order.
+4. Confirm disabled and read-only fields are skipped.
+5. Confirm the final field moves focus to Alt+S Save.
+6. Press Enter on Alt+S Save and confirm Save runs.
+7. Repeat the same test in Ledger Groups/UQC/Godown/Colour/Size/Process forms.
+8. Repeat in Stock Item Create, including conditional Tax Mode fields and colour/size checkboxes.
+
+C. REGRESSION
+1. Esc still cancels the form.
+2. Alt+S still saves.
+3. Arrow list navigation and auto-scroll still work.
+4. Page Up/Page Down/Home/End still work.
+5. PostgreSQL persistence remains working after restart.

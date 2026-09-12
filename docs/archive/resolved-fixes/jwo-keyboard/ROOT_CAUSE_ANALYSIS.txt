@@ -1,0 +1,267 @@
+═══════════════════════════════════════════════════════════════════════════════
+ROOT CAUSE ANALYSIS - Keyboard Focus Bug
+═══════════════════════════════════════════════════════════════════════════════
+
+SYMPTOM:
+	User on Dashboard with keyboard focus on quick-access item (e.g., "Ledgers")
+	→ Presses Alt+M to open Masters menu
+	→ Uses arrow keys to navigate menu items
+	→ Presses Esc to close menu
+	→ Keyboard focus is LOST (falls to document.body)
+	→ User must CLICK with mouse to regain keyboard focus
+	→ Keyboard navigation resumes only after mouse click
+
+REPRODUCTION STEPS:
+	1. Start TexTrack on Dashboard
+	2. Press Down arrow (focus moves to "Ledger Groups")
+	3. Press Alt+M (Masters menu opens)
+	4. Press Down arrow (navigate in menu)
+	5. Press Esc (menu closes)
+	6. Try pressing Down arrow (NO RESPONSE - keyboard is dead)
+	7. Click anywhere with mouse
+	8. Press Down arrow (NOW IT WORKS)
+
+═══════════════════════════════════════════════════════════════════════════════
+ROOT CAUSE ANALYSIS
+═══════════════════════════════════════════════════════════════════════════════
+
+LAYER 1: The Event Flow
+	- User presses Alt+M on Dashboard
+	- MainLayout.HandleKeyDown() is triggered
+	- ToggleMenu(MastersMenuName) called
+	- openMenu = "masters" (Blazor state change)
+	- StateHasChanged() called
+	- Blazor re-renders
+	- Menu overlay and menu items are added to DOM
+	- Focus remains on page root (not explicitly moved)
+
+LAYER 2: Focus Transfer to Menu
+	- User can manually click a menu item
+	- User presses Down arrow
+	- Menu controller in App.razor (line 205) intercepts ArrowDown
+	- consume() called (preventDefault + stopPropagation + stopImmediatePropagation)
+	- focus() called on next menu item: items[nextIndex].focus()
+	- Focus now on "masters-item-0" (or other menu item)
+
+LAYER 3: Menu Close Escape Handling
+	- User presses Esc while focus is on "masters-item-0"
+	- Menu controller (App.razor line 255) intercepts Escape
+	- consume() called
+	- overlay.click() called
+	- Overlay click handler triggers CloseMenu() in MainLayout
+	- CloseMenu() sets: openMenu = null, pendingPageFocus = true
+	- StateHasChanged() called
+	- Blazor re-renders
+
+	*** AT THIS POINT, THE FOCUSED ELEMENT IS REMOVED FROM DOM ***
+
+	- Menu overlay is removed from DOM
+	- "#masters-item-0" and other menu items are removed from DOM
+	- The element that had focus ("masters-item-0") NO LONGER EXISTS
+	- Browser automatically moves focus to document.body (default behavior)
+	- document.activeElement is now BODY element
+
+LAYER 4: Focus Restoration That Failed
+	- OnAfterRenderAsync() fires after Blazor render completes
+	- pendingPageFocus is true
+	- JS.InvokeVoidAsync("texTrackFocusPageRoot") called
+	- texTrackFocusPageRoot() searches for:
+	  * .workspace [data-tt-page-autofocus="true"]
+	  * .workspace .page-card[tabindex="0"]
+	  * .workspace .voucher-card[tabindex="0"]
+	  * .workspace [data-tt-page-root="true"][tabindex]
+
+	*** DASHBOARD IS NOT INSIDE .workspace ***
+
+	- Dashboard is:
+	  <section id="dashboard-page-root" class="dashboard gateway-dashboard"
+			   tabindex="0" data-tt-page-root="true" data-tt-page-autofocus="true">
+	- Dashboard is NOT nested inside a .workspace div
+	- texTrackFocusPageRoot() selector doesn't find Dashboard
+	- texTrackFocusPageRoot() returns without focusing anything
+	- document.activeElement REMAINS on BODY
+	- Keyboard events are lost (focus is on body, outside Blazor app)
+
+THE FUNDAMENTAL ISSUE:
+	1. The focused menu item was removed from DOM by Blazor re-render
+	2. Browser moved focus to document.body (standard behavior for removed DOM nodes)
+	3. The generic page root fallback didn't find the Dashboard
+	4. Focus stayed on document.body
+	5. Keyboard events stopped working (body element cannot receive keyboard input)
+
+═══════════════════════════════════════════════════════════════════════════════
+WHY THE FIX WORKS
+═══════════════════════════════════════════════════════════════════════════════
+
+BEFORE MENU OPENS - REMEMBER DASHBOARD FOCUS:
+	- User on Dashboard, quits on "dashboard-item-3" (Ledgers)
+	- User presses Alt+M
+	- ToggleMenu() now calls:
+	  JS.InvokeVoidAsync("texTrackRememberDashboardFocus")
+	- texTrackRememberDashboardFocus() executes:
+	  * Gets document.activeElement (currently "dashboard-item-3")
+	  * Reads its .id attribute
+	  * Stores in window.texTrackDashboardReturnFocusId = "dashboard-item-3"
+	- Menu opens normally
+
+AFTER MENU CLOSES - RESTORE DASHBOARD FOCUS:
+	- User presses Esc on menu
+	- Menu controller consumes Esc and closes menu
+	- CloseMenu() now sets pendingRestoreDashboardFocus = true
+	- (Previously set pendingPageFocus = true, which used generic fallback)
+	- StateHasChanged() called
+	- Blazor re-renders (menu removed from DOM)
+	- Focus falls to document.body (normal browser behavior)
+
+	- OnAfterRenderAsync() fires
+	- Checks: if (pendingRestoreDashboardFocus)
+	- YES, so calls: JS.InvokeVoidAsync("texTrackRestoreDashboardFocus")
+
+	- texTrackRestoreDashboardFocus() executes:
+	  * Gets returnId = window.texTrackDashboardReturnFocusId ("dashboard-item-3")
+	  * document.getElementById("dashboard-item-3")
+	  * FOUND! The Dashboard item still exists (was never in menu area)
+	  * element.focus({ preventScroll: true })
+	  * document.activeElement === element ✓
+	  * Focus is restored to "dashboard-item-3"
+
+	- Keyboard now works again immediately
+	- No mouse click required
+
+WHY THIS WORKS WHEN GENERIC FALLBACK DIDN'T:
+	1. Dashboard quick-access items have IDs (dashboard-item-0, etc.)
+	2. These items are NOT removed from DOM when menu closes
+	3. They exist in the Dashboard section, not the menu overlay
+	4. By storing and restoring their specific ID, we skip the generic search
+	5. Generic search fails because Dashboard is outside .workspace
+	6. Specific ID lookup succeeds because items exist and have IDs
+	7. Focus is restored before any keyboard events are lost
+
+═══════════════════════════════════════════════════════════════════════════════
+WHY THIS COULDN'T HAPPEN BEFORE
+═══════════════════════════════════════════════════════════════════════════════
+
+OLD CODE - LAYER 2 (WHAT WAS CAPTURED):
+	- CloseMenu() set pendingPageFocus = true
+	- This generic flag was meant for navigation to OTHER pages
+	- It worked for "navigate to Masters page then Esc back to Dashboard"
+	- But it didn't work for "focus on Dashboard then open/close menu"
+
+OLD CODE - LAYER 4 (WHY GENERIC FALLBACK FAILED):
+	- Dashboard is NOT wrapped in <main class="workspace">
+	- texTrackFocusPageRoot() only searches inside .workspace
+	- Dashboard sits outside .workspace (it IS the main layout section)
+	- Therefore, generic fallback never found Dashboard
+	- Focus stayed on body, keyboard was dead
+
+NEW CODE - LAYER 1 (WHAT WE CAPTURE):
+	- Before OPENING menu, remember the specific Dashboard item ID
+	- Store it in window.texTrackDashboardReturnFocusId
+	- This is Dashboard-specific knowledge that MainLayout has
+
+NEW CODE - LAYER 4 (SPECIFIC RESTORATION):
+	- After CLOSING menu, restore that specific ID
+	- Use document.getElementById(), not CSS selectors
+	- Works regardless of page structure or .workspace wrapping
+	- Fallback still exists in case element was DOM-replaced
+	- Fallback only then tries dashboard-page-root as last resort
+
+═══════════════════════════════════════════════════════════════════════════════
+FOCUS RESTORATION SEQUENCE (CORRECTED FLOW)
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 1: USER ON DASHBOARD (Before Opening Menu)
+	document.activeElement === <a id="dashboard-item-3" ...>Ledgers</a>
+	window.texTrackDashboardReturnFocusId = undefined
+
+STEP 2: USER PRESSES Alt+M (On ToggleMenu)
+	JS.InvokeVoidAsync("texTrackRememberDashboardFocus")
+	→ window.texTrackDashboardReturnFocusId = "dashboard-item-3"
+	openMenu = "masters"
+	Menu renders
+	Focus moves to menu (either by user or initial tab order)
+
+STEP 3: USER NAVIGATES MENU (On Menu Navigation)
+	User presses Down/Up arrows
+	document.activeElement === <button id="masters-item-0" ...>
+	window.texTrackDashboardReturnFocusId === "dashboard-item-3" (unchanged)
+
+STEP 4: USER PRESSES Esc (On Menu Controller)
+	event.key === 'Escape'
+	consume() called (prevents all other handlers)
+	overlay.click() called
+	CloseMenu() executed
+		openMenu = null
+		pendingRestoreDashboardFocus = true
+	StateHasChanged()
+	Blazor re-renders:
+		- Menu overlay removed from DOM
+		- Menu items removed from DOM
+		- Dashboard section still in DOM
+		- Dashboard items still in DOM
+	Browser moves focus to document.body (focused element is gone)
+
+STEP 5: BLAZOR RENDER COMPLETE (On OnAfterRenderAsync)
+	if (pendingRestoreDashboardFocus):
+		JS.InvokeVoidAsync("texTrackRestoreDashboardFocus")
+
+	texTrackRestoreDashboardFocus() executed:
+		returnId = window.texTrackDashboardReturnFocusId = "dashboard-item-3"
+		element = document.getElementById("dashboard-item-3")
+		element found! It's still in DOM (never belonged to menu)
+		element.focus({ preventScroll: true })
+		document.activeElement === element ✓
+		Attempt successful, return true
+
+STEP 6: KEYBOARD WORKS IMMEDIATELY
+	User presses Down arrow
+	document.activeElement is <a id="dashboard-item-3">
+	Dashboard.HandlePageKeyDown() intercepts Down arrow
+	selectedIndex incremented
+	Focus moves to dashboard-item-4 (Masters)
+	Keyboard navigation restored!
+
+═══════════════════════════════════════════════════════════════════════════════
+FALLBACK LOGIC FOR BROKEN REFERENCES
+═══════════════════════════════════════════════════════════════════════════════
+
+SCENARIO: Dashboard items were DOM-replaced by a re-render (edge case)
+	- returnId = "dashboard-item-3"
+	- document.getElementById("dashboard-item-3") returns null
+	- First attempt fails
+	- Fallback triggers: document.getElementById("dashboard-page-root")
+	- Dashboard root element found (it's the top-level section)
+	- element.focus({ preventScroll: true })
+	- document.activeElement === dashboard-page-root ✓
+	- Focus restored to container instead of item
+	- Keyboard still works
+	- User can navigate with arrows
+
+RETRY LOGIC FOR BLAZOR TIMING:
+	- Blazor may take time to complete all re-renders
+	- Element might be queued for removal but not yet removed
+	- texTrackRestoreDashboardFocus() uses:
+	  * window.requestAnimationFrame() - wait for browser frame
+	  * window.setTimeout(focusTarget, 0) - defer to next macro task
+	  * Retry loop: 40 attempts with 35ms delay between each
+	  * Total wait time: ~1.4 seconds maximum
+	- This ensures element is truly available before focus attempt
+	- Overcomes timing issues with Blazor re-rendering
+
+═══════════════════════════════════════════════════════════════════════════════
+KEY INSIGHT
+═══════════════════════════════════════════════════════════════════════════════
+
+The bug wasn't a "missing generic fallback."
+
+The bug was that we needed SPECIFIC knowledge:
+	"When on Dashboard, before opening a menu, remember which Dashboard
+	 item had focus so we can restore it after the menu closes."
+
+This knowledge is only available at the moment we open the menu.
+The MainLayout component knows this because it's the host.
+JavaScript can capture this with document.activeElement.id.
+By storing it before the menu opens, we skip the generic search.
+By restoring from storage after the menu closes, we bypass the fallback.
+
+═══════════════════════════════════════════════════════════════════════════════

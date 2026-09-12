@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="css/app.css?v=0.6.28-text-align-utility-fix" />
+    <link rel="stylesheet" href="TexTrack.Web.styles.css?v=0.6.77-purchase-ledger-panel-scroll-sizing-fix" />
+    <HeadOutlet />
+</head>
+<body>
+    <script src="js/textrack-alt-delete.js?v=0.6.5-backspace-from-excluded-control"></script>
+    <script src="js/textrack-header-filters.js?v=0.6.2-job-worker-control"></script>
+    <script src="js/textrack-udf-autofit.js?v=0.1.1-udf-autofit-resize-fix"></script>
+    <Routes @rendermode="InteractiveServer" />
+    <script>
+        window.texTrackFocusFallback = function () {
+            const target = document.querySelector(
+                '.workspace [data-tt-page-root="true"][tabindex], ' +
+                '.workspace .page-card[tabindex="0"], ' +
+                '.workspace .voucher-card[tabindex="0"], ' +
+                '.app-shell[tabindex]'
+            );
+            if (target instanceof HTMLElement && target.offsetParent !== null) {
+                target.focus({ preventScroll: true });
+                return document.activeElement === target;
+            }
+            return false;
+        };
+
+        window.texTrackFocusById = function (id) {
+            let attempts = 0;
+            const focusTarget = function () {
+                attempts += 1;
+                const element = document.getElementById(id);
+                if (element instanceof HTMLElement && element.offsetParent !== null) {
+                    if (!element.hasAttribute('tabindex') && !element.matches('input,button,select,textarea,a[href]')) {
+                        element.setAttribute('tabindex', '-1');
+                    }
+                    element.focus({ preventScroll: true });
+                    if (document.activeElement === element) return true;
+                }
+                if (attempts < 40) {
+                    window.setTimeout(focusTarget, 35);
+                } else if (document.activeElement === document.body || !(document.activeElement instanceof HTMLElement)) {
+                    window.texTrackFocusFallback();
+                }
+                return false;
+            };
+            window.requestAnimationFrame(function () {
+                window.setTimeout(focusTarget, 0);
+            });
+        };
+
+        // Route focus handoff. Native/enhanced link navigation can remove the
+        // focused menu link before the destination page is interactive. Retry
+        // until the new keyboard-enabled page root exists, then focus it.
+        window.texTrackFocusPageRoot = function () {
+            let attempts = 0;
+            const focusPage = function () {
+                attempts += 1;
+
+                // Explicit page targets win. Voucher entry screens may mark the
+                // first logical field; list screens normally expose a tabindex root.
+                const target = document.querySelector(
+                    '.workspace [data-tt-page-autofocus="true"], ' +
+                    '.workspace .page-card[tabindex="0"], ' +
+                    '.workspace .voucher-card[tabindex="0"], ' +
+                    '.workspace [data-tt-page-root="true"][tabindex]'
+                );
+
+                if (target instanceof HTMLElement) {
+                    target.focus({ preventScroll: true });
+                    if (document.activeElement === target) return true;
+                }
+
+                if (attempts < 30) {
+                    window.setTimeout(focusPage, 40);
+                } else if (document.activeElement === document.body || !(document.activeElement instanceof HTMLElement)) {
+                    window.texTrackFocusFallback();
+                }
+                return false;
+            };
+            window.setTimeout(focusPage, 0);
+        };
+
+        // Store the Dashboard focus return ID before opening a menu.
+        // This remembers which Dashboard item had focus so we can restore
+        // it after pressing Esc to close the menu.
+        window.texTrackRememberDashboardFocus = function () {
+            const active = document.activeElement;
+            if (active instanceof HTMLElement) {
+                const id = active.id;
+                if (id) {
+                    window.texTrackDashboardReturnFocusId = id;
+                    return;
+                }
+            }
+            // Fallback to dashboard root
+            window.texTrackDashboardReturnFocusId = 'dashboard-page-root';
+        };
+
+        // Restore focus to the Dashboard item that had focus before the menu opened.
+        // Used when closing a menu via Escape while the Dashboard is the active page.
+        window.texTrackRestoreDashboardFocus = function () {
+            const returnId = window.texTrackDashboardReturnFocusId || 'dashboard-page-root';
+            if (!returnId) return false;
+
+            let attempts = 0;
+            const focusTarget = function () {
+                attempts += 1;
+                const element = document.getElementById(returnId);
+                if (element instanceof HTMLElement && element.offsetParent !== null) {
+                    element.focus({ preventScroll: true });
+                    if (document.activeElement === element) return true;
+                }
+                // If element doesn't exist or focus failed, try dashboard root as fallback
+                if (returnId !== 'dashboard-page-root') {
+                    const fallback = document.getElementById('dashboard-page-root');
+                    if (fallback instanceof HTMLElement && fallback.offsetParent !== null) {
+                        fallback.focus({ preventScroll: true });
+                        if (document.activeElement === fallback) return true;
+                    }
+                }
+                if (attempts < 40) {
+                    window.setTimeout(focusTarget, 35);
+                } else if (document.activeElement === document.body || !(document.activeElement instanceof HTMLElement)) {
+                    window.texTrackFocusFallback();
+                }
+                return false;
+            };
+            window.requestAnimationFrame(function () {
+                window.setTimeout(focusTarget, 0);
+            });
+        };
+
+        if (!window.texTrackEnhancedFocusInstalled) {
+            window.texTrackEnhancedFocusInstalled = true;
+            document.addEventListener('enhancedload', function () {
+                window.texTrackFocusPageRoot();
+            });
+        }
+
+
+        // First-Esc focus release. Never blur to document.body: doing so moves
+        // keyboard events outside the Blazor app and makes the keyboard appear dead.
+        // Instead, hand focus back to the current page root. A second Esc can then
+        // be handled by the page/layout normally.
+        window.texTrackBlurActiveElement = function () {
+            const active = document.activeElement;
+            const workspace = document.querySelector('.workspace');
+            if (!(workspace instanceof HTMLElement)) return false;
+            if (!(active instanceof HTMLElement) || !workspace.contains(active)) return false;
+
+            // Voucher entry forms own their Escape keyboard handler. Focus that
+            // form first, not the outer page card, otherwise the second Escape
+            // never reaches the voucher handler.
+            const formRoot = active.closest('[data-tt-voucher-form-root="true"][tabindex]');
+            const pageRoot = workspace.querySelector(
+                '[data-tt-voucher-form-root="true"][tabindex], ' +
+                '.page-card[tabindex="0"], .voucher-card[tabindex="0"], ' +
+                '[data-tt-page-root="true"][tabindex]'
+            );
+            const target = formRoot instanceof HTMLElement ? formRoot : pageRoot;
+            if (!(target instanceof HTMLElement)) return false;
+            if (active === target) return false;
+
+            target.focus({ preventScroll: true });
+            return document.activeElement === target;
+        };
+
+        window.texTrackRevealRow = function (rowId, containerId) {
+                const row = document.getElementById(rowId);
+                const boundary = document.getElementById(containerId);
+
+                if (!row || !boundary) {
+                    return;
+                }
+
+                // Callers may pass either the grid itself or the surrounding page
+                // root. Always resolve the closest real scrolling surface so keyboard
+                // selection never shifts/clips the whole report or master page.
+                let container = row.parentElement;
+                while (container && container !== boundary) {
+                    const style = window.getComputedStyle(container);
+                    const scrollable = /(auto|scroll)/.test(style.overflowY) &&
+                        container.scrollHeight > container.clientHeight;
+                    if (scrollable) break;
+                    container = container.parentElement;
+                }
+
+                if (!container || container === boundary) {
+                    const boundaryStyle = window.getComputedStyle(boundary);
+                    const boundaryScrollable = /(auto|scroll)/.test(boundaryStyle.overflowY) &&
+                        boundary.scrollHeight > boundary.clientHeight;
+                    if (!boundaryScrollable) return;
+                    container = boundary;
+                }
+
+                const rowRect = row.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+                const table = row.closest('table');
+                const header = table ? table.querySelector('thead') : null;
+                const footer = table ? table.querySelector('tfoot') : null;
+                const overlayFooter = container.querySelector('[data-scroll-sticky-footer="true"]');
+                const stickyTop = header instanceof HTMLElement && header.offsetParent !== null
+                    ? header.getBoundingClientRect().height
+                    : 0;
+                const tableFooterHeight = footer instanceof HTMLElement && footer.offsetParent !== null
+                    ? footer.getBoundingClientRect().height
+                    : 0;
+                const overlayFooterHeight = overlayFooter instanceof HTMLElement && overlayFooter.offsetParent !== null
+                    ? overlayFooter.getBoundingClientRect().height
+                    : 0;
+                const stickyBottom = Math.max(tableFooterHeight, overlayFooterHeight);
+                const visibleTop = containerRect.top + stickyTop;
+                const visibleBottom = containerRect.bottom - stickyBottom;
+
+                if (rowRect.top < visibleTop) {
+                    container.scrollTop -= (visibleTop - rowRect.top);
+                } else if (rowRect.bottom > visibleBottom) {
+                    container.scrollTop += (rowRect.bottom - visibleBottom);
+                }
+        };
+
+        window.texTrackScrollRowIntoView = function (rowId, containerId) {
+            window.setTimeout(function () {
+                window.texTrackRevealRow(rowId, containerId);
+            }, 0);
+        };
+
+        // Geometry-based navigation for responsive card grids. Unlike row lists,
+        // Up/Down preserve the visual column and Left/Right preserve the visual row.
+        // Missing cells and outer edges are hard walls and never wrap.
+        window.texTrackSpatialCardIndex = function (rootId, currentId, key) {
+            const root = document.getElementById(rootId);
+            const current = document.getElementById(currentId);
+            if (!(root instanceof HTMLElement) || !(current instanceof HTMLElement)) return -1;
+            const cards = Array.from(root.querySelectorAll('[data-spatial-card="true"]'))
+                .filter(function (card) { return card instanceof HTMLElement && card.offsetParent !== null; });
+            const currentRect = current.getBoundingClientRect();
+            const cx = currentRect.left + currentRect.width / 2;
+            const cy = currentRect.top + currentRect.height / 2;
+            const direction = key.replace('Arrow', '');
+            let best = null;
+            let bestPrimary = Number.POSITIVE_INFINITY;
+            let bestSecondary = Number.POSITIVE_INFINITY;
+
+            cards.forEach(function (card) {
+                if (card === current) return;
+                const rect = card.getBoundingClientRect();
+                const x = rect.left + rect.width / 2;
+                const y = rect.top + rect.height / 2;
+                const dx = x - cx;
+                const dy = y - cy;
+                const horizontal = direction === 'Left' || direction === 'Right';
+                const forward = direction === 'Left' ? dx < -1 : direction === 'Right' ? dx > 1 :
+                    direction === 'Up' ? dy < -1 : dy > 1;
+                if (!forward) return;
+                const primary = Math.abs(horizontal ? dx : dy);
+                const secondary = Math.abs(horizontal ? dy : dx);
+                // Prefer the nearest row/column first, then the closest aligned card.
+                if (primary < bestPrimary - 1 || (Math.abs(primary - bestPrimary) <= 1 && secondary < bestSecondary)) {
+                    best = card; bestPrimary = primary; bestSecondary = secondary;
+                }
+            });
+            if (!(best instanceof HTMLElement)) return Number.parseInt(current.dataset.spatialIndex || '-1', 10);
+            best.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            return Number.parseInt(best.dataset.spatialIndex || '-1', 10);
+        };
+
+        // Make large report lists feel local even when Blazor Server is under load.
+        // The visual selection and contained scroll happen immediately; the normal
+        // Blazor key handler still receives the event and remains the source of truth.
+        if (!window.texTrackFastReportNavigationInstalled) {
+            window.texTrackFastReportNavigationInstalled = true;
+            document.addEventListener('keydown', function (event) {
+                if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+                const target = event.target;
+                if (!(target instanceof HTMLElement)) return;
+                if (target.matches('input, textarea, select, [contenteditable="true"]')) return;
+
+                const root = target.closest('[data-keyboard-list-root="true"], .page-card[tabindex="0"]');
+                if (!(root instanceof HTMLElement)) return;
+
+                const rows = Array.from(root.querySelectorAll('.selectable-grid tbody > tr[id]'))
+                    .filter(function (row) { return row instanceof HTMLElement && row.offsetParent !== null; });
+                if (rows.length === 0) return;
+
+                const focusedRow = document.activeElement instanceof HTMLElement
+                    ? document.activeElement.closest('.selectable-grid tbody > tr[id]')
+                    : null;
+                let index = focusedRow && rows.includes(focusedRow)
+                    ? rows.indexOf(focusedRow)
+                    : rows.findIndex(function (row) { return row.classList.contains('selected-row'); });
+                if (index < 0) index = rows.findIndex(function (row) { return row.classList.contains('selected'); });
+                if (index < 0) index = event.key === 'ArrowDown' ? -1 : rows.length;
+                const next = event.key === 'ArrowDown'
+                    ? Math.min(index + 1, rows.length - 1)
+                    : Math.max(index - 1, 0);
+
+                // The first and last real data rows are hard walls. Do not run
+                // the reveal routine again at a wall: even though the selected
+                // row is unchanged, another scroll adjustment can expose the
+                // table header or totals row and make it look selectable.
+                if (next === index) {
+                    event.preventDefault();
+                    return;
+                }
+
+                rows.forEach(function (row, rowIndex) {
+                    // Some screens historically rendered both `selected` and
+                    // `selected-row`. Clear both so client-side navigation cannot
+                    // leave a second dark row behind while the server catches up.
+                    row.classList.remove('selected');
+                    row.classList.toggle('selected-row', rowIndex === next);
+                    row.setAttribute('aria-selected', rowIndex === next ? 'true' : 'false');
+                });
+                if (!rows[next].hasAttribute('tabindex')) rows[next].setAttribute('tabindex', '-1');
+                rows[next].focus({ preventScroll: true });
+                window.texTrackRevealRow(rows[next].id, root.id);
+                event.preventDefault();
+            }, true);
+        }
+
+        // Shared visible-row multi-selection for master lists, registers and reports.
+        // Space toggles the keyboard row; Shift+Space selects all currently visible rows.
+        if (!window.texTrackRowMultiSelectInstalled) {
+            window.texTrackRowMultiSelectInstalled = true;
+            const selections = new Map();
+            const selectableRows = function (root) {
+                return Array.from(root.querySelectorAll('.selectable-grid tbody > tr[id]'))
+                    .filter(function (row) { return row instanceof HTMLElement && row.offsetParent !== null; });
+            };
+            const rowKey = function (row) { return row.dataset.ttRowId || row.id; };
+            const selectionFor = function (root) {
+                if (!selections.has(root.id)) selections.set(root.id, new Set());
+                return selections.get(root.id);
+            };
+            const applySelection = function (root) {
+                if (!(root instanceof HTMLElement) || !root.id) return;
+                const selected = selectionFor(root);
+                selectableRows(root).forEach(function (row) {
+                    const isSelected = selected.has(rowKey(row));
+                    row.dataset.ttMultiSelected = isSelected ? 'true' : 'false';
+                    row.classList.toggle('multi-selected-row', isSelected);
+                });
+            };
+            const publishSelection = function (root, rows) {
+                root.dispatchEvent(new CustomEvent('textrack:rowselectionchanged', {
+                    bubbles: true,
+                    detail: { ids: rows.filter(function (row) { return row.dataset.ttMultiSelected === 'true'; }).map(rowKey) }
+                }));
+            };
+            document.addEventListener('keydown', function (event) {
+                if (event.code !== 'Space' || event.altKey || event.ctrlKey || event.metaKey) return;
+                const target = event.target;
+                if (!(target instanceof HTMLElement) || target.matches('input, textarea, select, button, a, [contenteditable="true"]')) return;
+                const root = target.closest('[data-keyboard-list-root="true"]');
+                if (!(root instanceof HTMLElement)) return;
+                const rows = selectableRows(root);
+                if (rows.length === 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const selectedKeys = selectionFor(root);
+                if (event.shiftKey) {
+                    rows.forEach(function (row) {
+                        selectedKeys.add(rowKey(row));
+                        row.dataset.ttMultiSelected = 'true';
+                        row.classList.add('multi-selected-row');
+                    });
+                } else {
+                    const row = target.closest('.selectable-grid tbody > tr[id]') ||
+                        rows.find(function (candidate) { return candidate.classList.contains('selected-row') || candidate.classList.contains('selected'); });
+                    if (!(row instanceof HTMLElement)) return;
+                    const selected = row.dataset.ttMultiSelected !== 'true';
+                    if (selected) selectedKeys.add(rowKey(row)); else selectedKeys.delete(rowKey(row));
+                    row.dataset.ttMultiSelected = selected ? 'true' : 'false';
+                    row.classList.toggle('multi-selected-row', selected);
+                }
+                publishSelection(root, rows);
+            }, true);
+            window.texTrackSelectedRowIds = function (rootId) {
+                const root = document.getElementById(rootId);
+                return root instanceof HTMLElement
+                    ? selectableRows(root).filter(function (row) { return selectionFor(root).has(rowKey(row)); }).map(rowKey)
+                    : [];
+            };
+            window.texTrackClearSelectedRows = function (rootId, retainedIds) {
+                const root = document.getElementById(rootId);
+                const retained = new Set((retainedIds || []).map(String));
+                selections.set(rootId, retained);
+                if (root instanceof HTMLElement) {
+                    applySelection(root);
+                    publishSelection(root, selectableRows(root));
+                }
+            };
+            new MutationObserver(function () {
+                document.querySelectorAll('[data-keyboard-list-root="true"][id]').forEach(applySelection);
+            }).observe(document.body, { childList: true, subtree: true });
+        }
+
+
+        // Dedicated keyboard controller for the top navigation menus.
+        // It uses the actual visible DOM controls, so Enter, arrows and nested
+        // master groups do not depend on Blazor event bubbling or browser defaults.
+        if (!window.texTrackMenuControllerInstalled) {
+            window.texTrackMenuControllerInstalled = true;
+
+            const visibleMenuItems = function (root) {
+                return Array.from(root.querySelectorAll('[data-tt-menu-item="true"]')).filter(function (item) {
+                    return item instanceof HTMLElement && item.offsetParent !== null && !item.hasAttribute('disabled');
+                });
+            };
+
+            const focusAfterRender = function (id, child) {
+                window.setTimeout(function () {
+                    const item = document.getElementById(id);
+                    if (!item) return;
+                    if (child) {
+                        const group = item.closest('.master-menu-group');
+                        const firstChild = group ? group.querySelector('.master-menu-children [data-tt-menu-item="true"]') : null;
+                        if (firstChild instanceof HTMLElement) { firstChild.focus(); return; }
+                    }
+                    item.focus();
+                }, 90);
+            };
+
+            document.addEventListener('keydown', function (event) {
+                const target = event.target;
+                if (!(target instanceof HTMLElement)) return;
+                const root = target.closest('[data-tt-menu-root="true"]') ||
+                    document.querySelector('[data-tt-menu-root="true"]');
+                if (!root) return;
+
+                const items = visibleMenuItems(root);
+                const current = target.closest('[data-tt-menu-item="true"]') ||
+                    root.querySelector('[data-tt-menu-item="true"].keyboard-selected') ||
+                    items[0] || null;
+                const currentIndex = current ? items.indexOf(current) : -1;
+
+                const consume = function () {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+                };
+
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    consume();
+                    if (items.length === 0) return;
+                    const delta = event.key === 'ArrowDown' ? 1 : -1;
+                    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + delta + items.length) % items.length;
+                    items[nextIndex].focus();
+                    items[nextIndex].scrollIntoView({ block: 'nearest' });
+                    return;
+                }
+
+                if (event.key === 'Home' || event.key === 'End') {
+                    consume();
+                    if (items.length === 0) return;
+                    const next = event.key === 'Home' ? items[0] : items[items.length - 1];
+                    next.focus();
+                    next.scrollIntoView({ block: 'nearest' });
+                    return;
+                }
+
+                if (event.key === 'Enter' || event.key === 'ArrowRight') {
+                    if (!(current instanceof HTMLElement)) return;
+                    const kind = current.dataset.ttKind;
+                    if (kind === 'group') {
+                        consume();
+                        const id = current.id;
+                        const expanded = current.getAttribute('aria-expanded') === 'true';
+                        if (!expanded) current.click();
+                        focusAfterRender(id, true);
+                        return;
+                    }
+                    if ((event.key === 'Enter' || event.key === 'ArrowRight') && kind === 'link') {
+                        consume();
+                        current.click();
+                        return;
+                    }
+                }
+
+                if (event.key === 'ArrowLeft') {
+                    if (!(current instanceof HTMLElement)) return;
+                    const parentId = current.dataset.ttParent;
+                    if (!parentId) return;
+                    consume();
+                    const parent = document.getElementById(parentId);
+                    if (parent instanceof HTMLElement) {
+                        if (parent.getAttribute('aria-expanded') === 'true') parent.click();
+                        focusAfterRender(parentId, false);
+                    }
+                    return;
+                }
+
+                if (event.key === 'Escape') {
+                    consume();
+                    const parentId = current instanceof HTMLElement ? current.dataset.ttParent : null;
+                    if (parentId) {
+                        const parent = document.getElementById(parentId);
+                        if (parent instanceof HTMLElement) {
+                            if (parent.getAttribute('aria-expanded') === 'true') parent.click();
+                            focusAfterRender(parentId, false);
+                        }
+                        return;
+                    }
+                    const overlay = root.closest('.menu-overlay');
+                    if (overlay instanceof HTMLElement) overlay.click();
+                }
+            }, true);
+        }
+
+        // Keyboard-first form navigation used by every current and future TexTrack form.
+        // Enter accepts the current field and moves to the next enabled editable control.
+        // From the final field, focus moves to the Save button; Enter on Save performs Save.
+        if (!window.texTrackEnterNavigationInstalled) {
+            window.texTrackEnterNavigationInstalled = true;
+
+            // List/report pages own their navigation keys. Prevent the browser from
+            // scrolling the document while leaving propagation intact for Blazor.
+            document.addEventListener('keydown', function (event) {
+                if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(event.key)) return;
+                const target = event.target;
+                if (!(target instanceof HTMLElement)) return;
+                if (!target.closest('[data-keyboard-list-root="true"]')) return;
+                if (target.matches('input, textarea, select, [contenteditable="true"]')) return;
+                event.preventDefault();
+            }, true);
+
+            document.addEventListener('keydown', function (event) {
+                const current = event.target;
+                if (!(current instanceof HTMLElement)) {
+                    return;
+                }
+
+                const form = current.closest('[data-enter-navigation="true"]');
+                if (!form) {
+                    return;
+                }
+
+                const lookupField = current.closest('.lookup-field');
+                const lookupPanel = lookupField ? lookupField.querySelector('.erp-lookup-panel') : null;
+                const lookupButtons = lookupPanel
+                    ? Array.from(lookupPanel.querySelectorAll('button:not([disabled])')).filter(function (button) {
+                        return button instanceof HTMLElement && button.offsetParent !== null;
+                    })
+                    : [];
+
+                if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
+                    current.matches('[data-erp-lookup="true"]') && lookupButtons.length > 0) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    // Not Applicable sits last in DOM order (so Blazor's own diffing of
+                    // the rendered match list is never disturbed by it) but renders
+                    // visually pinned to the top via CSS order - excluded from this
+                    // Up/Down cycle's bounds so arrowing past the last real match just
+                    // stops there instead of jumping the highlight up to a fixed-top
+                    // option, which reads as an unexplained loop. It stays reachable by
+                    // typing or a mouse click, just not by Arrow Up/Down.
+                    let maxIndex = lookupButtons.length - 1;
+                    while (maxIndex >= 0 && lookupButtons[maxIndex].getAttribute('data-tt-lookup-na') === 'true') {
+                        maxIndex -= 1;
+                    }
+                    if (maxIndex < 0) return;
+                    let index = Number.parseInt(lookupPanel.dataset.activeIndex || '-1', 10);
+                    if (Number.isNaN(index)) index = -1;
+                    index = event.key === 'ArrowDown'
+                        ? Math.min(index + 1, maxIndex)
+                        : Math.max(index < 0 ? 0 : index - 1, 0);
+                    lookupPanel.dataset.activeIndex = String(index);
+                    lookupButtons.forEach(function (button, buttonIndex) {
+                        button.classList.toggle('keyboard-selected', buttonIndex === index);
+                    });
+                    lookupButtons[index].scrollIntoView({ block: 'nearest' });
+                    return;
+                }
+
+                if (event.key !== 'Enter' || event.altKey || event.ctrlKey || event.metaKey) {
+                    return;
+                }
+
+                // Blazor ancestor key handlers can prevent the browser's native button
+                // activation. Explicitly click the focused Save control exactly once.
+                if (current.matches('[data-enter-save="true"]')) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+                    current.click();
+                    return;
+                }
+
+                // Lookup Enter priority:
+                // 1. An option deliberately highlighted with Arrow Up/Down must be selected,
+                //    even when the text input itself is blank.
+                // 2. A truly blank field with no highlighted option may run its blank action.
+                // 3. Typed lookup text may resolve to the highlighted/first visible match.
+                const isLookup = current.matches('[data-erp-lookup="true"]');
+                let highlightedLookupIndex = -1;
+                if (isLookup && lookupPanel && lookupButtons.length > 0) {
+                    const storedIndex = Number.parseInt(lookupPanel.dataset.activeIndex || '-1', 10);
+                    if (!Number.isNaN(storedIndex) &&
+                        storedIndex >= 0 &&
+                        storedIndex < lookupButtons.length &&
+                        lookupButtons[storedIndex].classList.contains('keyboard-selected')) {
+                        highlightedLookupIndex = storedIndex;
+                    }
+                }
+
+                if (highlightedLookupIndex >= 0) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    lookupButtons[highlightedLookupIndex].click();
+                    return;
+                }
+
+                // A blank component line closes the Tally-style allocation window only
+                // when the user has not deliberately highlighted a lookup option.
+                const emptyActionId = current.getAttribute('data-enter-empty-action');
+                if (emptyActionId && current instanceof HTMLInputElement && current.value.trim() === '') {
+                    const emptyAction = document.getElementById(emptyActionId);
+                    if (emptyAction) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        emptyAction.click();
+                        return;
+                    }
+                }
+
+                // Typed ERP lookup: Enter selects the first visible match when no option
+                // was explicitly highlighted. Blank lookups never auto-select an item.
+                if (isLookup && lookupButtons.length > 0 &&
+                    current instanceof HTMLInputElement && current.value.trim() !== '') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    lookupButtons[0].click();
+                    return;
+                }
+
+                // Tally-style action fields can open an allocation window or complete a row.
+                const enterActionId = current.getAttribute('data-enter-action');
+                if (enterActionId) {
+                    const enterAction = document.getElementById(enterActionId);
+                    if (enterAction) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        enterAction.click();
+                        return;
+                    }
+                }
+
+                // Shift+Enter remains available for a deliberate new line in future text areas.
+                if (current instanceof HTMLTextAreaElement && event.shiftKey) {
+                    return;
+                }
+
+                const controls = Array.from(form.querySelectorAll(
+                    'input:not([type="hidden"]), select, textarea, button[data-enter-save="true"]'
+                )).filter(function (element) {
+                    if (!(element instanceof HTMLElement)) return false;
+                    if (element.hasAttribute('disabled')) return false;
+                    if (element.getAttribute('aria-hidden') === 'true') return false;
+                    if (element.tabIndex < 0) return false;
+                    if (element instanceof HTMLInputElement && element.readOnly) return false;
+                    if (element instanceof HTMLTextAreaElement && element.readOnly) return false;
+                    return element.offsetParent !== null;
+                });
+
+                const currentIndex = controls.indexOf(current);
+                if (currentIndex < 0) {
+                    return;
+                }
+
+                const next = controls[currentIndex + 1];
+                if (!next) {
+                    // The last focusable field in the form (often a trailing narration/notes
+                    // textarea, since a form's save button usually sits in a toolbar earlier in
+                    // the DOM) has nothing to advance to. Without this, Enter here silently did
+                    // whatever the browser default is - for a textarea, inserting a newline
+                    // instead of finishing the form. Land on Save instead, same intent as Enter
+                    // everywhere else in the form.
+                    const saveButton = form.querySelector('[data-enter-save="true"]');
+                    if (saveButton instanceof HTMLElement && !saveButton.hasAttribute('disabled')) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        saveButton.focus();
+                    }
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                next.focus();
+
+                if (next instanceof HTMLInputElement &&
+                    !['checkbox', 'radio', 'button', 'submit', 'number', 'date'].includes(next.type)) {
+                    next.select();
+                }
+            }, true);
+        }
+
+        // Lookup dropdowns show which option Enter would pick from the moment they open,
+        // not only after the first ArrowDown/Up press - matches every other typeahead's
+        // convention (browser address bar, editor command palettes) and fixes Enter on a
+        // freshly-opened, unfiltered dropdown doing nothing instead of picking the top
+        // result. Observing childList (not attributes) means our own classList.add below
+        // never re-triggers this observer, so there's no feedback loop.
+        if (!window.texTrackLookupAutoHighlightInstalled) {
+            window.texTrackLookupAutoHighlightInstalled = true;
+
+            const highlightFirstLookupOption = function (panel) {
+                if (!(panel instanceof HTMLElement) || panel.querySelector('button.keyboard-selected')) return;
+                // Blank lookups never auto-select an item (see the Enter-key handler below) -
+                // auto-highlighting index 0 on an empty, just-opened dropdown would silently
+                // pick something for a field the user may have left blank on purpose.
+                const lookupField = panel.closest('.lookup-field');
+                const input = lookupField ? lookupField.querySelector('[data-erp-lookup="true"]') : null;
+                if (!(input instanceof HTMLInputElement) || input.value.trim() === '') return;
+                const buttons = Array.from(panel.querySelectorAll('button:not([disabled])'))
+                    .filter(function (button) { return button.offsetParent !== null; });
+                if (buttons.length === 0) return;
+                panel.dataset.activeIndex = '0';
+                buttons[0].classList.add('keyboard-selected');
+            };
+
+            const lookupHighlightObserver = new MutationObserver(function (mutations) {
+                for (const mutation of mutations) {
+                    const changedPanel = mutation.target instanceof Element
+                        ? mutation.target.closest('.erp-lookup-panel')
+                        : null;
+                    if (changedPanel) highlightFirstLookupOption(changedPanel);
+                    mutation.addedNodes.forEach(function (node) {
+                        if (!(node instanceof Element)) return;
+                        if (node.matches('.erp-lookup-panel')) highlightFirstLookupOption(node);
+                        node.querySelectorAll?.('.erp-lookup-panel').forEach(highlightFirstLookupOption);
+                    });
+                }
+            });
+            lookupHighlightObserver.observe(document.body, { childList: true, subtree: true });
+        }
+
+        // Lookup panels reposition themselves to fit the viewport instead of always opening
+        // downward and forcing the page/modal to scroll to see the last option - mirrors how
+        // Tally's own lookup lists flip above the field when there isn't room below. Same
+        // MutationObserver hook as the auto-highlight logic above; also re-measures whenever
+        // the option list itself changes (typing narrows/widens the match list) since that's
+        // a childList mutation on the panel, which the observer already watches.
+        if (!window.texTrackLookupRepositionInstalled) {
+            window.texTrackLookupRepositionInstalled = true;
+
+            const LOOKUP_VIEWPORT_MARGIN = 8;
+
+            const repositionLookupPanel = function (panel) {
+                if (!(panel instanceof HTMLElement)) return;
+                const field = panel.closest('.lookup-field');
+                const input = field?.querySelector('[data-erp-lookup="true"]') || field?.querySelector('input, select, textarea');
+                if (!(input instanceof HTMLElement)) return;
+
+                // Reset to the CSS-authored "opens downward" state before measuring, so a
+                // previous flip doesn't bias this measurement. Several pages (e.g. JWO) style
+                // .erp-lookup-panel's position/top/left with !important, so every property this
+                // function sets must go through setProperty(..., 'important') too, or a plain
+                // assignment is silently a no-op on those pages - removeProperty still correctly
+                // falls back to the stylesheet's own (possibly !important) value.
+                panel.style.removeProperty('top');
+                panel.style.removeProperty('bottom');
+                panel.style.removeProperty('left');
+                panel.style.removeProperty('right');
+                panel.style.removeProperty('max-height');
+
+                const inputRect = input.getBoundingClientRect();
+                const naturalHeight = panel.getBoundingClientRect().height;
+                const spaceBelow = window.innerHeight - inputRect.bottom - LOOKUP_VIEWPORT_MARGIN;
+                const spaceAbove = inputRect.top - LOOKUP_VIEWPORT_MARGIN;
+
+                if (naturalHeight > spaceBelow && spaceAbove > spaceBelow) {
+                    // `top: auto` paired with `bottom: <anchor>` does NOT reliably grow an
+                    // absolutely-positioned, auto-height box upward in every browser - with no
+                    // other layout context, the box can resolve to its CSS static position
+                    // (here, effectively zero height) instead of sizing to its content. Anchor
+                    // with an explicit negative `top` instead.
+                    //
+                    // Size it to its own content (capped by whatever fits above), never to the
+                    // full space available above - a field low in a long scrollable form/modal
+                    // can have hundreds of pixels of "space above" that's actually occupied by
+                    // earlier rows, not truly empty. Stretching the panel to fill all of that
+                    // just to satisfy a height number would float it away from its own field,
+                    // overlapping unrelated content far above. Capping at naturalHeight keeps it
+                    // hugging the field from above, exactly like any normal dropdown that flips
+                    // up - it only overlaps what a flipped-up dropdown always overlaps: whatever
+                    // was directly above the field, not the whole form.
+                    const grantedHeight = Math.min(naturalHeight, Math.floor(spaceAbove));
+                    panel.style.setProperty('max-height', grantedHeight + 'px', 'important');
+                    panel.style.setProperty('top', `-${grantedHeight + 2}px`, 'important');
+                } else if (naturalHeight > spaceBelow) {
+                    panel.style.setProperty('max-height', Math.max(120, Math.floor(spaceBelow)) + 'px', 'important');
+                }
+
+                // Horizontal: a panel wider than its field (max-width: 520px in CSS) can run
+                // past the right edge of the viewport - anchor it to the field's right edge
+                // instead of its left edge when that happens.
+                const panelRect = panel.getBoundingClientRect();
+                if (panelRect.right > window.innerWidth - LOOKUP_VIEWPORT_MARGIN) {
+                    panel.style.setProperty('left', 'auto', 'important');
+                    panel.style.setProperty('right', '0', 'important');
+                }
+            };
+
+            const lookupRepositionObserver = new MutationObserver(function (mutations) {
+                for (const mutation of mutations) {
+                    const changedPanel = mutation.target instanceof Element
+                        ? mutation.target.closest('.erp-lookup-panel')
+                        : null;
+                    if (changedPanel) repositionLookupPanel(changedPanel);
+                    mutation.addedNodes.forEach(function (node) {
+                        if (!(node instanceof Element)) return;
+                        if (node.matches('.erp-lookup-panel')) repositionLookupPanel(node);
+                        node.querySelectorAll?.('.erp-lookup-panel').forEach(repositionLookupPanel);
+                    });
+                }
+            });
+            lookupRepositionObserver.observe(document.body, { childList: true, subtree: true });
+
+            window.addEventListener('resize', function () {
+                document.querySelectorAll('.erp-lookup-panel').forEach(repositionLookupPanel);
+            });
+        }
+
+        // Every lookup dropdown gets a mouse-clickable equivalent of "leave this field blank
+        // and press Enter" - a real option, styled and behaving exactly like any other match
+        // (including participating normally in the auto-highlight/Enter-picks-top-match logic
+        // above - it's just another item, not a special case), always sorted first, and
+        // filtered the same way a real item would be: visible when the field is blank or when
+        // the typed text is itself a partial match for "Not Applicable" (so typing "not"
+        // narrows the list down to it), hidden otherwise. Rather than re-deriving each field's
+        // own blank/decline behavior here (every field already has one, reached today only via
+        // keyboard - clear text + Enter), clicking it just replays exactly that: clear the
+        // field's value, then dispatch a real Enter keydown on it, so the field's own existing
+        // data-enter-empty-action proxy (or generic forward-advance fallback) does precisely
+        // what it would if the user had cleared the field and pressed Enter themselves. Same
+        // MutationObserver hook as the two blocks above - re-evaluated on every match-list
+        // change (typing narrows/widens it), not just once when the panel first opens.
+        if (!window.texTrackLookupNotApplicableInstalled) {
+            window.texTrackLookupNotApplicableInstalled = true;
+
+            const NOT_APPLICABLE_LABEL = 'Not Applicable';
+
+            const declineLookupField = function (input) {
+                const proto = Object.getPrototypeOf(input);
+                const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                desc.set.call(input, '');
+                // A match highlighted earlier (by typing, before backing out to blank) can
+                // leave a stale .keyboard-selected/activeIndex on the panel - the Enter router
+                // below checks that highlight before it checks for a blank value, so without
+                // clearing it here, "Not Applicable" could hijack into re-selecting whatever
+                // was highlighted instead of actually declining the field.
+                const panel = input.closest('.lookup-field')?.querySelector('.erp-lookup-panel');
+                if (panel instanceof HTMLElement) {
+                    panel.querySelectorAll('button.keyboard-selected').forEach(function (b) { b.classList.remove('keyboard-selected'); });
+                    delete panel.dataset.activeIndex;
+                }
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.focus({ preventScroll: true });
+                input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+            };
+
+            const updateNotApplicableOption = function (panel) {
+                if (!(panel instanceof HTMLElement)) return;
+                const lookupField = panel.closest('.lookup-field');
+                const input = lookupField ? lookupField.querySelector('[data-erp-lookup="true"]') : null;
+                if (!(input instanceof HTMLInputElement)) return;
+
+                const query = input.value.trim().toLowerCase();
+                const matches = query === '' || NOT_APPLICABLE_LABEL.toLowerCase().includes(query);
+                let option = panel.querySelector('[data-tt-lookup-na="true"]');
+
+                if (!matches) {
+                    if (option) option.remove();
+                    return;
+                }
+
+                if (!option) {
+                    option = document.createElement('button');
+                    option.type = 'button';
+                    option.dataset.ttLookupNa = 'true';
+                    option.textContent = NOT_APPLICABLE_LABEL;
+                    // Same trick the real Blazor-rendered option buttons use: without this,
+                    // the click's own mousedown would blur the input before click fires.
+                    option.addEventListener('mousedown', function (event) { event.preventDefault(); });
+                    option.addEventListener('click', function () { declineLookupField(input); });
+                }
+                // Always append (never insert before Blazor's own rendered matches) -
+                // CSS `order: -1` (see app.css) gives it a fixed top position visually without
+                // this code ever touching a DOM position Blazor's diffing thinks it owns.
+                if (option.parentElement !== panel || panel.lastElementChild !== option) panel.appendChild(option);
+            };
+
+            const notApplicableObserver = new MutationObserver(function (mutations) {
+                for (const mutation of mutations) {
+                    const changedPanel = mutation.target instanceof Element
+                        ? mutation.target.closest('.erp-lookup-panel')
+                        : null;
+                    if (changedPanel) updateNotApplicableOption(changedPanel);
+                    mutation.addedNodes.forEach(function (node) {
+                        if (!(node instanceof Element)) return;
+                        if (node.matches('.erp-lookup-panel')) updateNotApplicableOption(node);
+                        node.querySelectorAll?.('.erp-lookup-panel').forEach(updateNotApplicableOption);
+                    });
+                }
+            });
+            notApplicableObserver.observe(document.body, { childList: true, subtree: true });
+
+            // Typing a query that still matches the exact same set of real items (e.g. this
+            // field's whole result list already all contain "TEST") produces no DOM change for
+            // Blazor to re-render, so no childList mutation ever reaches the observer above -
+            // "Not Applicable" would be left showing (or hidden) based on stale, pre-keystroke
+            // text. Re-evaluate directly off the input event too, which fires on every
+            // keystroke regardless of whether the match list itself changed.
+            document.addEventListener('input', function (event) {
+                const current = event.target;
+                if (!(current instanceof HTMLElement) || !current.matches('[data-erp-lookup="true"]')) return;
+                const panel = current.closest('.lookup-field')?.querySelector('.erp-lookup-panel');
+                if (panel instanceof HTMLElement) updateNotApplicableOption(panel);
+            }, true);
+        }
+
+        // TexTrack lookups own their suggestions. Suppress browser/password-manager
+        // history overlays which otherwise obscure the ERP lookup panel.
+        if (!window.texTrackAutofillSuppressionInstalled) {
+            window.texTrackAutofillSuppressionInstalled = true;
+            const autofillNonce = Math.random().toString(36).slice(2);
+            let autofillSequence = 0;
+            const suppressBrowserAutofill = function (root) {
+                const inputs = [];
+                if (root instanceof HTMLInputElement) inputs.push(root);
+                if (root instanceof Element || root instanceof Document) {
+                    inputs.push(...root.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"])'));
+                }
+                inputs.forEach(function (input) {
+                    if (!(input instanceof HTMLInputElement) || input.dataset.ttAutofillSuppressed === 'true') return;
+                    input.dataset.ttAutofillSuppressed = 'true';
+                    input.setAttribute('autocomplete', input.matches('[data-erp-lookup="true"]') ? 'one-time-code' : 'off');
+                    input.setAttribute('data-lpignore', 'true');
+                    input.setAttribute('data-1p-ignore', 'true');
+                    input.setAttribute('data-form-type', 'other');
+                    if (input.matches('[data-erp-lookup="true"]')) {
+                        input.setAttribute('aria-autocomplete', 'list');
+                        input.name = `tt-lookup-${autofillNonce}-${++autofillSequence}`;
+                    }
+                });
+            };
+            suppressBrowserAutofill(document);
+            new MutationObserver(function (records) {
+                records.forEach(function (record) {
+                    record.addedNodes.forEach(function (node) { suppressBrowserAutofill(node); });
+                });
+            }).observe(document.documentElement, { childList: true, subtree: true });
+            document.addEventListener('focusin', function (event) { suppressBrowserAutofill(event.target); }, true);
+        }
+    </script>
+    <script>
+        window.texTrackDownload = async function (url) {
+            const response = await fetch(url, { credentials: 'same-origin' });
+            if (!response.ok) throw new Error((await response.text()) || `Download failed (${response.status})`);
+            const blob = await response.blob();
+            const disposition = response.headers.get('content-disposition') || '';
+            const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+            const name = match ? decodeURIComponent(match[1].replace(/\"/g, '')) : 'TexTrack_Tally.xml';
+            const objectUrl = URL.createObjectURL(blob);
+            try {
+                const link = document.createElement('a'); link.href = objectUrl; link.download = name;
+                document.body.appendChild(link); link.click(); link.remove();
+            } finally { URL.revokeObjectURL(objectUrl); }
+        };
+    </script>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>

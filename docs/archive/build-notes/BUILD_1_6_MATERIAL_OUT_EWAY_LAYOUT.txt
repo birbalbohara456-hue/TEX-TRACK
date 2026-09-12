@@ -1,0 +1,30 @@
+TexTrack ERP v0.5 Build 1.6 — Material Out Wider Layout and GST/e-Way Bill Modal
+
+Base: v0.5 Build 1.5 Material Out Layout Balance
+
+Implemented:
+- Material Out voucher canvas widened to a maximum of 1320px while remaining within the application shell.
+- JWO / Order No. field narrowed to a balanced width.
+- JWO pending-order dropdown capped at 500px and anchored within the voucher.
+- Selecting Yes for Provide GST/e-Way Bill details opens a native TexTrack modal.
+- Modal sections: e-Way Bill, Consignor, Consignee, Transport, and Part B details.
+- Enter navigation remains enabled inside the modal.
+- Esc returns to the GST/e-Way Bill selector without losing entered details.
+- Alt+S accepts the additional details and returns focus to Narration.
+- CSS cache key and displayed build version updated.
+
+Important controlled limitation:
+- Material Out posting/save remains disabled. The existing repository has pending-JWO lookup logic but no complete transaction-safe Material Out save/posting method yet.
+- Alt+S inside the modal accepts and retains the additional details for the current voucher screen; it does not post stock.
+- No database migration or repository logic was changed.
+
+Recommended tests:
+1. Open Material Out and confirm the wider voucher remains centered and fully visible.
+2. Confirm JWO / Order No. field and dropdown are narrower and remain inside the voucher.
+3. Select GST/e-Way Bill = No; focus should continue to Narration.
+4. Select GST/e-Way Bill = Yes; native modal should open.
+5. Press Enter repeatedly to move through modal fields.
+6. Press Esc; modal should close and focus should return to GST/e-Way Bill.
+7. Reopen modal and confirm previously entered values remain.
+8. Press Alt+S; modal should accept details and focus Narration.
+9. Confirm Party, JWO selection, quantities, and UQC precision remain unchanged.

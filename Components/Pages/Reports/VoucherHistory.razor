@@ -1,0 +1,471 @@
+@page "/reports/job-work/vouchers/{Kind}"
+@page "/reports/purchase/vouchers/{Kind}"
+@attribute [Authorize(Policy = SecurityPolicies.ViewReports)]
+@implements IDisposable
+@inject JobWorkOrderRepository JobWorkOrders
+@inject MasterJobOrderRepository MasterJobOrders
+@inject MaterialOutRepository MaterialOuts
+@inject MaterialInRepository MaterialIns
+@inject PurchaseOrderRepository PurchaseOrders
+@inject InventoryInwardRepository Purchases
+@inject PurchaseReturnRepository PurchaseReturns
+@inject VoucherHistoryRepository History
+@inject CurrentPeriodContext CurrentPeriod
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject DeveloperAccessService DeveloperAccess
+@inject GlobalOperationState GlobalOperations
+
+<PageTitle>@Title</PageTitle>
+
+<div id="voucher-history-root" class="voucher-history page-card tt-report-natural-flow" tabindex="0" data-keyboard-list-root="true" data-fast-row-navigation="true"
+     @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="voucher-history" RootElementId="voucher-history-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="@CanDeleteSelected" DeleteAsync="PromptDelete"
+                          HandlesEscape="true" EscapeAsync="GoBack" />
+
+    <header class="voucher-history-header">
+        <span class="voucher-history-breadcrumb">@GroupTitle <span class="voucher-history-crumb-sep">›</span> @Title</span>
+        <span class="voucher-history-period">@ViewCaption</span>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="form-message @(messageIsError ? "error" : "success")">@message</div>
+    }
+
+    @if (loading)
+    {
+        <div class="voucher-history-empty">Loading voucher history…</div>
+    }
+    else
+    {
+        <section class="voucher-history-toolbar">
+            <label>F4 Search
+                <input id="voucher-history-search" data-tt-filter-input="true" placeholder="Voucher, job worker, batch, order or item…"
+                       value="@searchText" @oninput="SearchChanged" />
+            </label>
+            <span>@totalCount voucher@(totalCount == 1 ? "" : "s")</span>
+        </section>
+
+        <div id="voucher-history-grid" class="voucher-history-grid">
+            <div class="voucher-history-scroll tt-contained-scroll">
+                <table class="selectable-grid">
+                    <thead>
+                        <tr>
+                            <th>Voucher No.</th><th>Date</th><th>@PartyColumnLabel</th><th>@ReferenceColumnLabel</th>
+                            <th>Batch</th><th>Details</th><th class="number">Quantity</th><th class="number">Amount</th><th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (PagedRows.Count == 0)
+                        {
+                            <tr><td colspan="9" class="voucher-history-empty">No vouchers match this period or search.</td></tr>
+                        }
+                        @for (var index = 0; index < PagedRows.Count; index++)
+                        {
+                            var rowIndex = index;
+                            var row = PagedRows[index];
+                            <tr id="voucher-history-row-@row.Id" data-tt-row-id="@row.Id" class="@(rowIndex == selectedIndex ? "selected selected-row" : null)"
+                                @onclick="() => SelectRow(rowIndex)" @ondblclick="OpenSelected">
+                                <td><strong>@row.VoucherNumber</strong></td>
+                                <td>@row.VoucherDate.ToString("dd-MM-yyyy")</td>
+                                <td>@row.JobWorker</td>
+                                <td>@row.OrderNumber</td>
+                                <td>@row.Batch</td>
+                                <td>@row.Details</td>
+                                <td class="number">@row.Quantity.ToString("0.####")</td>
+                                <td class="number">@(row.Amount == 0 ? "—" : row.Amount.ToString("0.00"))</td>
+                                <td><span class="status-pill @row.Status.ToLowerInvariant()">@row.Status</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="voucher-history-totalbar">
+                <span>Active filtered totals: @activeCount voucher@(activeCount == 1 ? "" : "s")</span>
+                <strong>@ActiveQuantityTotals</strong>
+                <span>Amount @activeAmount.ToString("0.00")</span>
+            </div>
+        </div>
+
+        <footer class="voucher-history-pager">
+            <span>@totalCount voucher@(totalCount == 1 ? "" : "s") · scroll for more</span>
+            <span class="pager-spacer"></span>
+            <span>Enter Alter · Alt+D Delete · Alt+X Cancel · Alt+F2 Period · Esc Reports</span>
+        </footer>
+    }
+</div>
+
+@if (showDeleteModal)
+{
+    <div class="tt-dialog-overlay" role="presentation">
+        <section class="tt-dialog" role="dialog" aria-modal="true" tabindex="0" @onkeydown="HandleDeleteModalKeyDown" @onkeydown:stopPropagation="true">
+            <header class="tt-dialog-titlebar"><strong>Delete Voucher?</strong></header>
+            <div class="tt-dialog-body"><p>Delete @(actionVoucherIds.Count == 1 ? "voucher" : $"{actionVoucherIds.Count} vouchers") <strong>@actionVoucherNumber</strong>?</p><p>Every voucher will be validated separately against its dependency rules.</p></div>
+            <footer class="tt-dialog-actions"><button data-tt-modal-accept="true" class="action-danger" @onclick="ConfirmDelete">Yes</button><button @onclick="CloseDeleteModal">No</button></footer>
+        </section>
+    </div>
+}
+
+@if (showCancelModal)
+{
+    <div class="tt-dialog-overlay" role="presentation">
+        <section class="tt-dialog" role="dialog" aria-modal="true" tabindex="0" @onkeydown="HandleCancelModalKeyDown" @onkeydown:stopPropagation="true">
+            <header class="tt-dialog-titlebar"><strong>Cancel Voucher?</strong></header>
+            <div class="tt-dialog-body">
+                <p>Cancel @(actionVoucherIds.Count == 1 ? "voucher" : $"{actionVoucherIds.Count} vouchers") <strong>@actionVoucherNumber</strong>? Their audit records will remain.</p>
+                <label class="cancel-reason">Cancellation Reason <b>*</b><textarea id="voucher-history-cancel-reason" rows="3" maxlength="500" @bind="cancellationReason" @bind:event="oninput"></textarea></label>
+            </div>
+            <footer class="tt-dialog-actions"><button data-tt-modal-accept="true" class="action-danger" @onclick="ConfirmCancel">Alt+X Cancel Voucher</button><button @onclick="CloseCancelModal">Return</button></footer>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public string Kind { get; set; } = string.Empty;
+    [SupplyParameterFromQuery(Name = "from")] public string? FromQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? ToQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "selectedId")] public long? SelectedIdQuery { get; set; }
+
+    // Infinite-scroll register: load every voucher matching the current period + search in one
+    // call instead of paging through the database. Opens straight into the flat list (defaulting
+    // to the active financial period) - Excel-style header filters narrow it down instead of a
+    // separate month-picker step. Realistic volume is small enough that this is one query, not a
+    // performance concern - the grid scrolls internally via .tt-contained-scroll.
+    private const int PageSize = 5000;
+    private string loadedKind = string.Empty;
+    private List<VoucherHistoryListRow> rows = new();
+    private DateOnly? customFrom;
+    private DateOnly? customTo;
+    private int selectedIndex;
+    private int pageIndex;
+    private string searchText = string.Empty;
+    private bool loading = true;
+    private string message = string.Empty;
+    private bool messageIsError;
+    private bool showDeleteModal;
+    private bool showCancelModal;
+    private List<long> actionVoucherIds = new();
+    private string actionVoucherNumber = string.Empty;
+    private string cancellationReason = string.Empty;
+    private int totalCount;
+    private int activeCount;
+    private decimal activeAmount;
+    private string activeQuantityTotals = "Total -";
+
+    private static readonly string[] PurchaseKinds = { "purchase-order", "purchase", "purchase-return" };
+    private bool IsPurchaseKind => PurchaseKinds.Contains(Kind);
+
+    private string Title => Kind switch
+    {
+        "master-job-orders" => "Master Job Order Register",
+        "job-out-orders" => "Job Out Orders",
+        "material-out" => "Material Out Register",
+        "material-in" => "Material In Register",
+        "purchase-order" => "Purchase Order Register",
+        "purchase" => "Purchase Register",
+        "purchase-return" => "Purchase Return Register",
+        _ => "Voucher History"
+    };
+    private string GroupTitle => IsPurchaseKind ? "Purchase Reports" : "Job Work Reports";
+    private string PartyColumnLabel => IsPurchaseKind ? "Supplier" : "Job Worker";
+    private string ReferenceColumnLabel => IsPurchaseKind ? "Reference No." : "JWO / Order No.";
+    private string BasePath => IsPurchaseKind ? $"/reports/purchase/vouchers/{Kind}" : $"/reports/job-work/vouchers/{Kind}";
+    private string EntryPath => Kind switch
+    {
+        "master-job-orders" => "/vouchers/master-job-order",
+        "job-out-orders" => "/vouchers/job-work-out-order",
+        "material-out" => "/vouchers/material-out",
+        "material-in" => "/vouchers/material-in",
+        "purchase-order" => "/vouchers/purchase-order",
+        "purchase" => "/vouchers/purchase",
+        "purchase-return" => "/vouchers/purchase-return",
+        _ => "/"
+    };
+    private string ViewCaption => $"Period {customFrom:dd-MMM-yyyy} to {customTo:dd-MMM-yyyy}";
+    private string ActiveQuantityTotals => activeQuantityTotals;
+    private List<VoucherHistoryListRow> PagedRows => rows;
+    private int PageCount => Math.Max(1, (int)Math.Ceiling(totalCount / (double)PageSize));
+    private VoucherHistoryListRow? SelectedRow => selectedIndex >= 0 && selectedIndex < rows.Count ? rows[selectedIndex] : null;
+    private bool CanDeleteSelected => SelectedRow is not null &&
+        (Kind is "master-job-orders" or "job-out-orders" or "material-out" or "material-in" or "purchase-order" or "purchase" or "purchase-return") &&
+        (DeveloperAccess.IsDeveloper || !string.Equals(SelectedRow.Status, "Cancelled", StringComparison.OrdinalIgnoreCase));
+    private bool CanCancelSelected => SelectedRow is not null && SelectedRow.Status != "Cancelled";
+
+    protected override void OnInitialized() => CurrentPeriod.Changed += HandlePeriodChanged;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedKind != Kind)
+        {
+            loadedKind = Kind;
+            customFrom = null;
+            customTo = null;
+            pageIndex = 0;
+            selectedIndex = 0;
+        }
+        ApplyQueryState();
+        await LoadPage(SelectedIdQuery);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await JS.InvokeVoidAsync("texTrackFocusById", "voucher-history-root");
+    }
+
+    private async Task LoadPage(long? selectId = null)
+    {
+        if (!TryGetRange(out var from, out var to)) return;
+        using var operation = GlobalOperations.Begin($"Opening {Title}…");
+        loading = true;
+        try
+        {
+            var result = await History.GetPageAsync(Kind, from, to, searchText, pageIndex, PageSize);
+            rows = result.Rows.ToList();
+            totalCount = result.TotalCount; activeCount = result.ActiveCount;
+            activeAmount = result.ActiveAmount; activeQuantityTotals = result.ActiveQuantityTotals;
+            pageIndex = Math.Clamp(pageIndex, 0, Math.Max(0, PageCount - 1));
+            selectedIndex = selectId is null ? Math.Clamp(selectedIndex, 0, Math.Max(0, rows.Count - 1))
+                : Math.Max(0, rows.FindIndex(x => x.Id == selectId.Value));
+        }
+        catch (Exception ex)
+        {
+            message = ex.GetBaseException().Message; messageIsError = true; rows.Clear();
+        }
+        finally { loading = false; }
+    }
+
+    private bool TryGetRange(out DateOnly from, out DateOnly to)
+    {
+        if (customFrom is not null && customTo is not null) { from = customFrom.Value; to = customTo.Value; return true; }
+        from = to = default; return false;
+    }
+
+    private async Task SearchChanged(ChangeEventArgs e)
+    {
+        searchText = e.Value?.ToString() ?? string.Empty;
+        pageIndex = 0; selectedIndex = 0;
+        await LoadPage();
+    }
+
+    private void HandlePeriodChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            customFrom = CurrentPeriod.From;
+            customTo = CurrentPeriod.To;
+            pageIndex = 0;
+            selectedIndex = 0;
+            message = string.Empty;
+            await LoadPage();
+            StateHasChanged();
+        });
+    }
+
+    private void SelectRow(int index) => selectedIndex = index;
+
+    private void OpenSelected()
+    {
+        if (SelectedRow is not { } row) return;
+        if (string.Equals(row.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !DeveloperAccess.IsDeveloper)
+        {
+            message = "Cancelled vouchers remain visible for audit and cannot be altered.";
+            messageIsError = false;
+            return;
+        }
+        var returnUrl = BuildReturnUrl(row.Id);
+        Navigation.NavigateTo($"{EntryPath}?voucherId={row.Id}&returnUrl={Uri.EscapeDataString(returnUrl)}");
+    }
+
+    private string BuildReturnUrl(long selectedId)
+    {
+        var parts = new List<string>();
+        if (customFrom is not null && customTo is not null)
+        {
+            parts.Add($"from={customFrom:yyyy-MM-dd}");
+            parts.Add($"to={customTo:yyyy-MM-dd}");
+        }
+        parts.Add($"page={pageIndex}");
+        parts.Add($"selectedId={selectedId}");
+        return $"{BasePath}?{string.Join("&", parts)}";
+    }
+
+    private void ApplyQueryState()
+    {
+        if (DateOnly.TryParse(FromQuery, out var from) && DateOnly.TryParse(ToQuery, out var to) && from <= to)
+        {
+            customFrom = from;
+            customTo = to;
+        }
+        else if (customFrom is null)
+        {
+            customFrom = CurrentPeriod.From;
+            customTo = CurrentPeriod.To;
+        }
+        pageIndex = Math.Max(0, PageQuery ?? pageIndex);
+    }
+
+    private async Task PromptDelete()
+    {
+        var targets = await GetActionRowsAsync();
+        if (targets.Count == 0) return;
+        actionVoucherIds = targets.Select(x => x.Id).ToList();
+        actionVoucherNumber = string.Join(", ", targets.Select(x => x.VoucherNumber));
+        showDeleteModal = true;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (actionVoucherIds.Count == 0) return;
+        var targets = rows.Where(x => actionVoucherIds.Contains(x.Id)).ToDictionary(x => x.Id);
+        var succeeded = new List<string>();
+        var blocked = new List<string>();
+        var retainedIds = new List<string>();
+        foreach (var id in actionVoucherIds)
+        {
+            var number = targets.TryGetValue(id, out var row) ? row.VoucherNumber : id.ToString();
+            if (row is not null && string.Equals(row.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !DeveloperAccess.IsDeveloper)
+            {
+                blocked.Add($"{number}: cancelled vouchers require Developer access for deletion");
+                retainedIds.Add(id.ToString());
+                continue;
+            }
+            var result = await DeleteVoucherAsync(id);
+            if (result.Success) succeeded.Add(number);
+            else { blocked.Add($"{number}: {result.Message}"); retainedIds.Add(id.ToString()); }
+        }
+        message = BuildBulkResult("Deleted", succeeded, blocked);
+        messageIsError = blocked.Count > 0;
+        var restoreId = actionVoucherIds.FirstOrDefault();
+        CloseDeleteModal();
+        await LoadPage(rows.Any(x => x.Id == restoreId) ? restoreId : null);
+        await JS.InvokeVoidAsync("texTrackClearSelectedRows", "voucher-history-root", retainedIds);
+    }
+
+    private void CloseDeleteModal() { showDeleteModal = false; actionVoucherIds.Clear(); actionVoucherNumber = string.Empty; }
+
+    private async Task PromptCancel()
+    {
+        var targets = await GetActionRowsAsync();
+        if (targets.Count == 0) return;
+        actionVoucherIds = targets.Select(x => x.Id).ToList();
+        actionVoucherNumber = string.Join(", ", targets.Select(x => x.VoucherNumber));
+        cancellationReason = string.Empty;
+        showCancelModal = true;
+    }
+
+    private async Task ConfirmCancel()
+    {
+        if (actionVoucherIds.Count == 0) return;
+        if (string.IsNullOrWhiteSpace(cancellationReason))
+        {
+            message = "Cancellation reason is required."; messageIsError = true;
+            await JS.InvokeVoidAsync("texTrackFocusById", "voucher-history-cancel-reason");
+            return;
+        }
+        var targets = rows.Where(x => actionVoucherIds.Contains(x.Id)).ToDictionary(x => x.Id);
+        var succeeded = new List<string>();
+        var blocked = new List<string>();
+        var retainedIds = new List<string>();
+        foreach (var id in actionVoucherIds)
+        {
+            var number = targets.TryGetValue(id, out var row) ? row.VoucherNumber : id.ToString();
+            if (row is not null && string.Equals(row.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+            {
+                blocked.Add($"{number}: already cancelled"); retainedIds.Add(id.ToString()); continue;
+            }
+            var result = await CancelVoucherAsync(id, cancellationReason);
+            if (result.Success) succeeded.Add(number);
+            else { blocked.Add($"{number}: {result.Message}"); retainedIds.Add(id.ToString()); }
+        }
+        message = BuildBulkResult("Cancelled", succeeded, blocked);
+        messageIsError = blocked.Count > 0;
+        var restoreId = actionVoucherIds.FirstOrDefault();
+        CloseCancelModal();
+        await LoadPage(restoreId);
+        await JS.InvokeVoidAsync("texTrackClearSelectedRows", "voucher-history-root", retainedIds);
+    }
+
+    private void CloseCancelModal() { showCancelModal = false; actionVoucherIds.Clear(); actionVoucherNumber = string.Empty; cancellationReason = string.Empty; }
+
+    private async Task<List<VoucherHistoryListRow>> GetActionRowsAsync()
+    {
+        var selectedIds = (await JS.InvokeAsync<string[]>("texTrackSelectedRowIds", "voucher-history-root"))
+            .Select(x => long.TryParse(x, out var id) ? id : 0).Where(x => x > 0).ToHashSet();
+        if (selectedIds.Count == 0 && SelectedRow is { } focused) selectedIds.Add(focused.Id);
+        return rows.Where(x => selectedIds.Contains(x.Id)).ToList();
+    }
+
+    private Task<OperationResult> DeleteVoucherAsync(long id) => Kind switch
+    {
+        "master-job-orders" => MasterJobOrders.DeleteAsync(id),
+        "job-out-orders" => JobWorkOrders.DeleteAsync(id),
+        "material-out" => MaterialOuts.DeleteAsync(id),
+        "material-in" => MaterialIns.DeleteAsync(id),
+        "purchase-order" => PurchaseOrders.DeleteAsync(id),
+        "purchase" => Purchases.DeleteAsync(id),
+        "purchase-return" => PurchaseReturns.DeleteAsync(id),
+        _ => Task.FromResult(OperationResult.Fail("Unsupported voucher report."))
+    };
+
+    private Task<OperationResult> CancelVoucherAsync(long id, string reason) => Kind switch
+    {
+        "master-job-orders" => MasterJobOrders.CancelAsync(id, reason),
+        "job-out-orders" => JobWorkOrders.CancelAsync(id, reason),
+        "material-out" => MaterialOuts.CancelAsync(id, reason),
+        "material-in" => MaterialIns.CancelAsync(id, reason),
+        "purchase-order" => PurchaseOrders.CancelAsync(id, reason),
+        "purchase" => Purchases.CancelAsync(id, reason),
+        "purchase-return" => PurchaseReturns.CancelAsync(id, reason),
+        _ => Task.FromResult(OperationResult.Fail("Unsupported voucher report."))
+    };
+
+    private static string BuildBulkResult(string verb, IReadOnlyCollection<string> succeeded, IReadOnlyCollection<string> blocked)
+    {
+        var parts = new List<string>();
+        if (succeeded.Count > 0) parts.Add($"{verb}: {string.Join(", ", succeeded)}.");
+        if (blocked.Count > 0) parts.Add($"Blocked/failed: {string.Join(" | ", blocked)}.");
+        return string.Join(" ", parts);
+    }
+    private void HandleDeleteModalKeyDown(KeyboardEventArgs e) { if (e.Key == "Escape") CloseDeleteModal(); else if (e.Key == "Enter") _ = ConfirmDelete(); }
+    private void HandleCancelModalKeyDown(KeyboardEventArgs e) { if (e.Key == "Escape") CloseCancelModal(); else if (e.AltKey && e.Key.Equals("x", StringComparison.OrdinalIgnoreCase)) _ = ConfirmCancel(); }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (showDeleteModal || showCancelModal) return;
+        if (e.Key == "F4") { await JS.InvokeVoidAsync("texTrackFocusById", "voucher-history-search"); return; }
+        if (e.AltKey && e.Key.Equals("x", StringComparison.OrdinalIgnoreCase)) { await PromptCancel(); return; }
+        if (e.Key == "Enter") { OpenSelected(); return; }
+        if (PagedRows.Count == 0) return;
+        if (e.Key is "ArrowDown" or "Down") selectedIndex = Math.Min(selectedIndex + 1, PagedRows.Count - 1);
+        else if (e.Key is "ArrowUp" or "Up") selectedIndex = Math.Max(selectedIndex - 1, 0);
+        else if (e.Key == "PageDown") selectedIndex = Math.Min(selectedIndex + JumpSize, PagedRows.Count - 1);
+        else if (e.Key == "PageUp") selectedIndex = Math.Max(selectedIndex - JumpSize, 0);
+        else if (e.Key == "Home") selectedIndex = 0;
+        else if (e.Key == "End") selectedIndex = PagedRows.Count - 1;
+    }
+
+    private const int JumpSize = 15;
+
+    private async Task GoBack()
+    {
+        await JS.InvokeVoidAsync("texTrackLeaveCurrentPage", "reports", HistoryReportFocusId);
+    }
+
+    private string HistoryReportFocusId => Kind switch
+    {
+        "master-job-orders" => "reports-child-0-0",
+        "job-out-orders" => "reports-child-0-1",
+        "material-out" => "reports-child-0-2",
+        "material-in" => "reports-child-0-3",
+        "purchase-order" => "reports-child-2-0",
+        "purchase" => "reports-child-2-1",
+        "purchase-return" => "reports-child-2-2",
+        _ => "reports-item-0"
+    };
+
+    public void Dispose() => CurrentPeriod.Changed -= HandlePeriodChanged;
+}

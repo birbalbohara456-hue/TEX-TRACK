@@ -1,0 +1,459 @@
+@page "/masters/voucher-types"
+@inject VoucherTypeRepository Repository
+@inject DatabaseStatus Database
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+@attribute [Authorize(Policy = SecurityPolicies.ManageMasters)]
+<PageTitle>Voucher Types</PageTitle>
+
+<div id="voucher-types-page-root" class="page-card master-page" tabindex="0" @ref="pageRoot" @onkeydown="HandlePageKeyDown" @onkeydown:preventDefault="true">
+    <KeyboardContextScope ContextId="voucher-types-list" RootElementId="voucher-types-page-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="@(CanEditSelected && !busy)" DeleteAsync="DeleteSelected" />
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">ACCOUNTING MASTER · PARENT BEHAVIOUR INHERITANCE</p>
+            <h1>Voucher Types</h1>
+        </div>
+        <div class="header-actions">
+            <button class="primary-button" type="button" @onclick="OpenCreate" disabled="@(!Database.IsConnected || busy)">Alt+C Create</button>
+            <button type="button" @onclick="OpenEdit" disabled="@(selectedIndex < 0 || busy)">Enter Edit</button>
+            <button type="button" class="danger-button" @onclick="DeleteSelected" disabled="@(!CanEditSelected || busy)">Alt+D Delete</button>
+        </div>
+    </div>
+
+    @if (!Database.IsConnected)
+    {
+        <div class="database-warning"><strong>PostgreSQL setup required</strong><p>@Database.Message</p></div>
+    }
+    else if (loading)
+    {
+        <div class="loading-state">Loading Voucher Types…</div>
+    }
+    else if (showForm)
+    {
+        <KeyboardContextScope ContextId="voucher-types-form" RootElementId="voucher-types-form-root"
+                              ContextType="KeyboardContextType.Form"
+                              Mode="@(editModel.Id == 0 ? KeyboardContextMode.Create : KeyboardContextMode.Alteration)"
+                              CanDelete="@(editModel.Id != 0 && !busy)" DeleteAsync="DeleteCurrent"
+                              InitialFocusTarget="@(editModel.IsSystem ? "voucher-type-tally-name" : "voucher-type-name")" />
+        <div id="voucher-types-form-root" class="master-entry-form" data-enter-navigation="true" @onkeydown="HandleFormKeyDown" @onkeydown:stopPropagation="true">
+            <div class="form-heading">
+                <div>
+                    <strong>@(editModel.Id == 0 ? "Create Voucher Type" : $"Alter Voucher Type · {editModel.Name}")</strong>
+                    <span>Custom types inherit behaviour from a permanent parent type</span>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(message))
+            {
+                <div class="form-message @(messageIsError ? "error" : "success")">@message</div>
+            }
+
+            <div class="form-grid two-column-form">
+                <label>
+                    Voucher Type Name <b>*</b>
+                    <input id="voucher-type-name" maxlength="200" readonly="@editModel.IsSystem" @bind="editModel.Name" @bind:event="oninput" />
+                </label>
+                <label>
+                    Parent Voucher Type <b>*</b>
+                    <select id="voucher-type-parent" disabled="@editModel.IsSystem" @bind="editModel.ParentVoucherTypeId">
+                        <option value="">Select Parent Voucher Type</option>
+                        @foreach (var parent in parents)
+                        {
+                            <option value="@parent.Id">@parent.Name</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    Alias
+                    <input maxlength="200" readonly="@editModel.IsSystem" @bind="editModel.Alias" @bind:event="oninput" />
+                </label>
+                <label>
+                    Abbreviation
+                    <input maxlength="20" readonly="@editModel.IsSystem" @bind="editModel.Abbreviation" @bind:event="oninput" />
+                </label>
+                <label>
+                    Tally Voucher Type Name
+                    <input id="voucher-type-tally-name" maxlength="200" placeholder="Defaults to Voucher Type Name" @bind="editModel.TallyVoucherTypeName" @bind:event="oninput" />
+                </label>
+                <label>
+                    Numbering Method <b>*</b>
+                    <select id="voucher-type-numbering-mode" @bind="editModel.NumberingMode">
+                        <option value="Auto">Auto</option>
+                        <option value="AutoPrefixSuffix">Auto with Manual Prefix &amp; Suffix</option>
+                        <option value="Manual">Completely Manual</option>
+                    </select>
+                </label>
+                @if (editModel.NumberingMode != "Manual")
+                {
+                    <label>
+                        Starting Number
+                        <input type="number" min="1" step="1" @bind="editModel.StartingNumber" />
+                    </label>
+                    <label>
+                        Number Width
+                        <input type="number" min="0" max="12" step="1" @bind="editModel.NumberWidth" />
+                        <small>0 = no padding; 4 = 0001</small>
+                    </label>
+                    <label>
+                        Reset Sequence
+                        <select @bind="editModel.ResetPeriod">
+                            <option value="FinancialYear">Every Financial Year</option>
+                            <option value="Never">Never</option>
+                        </select>
+                    </label>
+                }
+                @if (editModel.NumberingMode == "AutoPrefixSuffix")
+                {
+                    <label>
+                        Manual Prefix
+                        <input maxlength="30" @bind="editModel.Prefix" @bind:event="oninput" />
+                    </label>
+                    <label>
+                        Manual Suffix
+                        <input maxlength="30" @bind="editModel.Suffix" @bind:event="oninput" />
+                    </label>
+                }
+                <label>
+                    Next Number Preview
+                    <input readonly value="@NumberingPreview" />
+                </label>
+            </div>
+
+            @if (SelectedParent is { } selectedParent)
+            {
+                <div class="inherited-behaviour-panel">
+                    <strong>Inherited behaviour</strong>
+                    <span>Nature: @selectedParent.Nature</span>
+                    <span>Posting: @selectedParent.PostingMode</span>
+                </div>
+            }
+
+            <div class="form-actions">
+                <button id="voucher-type-save" type="button" data-enter-save="true" class="primary-button" @onclick="SaveAsync" disabled="@busy">Alt+S Save</button>
+                <button type="button" @onclick="CloseForm" disabled="@busy">Esc Cancel</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="master-toolbar" @onkeydown="IgnoreToolbarKeyDown" @onkeydown:stopPropagation="true">
+            <label>
+                <span>Search by Name, Base Category or Tally Name</span>
+                <input id="voucher-type-search" data-tt-filter-input="true" placeholder="F4 Search" @bind="searchText" @bind:event="oninput" @onkeydown="HandleSearchKeyDown" />
+            </label>
+            <button type="button" @onclick="ApplySearch" disabled="@busy">Search</button>
+            <button type="button" @onclick="ClearSearch" disabled="@busy">Clear</button>
+            <span>@rows.Count Voucher Type(s)</span>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <div class="form-message list-message @(messageIsError ? "error" : "success")">@message</div>
+        }
+
+        <div class="database-ok">● @rows.Count Voucher Type(s) · permanent parent types are view-only</div>
+        <div class="grid-wrap" id="voucher-types-grid">
+            <table class="data-grid selectable-grid">
+                <thead>
+                    <tr>
+                        <th>Voucher Type</th>
+                        <th>Under Parent</th>
+                        <th>Abbreviation</th>
+                        <th>Nature</th>
+                        <th>Posting</th>
+                        <th>Numbering</th>
+                        <th>Tally Mapping</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (rows.Count == 0)
+                    {
+                        <tr><td colspan="7" class="empty-cell">No Voucher Types found.</td></tr>
+                    }
+                    else
+                    {
+                        @for (var i = 0; i < rows.Count; i++)
+                        {
+                            var index = i;
+                            var type = rows[index];
+                            <tr id="voucher-type-row-@type.Id"
+                                class="@(selectedIndex == index ? "selected-row" : null)"
+                                @onclick="() => SelectRow(index)"
+                                @ondblclick="OpenEdit">
+                                <td>
+                                    <strong>@(type.IsSystem ? type.Name : $"↳ {type.Name}")</strong>
+                                    @if (type.IsSystem)
+                                    {
+                                        <span class="system-badge">Permanent</span>
+                                    }
+                                </td>
+                                <td>@(type.IsSystem ? "—" : type.ParentName)</td>
+                                <td>@type.Abbreviation</td>
+                                <td>@type.Nature</td>
+                                <td>@type.PostingMode</td>
+                                <td>@NumberingSummary(type)</td>
+                                <td>@type.TallyVoucherTypeName</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="master-help">↑/↓ Select · PgUp/PgDn · Home/End · Enter Edit · Alt+C Create · Alt+D Delete · Esc Back</p>
+    }
+</div>
+
+@code {
+    private List<VoucherTypeListItem> rows = new();
+    private List<VoucherTypeParentLookup> parents = new();
+    private VoucherTypeEditModel editModel = new();
+    private int selectedIndex = -1;
+    private bool loading = true;
+    private bool busy;
+    private bool showForm;
+    private bool pendingRowScroll;
+    private bool pendingFormFocus;
+    private bool pendingSearchFocus;
+    private string searchText = string.Empty;
+    private string message = string.Empty;
+    private bool messageIsError;
+    private ElementReference pageRoot;
+
+    private bool CanEditSelected => selectedIndex >= 0 && selectedIndex < rows.Count;
+    private VoucherTypeParentLookup? SelectedParent => editModel.ParentVoucherTypeId is null
+        ? null
+        : parents.FirstOrDefault(x => x.Id == editModel.ParentVoucherTypeId.Value);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Database.IsConnected)
+        {
+            parents = (await Repository.GetParentsAsync()).ToList();
+            await LoadAsync();
+        }
+        loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await pageRoot.FocusAsync();
+        if (pendingFormFocus)
+        {
+            pendingFormFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusById", editModel.IsSystem ? "voucher-type-tally-name" : "voucher-type-name");
+        }
+        if (pendingSearchFocus)
+        {
+            pendingSearchFocus = false;
+            await JS.InvokeVoidAsync("texTrackFocusById", "voucher-type-search");
+        }
+        if (pendingRowScroll && selectedIndex >= 0 && selectedIndex < rows.Count)
+        {
+            pendingRowScroll = false;
+            await JS.InvokeVoidAsync("texTrackScrollRowIntoView", $"voucher-type-row-{rows[selectedIndex].Id}", "voucher-types-grid");
+        }
+    }
+
+    private async Task LoadAsync(long? selectId = null)
+    {
+        rows = (await Repository.GetListAsync(searchText)).ToList();
+        if (rows.Count == 0) selectedIndex = -1;
+        else if (selectId is not null)
+        {
+            selectedIndex = rows.FindIndex(x => x.Id == selectId.Value);
+            if (selectedIndex < 0) selectedIndex = 0;
+        }
+        else if (selectedIndex < 0 || selectedIndex >= rows.Count) selectedIndex = 0;
+        pendingRowScroll = selectedIndex >= 0;
+    }
+
+    private void SelectRow(int index)
+    {
+        if (index < 0 || index >= rows.Count) return;
+        selectedIndex = index;
+        pendingRowScroll = true;
+        message = string.Empty;
+    }
+
+    private void OpenCreate()
+    {
+        editModel = new VoucherTypeEditModel
+        {
+            ParentVoucherTypeId = parents.FirstOrDefault()?.Id,
+            StartingNumber = 1,
+            NumberingMode = "Auto",
+            ResetPeriod = "FinancialYear"
+        };
+        showForm = true;
+        message = string.Empty;
+        pendingFormFocus = true;
+    }
+
+    private async Task OpenEdit()
+    {
+        if (!CanEditSelected || busy) return;
+        var model = await Repository.GetForEditAsync(rows[selectedIndex].Id);
+        if (model is null)
+        {
+            ShowError("The selected Voucher Type no longer exists.");
+            await LoadAsync();
+            return;
+        }
+        editModel = model;
+        showForm = true;
+        message = string.Empty;
+        pendingFormFocus = true;
+    }
+    private async Task SaveAsync()
+    {
+        if (busy) return;
+        busy = true;
+        try
+        {
+            var result = await Repository.SaveAsync(editModel);
+            if (!result.Success) { ShowError(result.Message); pendingFormFocus = true; return; }
+            showForm = false;
+            searchText = string.Empty;
+            ShowSuccess(result.Message);
+            await LoadAsync(result.EntityId);
+            await pageRoot.FocusAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+        }
+        finally { busy = false; }
+    }
+
+    private Task DeleteSelected() => DeleteSelectedCore(false);
+
+    private Task DeleteCurrent() => DeleteSelectedCore(true);
+
+    private async Task DeleteSelectedCore(bool fromForm)
+    {
+        if (!CanEditSelected || busy) return;
+        var selected = rows[selectedIndex];
+        var returnFocusId = fromForm
+            ? (editModel.IsSystem ? "voucher-type-tally-name" : "voucher-type-name")
+            : $"voucher-type-row-{selected.Id}";
+        if (!await JS.InvokeAsync<bool>(
+                "texTrackConfirmDelete",
+                selected.IsSystem ? "Permanent Voucher Type" : "Delete Voucher Type?",
+                selected.IsSystem
+                    ? $"'{selected.Name}' is a permanent system Voucher Type. Verify deletion rules?"
+                    : $"Delete unused Voucher Type '{selected.Name}'?",
+                returnFocusId)) return;
+
+        busy = true;
+        try
+        {
+            var result = await Repository.DeleteAsync(selected.Id);
+            if (!result.Success)
+            {
+                ShowError(result.Message);
+                if (fromForm) pendingFormFocus = true; else pendingRowScroll = true;
+                return;
+            }
+            showForm = false;
+            editModel = new VoucherTypeEditModel();
+            ShowSuccess(result.Message);
+            await LoadAsync();
+            if (selectedIndex >= rows.Count) selectedIndex = rows.Count - 1;
+            pendingRowScroll = selectedIndex >= 0;
+            await pageRoot.FocusAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.GetBaseException().Message);
+            if (fromForm) pendingFormFocus = true;
+        }
+        finally { busy = false; }
+    }
+
+    private async Task CloseForm()
+    {
+        showForm = false;
+        editModel = new VoucherTypeEditModel();
+        message = string.Empty;
+        pendingRowScroll = selectedIndex >= 0;
+        await pageRoot.FocusAsync();
+    }
+
+    private async Task ApplySearch()
+    {
+        selectedIndex = -1;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private async Task ClearSearch()
+    {
+        searchText = string.Empty;
+        selectedIndex = -1;
+        await LoadAsync();
+        await pageRoot.FocusAsync();
+    }
+
+    private static void IgnoreToolbarKeyDown(KeyboardEventArgs e) { }
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ApplySearch();
+        else if (e.Key == "Escape") await ClearSearch();
+    }
+    private async Task HandlePageKeyDown(KeyboardEventArgs e)
+    {
+        if (showForm) return;
+        if (e.AltKey && e.Key.Equals("c", StringComparison.OrdinalIgnoreCase)) { OpenCreate(); return; }
+        if (e.Key == "F4") { pendingSearchFocus = true; await InvokeAsync(StateHasChanged); return; }
+        if (e.Key == "Escape") { Navigation.NavigateTo("/"); return; }
+        if (rows.Count == 0) return;
+
+        var changed = false;
+        if (e.Key is "ArrowDown" or "Down") { selectedIndex = Math.Min(selectedIndex + 1, rows.Count - 1); changed = true; }
+        else if (e.Key is "ArrowUp" or "Up") { selectedIndex = Math.Max(selectedIndex - 1, 0); changed = true; }
+        else if (e.Key == "PageDown") { selectedIndex = Math.Min(selectedIndex + 10, rows.Count - 1); changed = true; }
+        else if (e.Key == "PageUp") { selectedIndex = Math.Max(selectedIndex - 10, 0); changed = true; }
+        else if (e.Key == "Home") { selectedIndex = 0; changed = true; }
+        else if (e.Key == "End") { selectedIndex = rows.Count - 1; changed = true; }
+        else if (e.Key == "Enter") await OpenEdit();
+
+        if (changed) { pendingRowScroll = true; await InvokeAsync(StateHasChanged); }
+    }
+
+    private async Task HandleFormKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await CloseForm();
+        else if (e.AltKey && e.Key.Equals("s", StringComparison.OrdinalIgnoreCase)) await SaveAsync();
+    }
+
+
+    private string NumberingPreview
+    {
+        get
+        {
+            if (editModel.NumberingMode == "Manual") return "User enters voucher number";
+            var number = editModel.NumberWidth > 0
+                ? editModel.StartingNumber.ToString($"D{editModel.NumberWidth}")
+                : editModel.StartingNumber.ToString();
+            return editModel.NumberingMode == "AutoPrefixSuffix"
+                ? $"{editModel.Prefix}{number}{editModel.Suffix}"
+                : number;
+        }
+    }
+
+    private static string NumberingSummary(VoucherTypeListItem type)
+    {
+        if (type.NumberingMode == "Manual") return "Completely Manual";
+        var number = type.NumberWidth > 0 ? type.StartingNumber.ToString($"D{type.NumberWidth}") : type.StartingNumber.ToString();
+        return type.NumberingMode == "AutoPrefixSuffix"
+            ? $"Auto · {type.Prefix}{number}{type.Suffix}"
+            : $"Auto · {number}";
+    }
+
+    private void ShowSuccess(string text) { message = text; messageIsError = false; }
+    private void ShowError(string text) { message = text; messageIsError = true; }
+}

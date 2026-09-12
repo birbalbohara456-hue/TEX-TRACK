@@ -1,0 +1,23 @@
+@namespace TexTrack.Web.Components.Vouchers.Shared
+
+@if (Definition is { IsVisible: true })
+{
+    <div class="tt-voucher-field tt-field-@FieldKey @(Definition.IsReadOnly ? "is-readonly" : null)" style="order:@Definition.Order" data-field-key="@FieldKey">
+        <label for="@For">
+            @Definition.Label
+            @if (Definition.IsRequired)
+            {
+                <b aria-hidden="true">*</b>
+            }
+        </label>
+        <div class="tt-voucher-control">@ChildContent</div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] public VoucherLayoutProfile? Profile { get; set; }
+    [Parameter, EditorRequired] public string FieldKey { get; set; } = string.Empty;
+    [Parameter] public string? For { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private VoucherFieldProfile? Definition => Profile?.Field(FieldKey);
+}

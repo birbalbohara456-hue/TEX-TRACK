@@ -1,0 +1,22 @@
+TexTrack ERP v0.5 Build 2.1
+
+Source of truth reviewed:
+- Job Work Out Order 1709 XML
+- Material Out 1709 XML
+
+Confirmed Tally linkage:
+- JWO component ROMAN SILK/CAMCA SILK: 260.500 MTS @ 66.00/MTS = 17193.00
+- Material Out uses the same component rate and amount.
+- Material Out OUT allocation carries ORDERTYPE SubOrder, PARENTITEM and ORDERNO.
+
+Implemented:
+1. JWO Component Allocation now includes Rate and calculated Amount.
+2. Quantity Enter moves to Rate; Rate Enter completes the line.
+3. Latest positive JWO component rate is remembered by component item as a default.
+4. Each JWO stores its own XmlRate/XmlAmount snapshot.
+5. Material Out continues to prefill Rate from the linked JWO component and keeps it editable.
+6. Fixed Material Out cancellation failure by widening stock_movements.movement_kind to varchar(50) in migration 011.
+7. Cancellation errors are user-friendly and preserve the reason for retry.
+8. Material Out dimensions now follow the compact stable JWO voucher proportions.
+
+No Tally XML exporter was added in this build. The required source data and linkage are now preserved for the exporter.

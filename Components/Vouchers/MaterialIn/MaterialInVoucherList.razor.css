@@ -1,0 +1,3 @@
+.mi-list-grid { min-width: 1450px; font-size: .8rem; }
+.mi-list-grid th:nth-last-child(-n+4),.mi-list-grid td:nth-last-child(-n+4) { text-align: right; }
+.mi-list-grid th:last-child,.mi-list-grid td:last-child { text-align: left; }

@@ -1,0 +1,17 @@
+TexTrack ERP v0.5 Build 1.9 — Material Out List + Exit Modal Fix
+
+- Material Out now opens on a voucher list like JWO.
+- Alt+C opens a new Material Out voucher.
+- Arrow-key row navigation and Esc-to-dashboard supported on list.
+- After save, returns to list with saved voucher selected.
+- Exit modal now uses full-screen fixed overlay and matching JWO dialog classes.
+- Modal receives focus after render; Esc/No closes it, Yes returns to Material Out list.
+- No database migration or posting logic changed.
+
+Testing focus:
+1. Open Material Out: saved vouchers are listed.
+2. Alt+C: opens a new voucher.
+3. Esc in voucher: centered modal opens and remains active.
+4. Esc or No: remains in voucher.
+5. Yes: returns to Material Out list.
+6. Save: returns to list with new voucher selected.

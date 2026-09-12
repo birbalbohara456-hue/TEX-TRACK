@@ -1,0 +1,135 @@
+{
+  "baseline": {
+    "build": "2.9",
+    "zip": "TexTrack_ERP_v0.5_Build2_9_JOB_WORKER_INVENTORY_AND_MI_VISUAL_FULL.zip",
+    "sha256": "3D659CDF3EE88C6630D52939E8251FA7E1639F11BBC60C59424162FD56C3F56B"
+  },
+  "modules": {
+    "job_worker_control": {
+      "task_levels": ["visual", "keyboard_navigation", "report_query"],
+      "presentation": [
+        "Components/Pages/Reports/JobWorkerControl.razor",
+        "Components/Pages/Reports/JobWorkerControl.razor.css"
+      ],
+      "service_methods": [
+        "Services/OperationalReportingService.cs::GetJobWorkerControlAsync"
+      ],
+      "models": [
+        "Models/OperationalReportingModels.cs"
+      ],
+      "menu": [
+        "Components/Layout/MainLayout.razor"
+      ],
+      "tests": [
+        "Tests/JavaScript/production-reports.browser.cjs",
+        "Tests/JavaScript/production-reports.test.cjs",
+        "Tests/TexTrack.Web.IntegrationTests/ProductionReportingTests.cs"
+      ],
+      "protected_dependencies": [
+        "Services/MaterialInRepository.cs",
+        "Services/MaterialOutRepository.cs",
+        "Services/JobWorkOrderRepository.cs",
+        "Data/Migrations",
+        "Domain/Entities.cs"
+      ]
+    },
+    "closing_stock": {
+      "task_levels": ["visual", "keyboard_navigation", "report_query"],
+      "presentation": [
+        "Components/Pages/Reports/InventoryClosingStock.razor",
+        "Components/Pages/Reports/InventoryClosingStock.razor.css"
+      ],
+      "service_methods": [
+        "Services/OperationalReportingService.cs::GetClosingStockGroupsAsync",
+        "Services/OperationalReportingService.cs::GetClosingStockItemsAsync"
+      ],
+      "models": [
+        "Models/OperationalReportingModels.cs"
+      ],
+      "menu": [
+        "Components/Layout/MainLayout.razor"
+      ],
+      "tests": [
+        "Tests/JavaScript/reporting-voucher-corrections.browser.cjs",
+        "Tests/JavaScript/production-reports.browser.cjs",
+        "Tests/TexTrack.Web.IntegrationTests/ProductionReportingTests.cs"
+      ],
+      "protected_dependencies": [
+        "Services/MaterialInRepository.cs",
+        "Services/MaterialOutRepository.cs",
+        "Services/JobWorkOrderRepository.cs",
+        "Data/Migrations",
+        "stock posting",
+        "voucher numbering"
+      ]
+    },
+    "stock_register": {
+      "task_levels": ["visual", "keyboard_navigation", "report_query"],
+      "presentation": [
+        "Components/Pages/Reports/StockRegister.razor",
+        "Components/Pages/Reports/StockRegister.razor.css"
+      ],
+      "service_methods": [
+        "Services/OperationalReportingService.cs::GetStockRegisterSummaryAsync",
+        "Services/OperationalReportingService.cs::GetStockRegisterDetailAsync"
+      ],
+      "models": [
+        "Models/OperationalReportingModels.cs"
+      ],
+      "menu": [
+        "Components/Layout/MainLayout.razor"
+      ],
+      "tests": [
+        "Tests/JavaScript/reporting-voucher-corrections.browser.cjs",
+        "Tests/TexTrack.Web.IntegrationTests/ProductionReportingTests.cs"
+      ]
+    },
+    "material_in": {
+      "task_levels": ["visual", "keyboard_navigation", "transaction_engine"],
+      "route_page": [
+        "Components/Pages/Vouchers/MaterialIn.razor",
+        "Components/Pages/Vouchers/MaterialIn.razor.css"
+      ],
+      "presentation_components": [
+        "Components/Vouchers/MaterialIn/MaterialInVoucherList.razor",
+        "Components/Vouchers/MaterialIn/MaterialInVoucherList.razor.css",
+        "Components/Vouchers/MaterialIn/MaterialInPersistedView.razor",
+        "Components/Vouchers/MaterialIn/MaterialInPersistedView.razor.css"
+      ],
+      "engine": [
+        "Services/MaterialInRepository.cs"
+      ],
+      "models": [
+        "Models/MaterialInModels.cs"
+      ],
+      "protected_engine_behaviors": [
+        "automatic consumption",
+        "previous consumption deduction",
+        "MO availability cap",
+        "FIFO allocation",
+        "atomic RM consumption and FG receipt",
+        "voucher numbering",
+        "rollback"
+      ]
+    },
+    "reports_menu": {
+      "task_levels": ["keyboard_navigation", "visual"],
+      "primary": [
+        "Components/Layout/MainLayout.razor"
+      ],
+      "shared_keyboard_only_if_proven": [
+        "Components/Keyboard/KeyboardContextHost.razor",
+        "Components/Keyboard/KeyboardContextScope.razor",
+        "Components/Keyboard/KeyboardContextMode.cs",
+        "Components/Keyboard/KeyboardContextType.cs"
+      ]
+    }
+  },
+  "current_issues": [
+    "JWC-PAGE-001",
+    "INV-ESC-001",
+    "CS-BACK-001",
+    "ARCH-MI-001",
+    "MIG-CLEAN-001"
+  ]
+}

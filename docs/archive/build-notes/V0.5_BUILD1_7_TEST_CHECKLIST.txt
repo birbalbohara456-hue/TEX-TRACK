@@ -1,0 +1,17 @@
+TexTrack ERP v0.5 Build 1.7 — Focused Test Checklist
+
+1. Start app and confirm migration 009 applies.
+2. Open Material Out and select Job Worker -> JWO.
+3. Confirm pending quantities prefill with UQC precision.
+4. Put cursor in blank Narration and press Enter: focus must move to Save.
+5. Press Enter on Save, or Alt+S from any normal Material Out field.
+6. Confirm success message includes saved voucher number.
+7. Re-select same Job Worker/JWO and confirm pending quantity is reduced or order disappears when fully issued.
+8. Create a partial Material Out and confirm remaining pending quantity is correct.
+9. Attempt quantity above pending; save must be blocked.
+10. Set GST/e-Way = Yes, enter details, press Alt+S inside modal; voucher must save.
+11. Confirm Auto voucher number cannot be edited; Manual mode requires a number.
+12. Attempt duplicate Manual number; save must be blocked and no stock movement posted.
+13. Confirm PostgreSQL tables material_out_lines, material_out_details, stock_movements and voucher_links contain matching voucher IDs.
+14. Confirm each line creates two stock movements: negative source and positive destination.
+15. Restart app and confirm saved pending quantities remain correct.

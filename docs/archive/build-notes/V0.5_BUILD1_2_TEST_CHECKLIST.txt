@@ -1,0 +1,10 @@
+1. Run application and confirm migration 008 applies.
+2. Voucher Type Auto: create JWO; Voucher No is read-only and Tab/Enter skips it.
+3. Auto Prefix/Suffix: generated full number is read-only.
+4. Manual: Voucher No is blank, editable, and required.
+5. Attempt browser/devtools modification of Auto number; save must use server-generated number.
+6. Select unlinked JWO, Alt+X, enter reason, confirm; status becomes Cancelled.
+7. Confirm cancelled JWO remains listed and number is not reused.
+8. Confirm cancelled JWO does not appear in Material Out pending order selector.
+9. Attempt to cancel JWO with active linked voucher; cancellation must be blocked.
+10. Re-test all v0.4 Build 2.0.15 keyboard focus flows.

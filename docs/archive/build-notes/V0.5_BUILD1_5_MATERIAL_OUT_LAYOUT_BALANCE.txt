@@ -1,0 +1,16 @@
+TexTrack ERP v0.5 Build 1.6 — Material Out Layout Balance
+
+Changes
+1. Narrowed Party A/c Name slightly while keeping it wider than other master fields.
+2. Reduced Destination Godown, Reference and Batch to balanced professional widths.
+3. Kept JWO / Order No. wide enough for order details.
+4. Constrained the pending JWO dropdown to 560px maximum.
+5. Anchored the pending JWO dropdown to the right edge of the JWO field so it remains inside the voucher window.
+6. Reduced Voucher No. and Date header widths to balanced compact sizes without clipping.
+7. No keyboard, lookup, quantity, database, repository or business logic changes.
+
+Testing
+- Confirm the JWO dropdown stays inside the voucher page at the current screen resolution.
+- Confirm Party A/c Name remains comfortable for long job-worker names.
+- Confirm Destination Godown, Reference and Batch are neither cramped nor oversized.
+- Recheck Arrow/Enter lookup selection and quantity editing.

@@ -1,0 +1,38 @@
+TexTrack ERP v0.5 Build 2.8 - Executed Test Checklist
+=====================================================
+
+Automated PostgreSQL integration tests
+- 63 passed, 0 failed, 0 skipped.
+- Includes blank/all-history dates; valid/cancelled voucher treatment; real MI allocation snapshots; actual FG parent/variant hierarchy; per-FG costs; MI list/view saved JWO/Godowns; MO delete dependency message and rollback preservation; Closing Stock quantity/value/weighted average.
+
+JavaScript source and keyboard tests
+- 21 passed, 0 failed.
+- Includes five shared report routes, one global listener/context contract, modal re-entry protection, stale context pruning, blank dates, T-format structure, Closing Stock wiring, MI list/view, per-FG valuation, and MO dependency precheck.
+
+Real Google Chrome keyboard-only verification
+1. production-reports.browser.cjs - PASS
+   - Reports menu
+   - five routes
+   - blank date fields
+   - report-to-report Alt+R switching without closing
+   - initial focus
+   - Alt+D containment
+   - one live context/listener
+   - F4 focus
+   - drilldown Esc row restoration when data exists
+2. reporting-voucher-corrections.browser.cjs - PASS
+   - Material In list context
+   - Alt+C create without mouse
+   - create focus
+   - Alt+D containment
+   - Esc list restoration
+   - persisted MI view/original JWO when data exists
+   - JWO voucher-type Enter to the correct second editable field
+3. keyboard-context.browser.cjs - PASS
+   - 13 frozen masters, JWO, and Material Out
+   - list/create/alteration Alt+D
+   - modal Esc focus restoration
+   - no mouse requirement
+   - repeated enhanced navigation leaves one context and one listener
+
+Final commands are rerun after documentation and packaging preparation. See final response for final restore/build/test results.

@@ -1,0 +1,133 @@
+@page "/reports/job-worker-aging"
+@attribute [Authorize(Policy = SecurityPolicies.ViewReports)]
+@inject OperationalReportingService Reporting
+@inject IJSRuntime JS
+@inject GlobalOperationState GlobalOperations
+
+<PageTitle>Job Worker Aging</PageTitle>
+
+<div id="job-worker-aging-root" class="page-card jwa-page tt-report-natural-flow" tabindex="0" data-keyboard-list-root="true"
+     @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="job-worker-aging" RootElementId="job-worker-aging-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="false" InitialFocusTarget="job-worker-aging-root" />
+
+    <header class="jwa-titlebar">
+        <div><p>JOB WORK REPORTS</p><h1>Job Worker Aging</h1><small>Production age, due position and material held by job worker</small></div>
+        <div class="jwa-actions"><label class="jwa-as-on"><span>As On</span><input id="jwa-as-on" type="date" data-tt-filter-input="true" @bind="filter.AsOnDate" /></label><button type="button" @onclick="ApplyFilters" disabled="@loading">Apply</button></div>
+    </header>
+
+    <section class="jwa-filters compact" aria-label="Job Worker Aging quick filters" @onkeydown="HandleFilterKeyDown" @onkeydown:stopPropagation="true">
+        <div class="jwa-quick" role="group" aria-label="Quick filters">
+            @foreach (var value in Enum.GetValues<JobWorkerAgingQuickFilter>())
+            { <button type="button" class="@(filter.QuickFilter == value ? "active" : null)" @onclick="() => SetQuickFilter(value)">@QuickLabel(value)</button> }
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice notice-error">@message</p> }
+    else if (loading) { <p class="jwa-empty">Loading Job Worker Aging…</p> }
+    else
+    {
+        <section class="jwa-summary">
+            <span>Active JWO <b>@report.ActiveJwoCount</b></span><span>Overdue <b>@report.OverdueJwoCount</b></span>
+            <span>FG Pending <b>@UqcPending(report.FinishedGoodPending)</b></span><span>Material Balance <b>@report.MaterialBalanceCount jobs</b></span>
+            <span>Oldest Open <b>@Days(report.OldestOpenDays)</b></span><span>Oldest Material <b>@Days(report.OldestMaterialDays)</b></span>
+        </section>
+        <div id="jwa-grid" class="jwa-grid">
+            <table class="selectable-grid" data-tt-filter-key="job-worker-aging"><thead><tr><th>Finished Good</th><th>Batch</th><th>JWO No.</th><th>JWO Date</th><th>Due Date</th><th>Production Age</th><th>Due Position</th><th>FG Ordered</th><th>Final Received</th><th>FG Pending</th><th>Material Out Status</th><th>Current Stage</th><th>Responsible Jobbers</th><th>Oldest Material Age</th><th>Last MO</th><th>Last MI</th><th>Status</th></tr></thead>
+            <tbody>
+            @if (report.Rows.Count == 0) { <tr><td colspan="17" class="jwa-empty">No JWO matches the selected aging filters.</td></tr> }
+            @foreach (var row in report.Rows)
+            {
+                <tr id="@row.RowKey" class="@(selectedId == row.JwoVoucherId ? "selected" : null)" @onclick="() => Select(row.JwoVoucherId)" @ondblclick="() => ToggleDetail(row.JwoVoucherId)">
+                    <td>@Text(row.FinishedGoodNames)</td><td>@Text(row.Batch)</td><td><a href="@JwoUrl(row.JwoVoucherId)">@row.JwoNumber</a></td><td>@Date(row.JwoDate)</td><td>@Date(row.DueDate)</td><td class="number">@row.DaysOpen days</td><td>@row.DuePosition</td>
+                    <td class="number">@Metric(row.FinishedGoods, x => x.OrderedOrRequired)</td><td class="number">@Metric(row.FinishedGoods, x => x.ReceivedOrIssued)</td><td class="number">@Metric(row.FinishedGoods, x => x.PendingOrBalance)</td>
+                    <td><span class="jwa-status @StatusClass(row.MaterialOutStatus)">@row.MaterialOutStatus</span></td><td>@Text(row.CurrentStage)</td><td>@Text(row.ResponsibleJobWorkers)</td>
+                    <td class="number">@Days(row.OldestOutstandingMaterialAge)</td><td>@Date(row.LastMaterialOutDate)</td><td>@Date(row.LastMaterialInDate)</td><td><span class="jwa-status @StatusClass(row.Status)">@row.Status</span></td>
+                </tr>
+                @if (detail?.Summary.JwoVoucherId == row.JwoVoucherId)
+                { <tr class="jwa-detail-row"><td colspan="17"><JobWorkerAgingDetailPanel Detail="detail" /></td></tr> }
+            }
+            </tbody></table>
+        </div>
+        <nav class="jwa-pagination"><button type="button" disabled="@(report.Page <= 1)" @onclick="PreviousPage">PgUp Previous</button><span>Page @report.Page of @report.TotalPages · @report.TotalRows JWO</span><button type="button" disabled="@(report.Page >= report.TotalPages)" @onclick="NextPage">PgDn Next</button></nav>
+    }
+    <p class="jwa-help">↑/↓ Select · Enter Expand · Click ▼ in any column header to filter · PgUp/PgDn Page · Esc Close/Back</p>
+</div>
+
+@code {
+    private JobWorkerAgingFilter filter = new();
+    private JobWorkerAgingReport report = new();
+    private JobWorkerAgingDetail? detail;
+    private long? selectedId;
+    private bool loading;
+    private string message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var operation = GlobalOperations.Begin("Opening Job Worker Aging report…");
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        loading = true; message = string.Empty; detail = null;
+        try
+        {
+            report = await Reporting.GetJobWorkerAgingAsync(filter);
+            filter.Page = report.Page;
+            selectedId = report.Rows.FirstOrDefault()?.JwoVoucherId;
+        }
+        catch (Exception ex) { message = ex.GetBaseException().Message; report = new(); selectedId = null; }
+        finally { loading = false; }
+    }
+    private async Task ApplyFilters() { filter.Page = 1; using var operation = GlobalOperations.Begin("Applying Job Worker Aging filters…"); await Load(); await FocusRoot(); }
+    private async Task ClearFilters() { filter = new(); await ApplyFilters(); }
+    private async Task SetQuickFilter(JobWorkerAgingQuickFilter value) { filter.QuickFilter = value; await ApplyFilters(); }
+    private void Select(long id) => selectedId = id;
+    private async Task ToggleDetail(long id)
+    {
+        selectedId = id;
+        if (detail?.Summary.JwoVoucherId == id) { detail = null; return; }
+        using var operation = GlobalOperations.Begin("Opening JWO aging detail…");
+        detail = await Reporting.GetJobWorkerAgingDetailAsync(id, filter.AsOnDate);
+    }
+    private async Task PreviousPage() { if (report.Page <= 1) return; filter.Page = report.Page - 1; await Load(); await FocusRoot(); }
+    private async Task NextPage() { if (report.Page >= report.TotalPages) return; filter.Page = report.Page + 1; await Load(); await FocusRoot(); }
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "F4") { await JS.InvokeVoidAsync("texTrackFocusById", "jwa-as-on"); return; }
+        if (e.Key == "Escape")
+        {
+            if (detail is not null) { detail = null; await FocusRoot(); return; }
+            await JS.InvokeVoidAsync("texTrackLeaveCurrentPage", "reports", "reports-child-0-6"); return;
+        }
+        if (e.Key == "PageUp") { await PreviousPage(); return; }
+        if (e.Key == "PageDown") { await NextPage(); return; }
+        if (e.Key == "Enter" && selectedId is not null) { await ToggleDetail(selectedId.Value); return; }
+        if (e.Key is not ("ArrowUp" or "ArrowDown") || report.Rows.Count == 0) return;
+        var index = selectedId is null ? 0 : report.Rows.FindIndex(x => x.JwoVoucherId == selectedId);
+        index = Math.Clamp(index + (e.Key == "ArrowDown" ? 1 : -1), 0, report.Rows.Count - 1);
+        selectedId = report.Rows[index].JwoVoucherId;
+        await InvokeAsync(StateHasChanged);
+        await JS.InvokeVoidAsync("texTrackRevealRow", report.Rows[index].RowKey, "jwa-grid");
+    }
+    private async Task HandleFilterKeyDown(KeyboardEventArgs e)
+    {
+        if (e.AltKey && string.Equals(e.Key, "s", StringComparison.OrdinalIgnoreCase)) await ApplyFilters();
+        else if (e.Key == "Escape") await FocusRoot();
+    }
+    private ValueTask FocusRoot() => JS.InvokeVoidAsync("texTrackFocusById", "job-worker-aging-root");
+
+    private string JwoUrl(long id) => $"/vouchers/job-work-out-order?voucherId={id}&returnUrl={Uri.EscapeDataString("/reports/job-worker-aging")}";
+    private static string Metric(IEnumerable<JobWorkerAgingUqcQuantity> rows, Func<JobWorkerAgingUqcQuantity, decimal> selector) => string.Join(" · ", rows.Select(x => $"{selector(x):0.####} {x.UqcName}"));
+    private static string UqcPending(IEnumerable<JobWorkerAgingUqcQuantity> rows) => rows.Any() ? Metric(rows, x => x.PendingOrBalance) : "—";
+    private static string Date(DateOnly value) => value.ToString("dd-MM-yyyy");
+    private static string Date(DateOnly? value) => value?.ToString("dd-MM-yyyy") ?? "—";
+    private static string Days(int? value) => value is null ? "—" : $"{value} days";
+    private static string Text(string value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string StatusClass(string value) => value.Replace(' ', '-').ToLowerInvariant();
+    private static string QuickLabel(JobWorkerAgingQuickFilter value) => value switch { JobWorkerAgingQuickFilter.Open => "Only Open", JobWorkerAgingQuickFilter.Overdue => "Only Overdue", JobWorkerAgingQuickFilter.WithMaterialBalance => "With Material Balance", JobWorkerAgingQuickFilter.NoMovement => "No Movement", _ => "All" };
+    private static string StatusLabel(JobWorkerAgingStatusFilter value) => value == JobWorkerAgingStatusFilter.All ? "All Statuses" : value.ToString().Replace("Late", " Late").Replace("Received", " Received").Replace("Started", " Started");
+    private static string AgeLabel(JobWorkerAgingAgeBucket value) => value switch { JobWorkerAgingAgeBucket.Days0To7 => "0–7 Days", JobWorkerAgingAgeBucket.Days8To15 => "8–15 Days", JobWorkerAgingAgeBucket.Days16To30 => "16–30 Days", JobWorkerAgingAgeBucket.Days31To60 => "31–60 Days", JobWorkerAgingAgeBucket.Days61To90 => "61–90 Days", JobWorkerAgingAgeBucket.DaysOver90 => "90+ Days", _ => "All JWO Ages" };
+}

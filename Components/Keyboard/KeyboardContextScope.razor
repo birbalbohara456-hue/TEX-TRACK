@@ -1,0 +1,124 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@code {
+    [Parameter, EditorRequired] public string ContextId { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string RootElementId { get; set; } = string.Empty;
+    [Parameter] public KeyboardContextType ContextType { get; set; }
+    [Parameter] public KeyboardContextMode Mode { get; set; }
+    [Parameter] public bool CanDelete { get; set; }
+    [Parameter] public EventCallback DeleteAsync { get; set; }
+    [Parameter] public EventCallback EscapeAsync { get; set; }
+    [Parameter] public EventCallback AcceptAsync { get; set; }
+    [Parameter] public bool CanCancel { get; set; }
+    [Parameter] public EventCallback CancelAsync { get; set; }
+    [Parameter] public bool IsVoucherEntry { get; set; }
+    [Parameter] public bool HandlesEscape { get; set; }
+    [Parameter] public string? InitialFocusTarget { get; set; }
+
+    private readonly string registrationToken = Guid.NewGuid().ToString("N");
+    private DotNetObjectReference<KeyboardContextScope>? selfReference;
+    private string? registeredSignature;
+    private bool initialFocusApplied;
+    private bool disposed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (disposed || string.IsNullOrWhiteSpace(ContextId) || string.IsNullOrWhiteSpace(RootElementId))
+        {
+            return;
+        }
+
+        var signature = $"{ContextId}|{RootElementId}|{ContextType}|{Mode}|{CanDelete}|{IsVoucherEntry}|{HandlesEscape}|{CanCancel}";
+        if (signature == registeredSignature)
+        {
+            return;
+        }
+
+        selfReference ??= DotNetObjectReference.Create(this);
+        var connected = await JS.InvokeAsync<bool>(
+            "texTrackKeyboardContexts.register",
+            ContextId,
+            ContextType.ToString(),
+            Mode.ToString(),
+            CanDelete,
+            RootElementId,
+            selfReference,
+            registrationToken,
+            IsVoucherEntry,
+            HandlesEscape,
+            CanCancel);
+
+        if (!connected)
+        {
+            return;
+        }
+
+        registeredSignature = signature;
+        if (!initialFocusApplied && !string.IsNullOrWhiteSpace(InitialFocusTarget))
+        {
+            initialFocusApplied = true;
+            await JS.InvokeVoidAsync("texTrackKeyboardContexts.focusInitial", InitialFocusTarget);
+        }
+    }
+
+    [JSInvokable]
+    public async Task HandleDeleteAsync()
+    {
+        if (!CanDelete || Mode is not (KeyboardContextMode.List or KeyboardContextMode.Alteration))
+        {
+            return;
+        }
+
+        await DeleteAsync.InvokeAsync();
+    }
+
+    [JSInvokable]
+    public Task HandleEscapeAsync() => EscapeAsync.InvokeAsync();
+
+    [JSInvokable]
+    public async Task HandleAcceptAsync()
+    {
+        if (!IsVoucherEntry || Mode is not (KeyboardContextMode.Create or KeyboardContextMode.Alteration))
+        {
+            return;
+        }
+
+        await AcceptAsync.InvokeAsync();
+    }
+
+    [JSInvokable]
+    public async Task HandleCancelAsync()
+    {
+        if (!IsVoucherEntry || !CanCancel || Mode is not KeyboardContextMode.Alteration)
+        {
+            return;
+        }
+
+        await CancelAsync.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
+        try
+        {
+            await JS.InvokeVoidAsync("texTrackKeyboardContexts.unregister", ContextId, registrationToken);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        finally
+        {
+            selfReference?.Dispose();
+        }
+    }
+}

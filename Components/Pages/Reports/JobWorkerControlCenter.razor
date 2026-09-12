@@ -1,0 +1,295 @@
+@page "/reports/job-worker-control"
+@attribute [Authorize(Policy = SecurityPolicies.ViewReports)]
+@inject OperationalReportingService Reporting
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Job Worker Control</PageTitle>
+
+<div id="job-worker-control-center-root" class="page-card jwcc-page" tabindex="0" data-keyboard-list-root="true"
+     @onkeydown="HandleKeyDown" @onkeydown:stopPropagation="true">
+    <KeyboardContextScope ContextId="job-worker-control-center" RootElementId="job-worker-control-center-root"
+                          ContextType="KeyboardContextType.List" Mode="KeyboardContextMode.List"
+                          CanDelete="false" InitialFocusTarget="job-worker-control-center-root" />
+    <header class="jwcc-titlebar">
+        <span class="jwcc-breadcrumb">Job Work Reports <span class="jwcc-crumb-sep">›</span> Job Worker Control</span>
+        <label><span>AS ON</span><input id="jwcc-as-on" type="date" @bind="asOnDate" /></label>
+        <button type="button" @onclick="Apply">Apply</button>
+    </header>
+
+    <nav class="jwcc-tabs" aria-label="Job Worker Control views">
+        <button class="@(tab == "aging" ? "active" : null)" type="button" @onclick='() => ChangeTab("aging")'>Aging</button>
+        <button class="@(tab == "exceptions" ? "active" : null)" type="button" @onclick='() => ChangeTab("exceptions")'>Exceptions</button>
+        <button class="@(tab == "portfolio" ? "active" : null)" type="button" @onclick='() => ChangeTab("portfolio")'>Portfolio</button>
+        <button class="@(tab == "rates" ? "active" : null)" type="button" @onclick='() => ChangeTab("rates")'>Rate Variance</button>
+        @if (tab == "aging")
+        {
+            <AgeBandFilter ButtonId="jwcc-age-filter" Label="Material Age" Value="ageBandFilter"
+                           Description="Age starts on the oldest Material Out lot that is still unconsumed. Select one or more bands."
+                           ValueChanged="SetAgeBandFilter" />
+        }
+    </nav>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <p class="notice notice-error">@message</p>
+    }
+    else if (loading)
+    {
+        <p class="jwcc-empty">Loading Job Worker Control…</p>
+    }
+    else if (tab == "aging")
+    {
+        <section class="jwcc-grid">
+            <table class="selectable-grid" data-tt-filter-key="job-worker-control-aging"><thead><tr>
+                <th>Finished Good</th><th>Batch</th><th>JWO No.</th><th>Oldest Outstanding MO</th><th>Material Age</th><th>FG Pending</th><th>Material Out</th><th>Current Stage</th><th>Responsible Jobbers</th><th>Status</th>
+            </tr></thead><tbody>
+            @for (var index = 0; index < VisibleAgingRows.Count; index++)
+            {
+                var absoluteIndex = index; var row = VisibleAgingRows[index];
+                <tr id="@RowId(absoluteIndex)" class="@(selectedRowIndex == absoluteIndex ? "selected" : null)"><td>@row.FinishedGoodNames</td><td>@Text(row.Batch)</td><td><a href="@JwoUrl(row.JwoVoucherId)">@row.JwoNumber</a></td><td>@Date(row.OldestOutstandingMaterialDate)</td><td>@Days(row.OldestOutstandingMaterialAge)</td><td>@Metric(row.FinishedGoods)</td><td>@row.MaterialOutStatus</td><td>@Text(row.CurrentStage)</td><td>@Text(row.ResponsibleJobWorkers)</td><td>@row.Status</td></tr>
+            }
+            </tbody></table>
+            @if (FilteredAgingRows.Count == 0) { <p class="jwcc-empty">No JWO has outstanding material in the selected age range.</p> }
+        </section>
+    }
+    else if (tab == "exceptions")
+    {
+        <section class="jwcc-toolbar">
+            @foreach (var item in Enum.GetValues<JobWorkerExceptionQuickFilter>())
+            {
+                <button type="button" class="@(exceptionQuick == item ? "active" : null)" @onclick="() => SetQuick(item)">@QuickLabel(item)</button>
+            }
+            @if (portfolioJobWorkerName is not null) { <span>Filtered to @portfolioJobWorkerName <button type="button" @onclick="ClearPortfolioJobWorker">Clear</button></span> }
+        </section>
+        <section class="jwcc-grid">
+            <table class="selectable-grid" data-tt-filter-key="job-worker-control-exceptions"><thead><tr>
+                <th>Priority</th><th>Finished Good</th><th>Batch</th><th>JWO No.</th><th>Due Position</th><th>FG Pending</th><th>Material Age</th><th>Current Stage</th><th>Responsible Jobbers</th><th>Reasons</th>
+            </tr></thead><tbody>
+            @for (var index = 0; index < VisibleExceptionRows.Count; index++)
+            {
+                var absoluteIndex = index; var row = VisibleExceptionRows[index];
+                <tr id="@RowId(absoluteIndex)" class="@(selectedRowIndex == absoluteIndex ? "selected" : null)"><td>@row.Priority.ToString().ToUpperInvariant()</td><td>@row.Aging.FinishedGoodNames</td><td>@Text(row.Aging.Batch)</td><td><a href="@JwoUrl(row.Aging.JwoVoucherId)">@row.Aging.JwoNumber</a></td><td>@row.Aging.DuePosition</td><td>@Metric(row.Aging.FinishedGoods)</td><td>@Days(row.Aging.OldestOutstandingMaterialAge)</td><td>@Text(row.Aging.CurrentStage)</td><td>@Text(row.Aging.ResponsibleJobWorkers)</td><td>@row.ReasonText</td></tr>
+            }
+            </tbody></table>
+            @if (exceptions.Rows.Count == 0) { <p class="jwcc-empty">No exceptions match the current view.</p> }
+        </section>
+    }
+    else if (tab == "rates")
+    {
+        <section class="jwcc-grid">
+            <table class="selectable-grid" data-tt-filter-key="job-worker-control-rates"><thead><tr>
+                <th>JWO No.</th><th>Finished Good</th><th>Batch</th><th>Job Worker</th><th>Process</th><th>Stage Output</th><th>Assignment</th><th>MI No.</th><th>MI Date</th><th>Received Qty</th><th>UQC</th><th>Expected Rate/Unit</th><th>Actual Rate/Unit</th><th>Difference (+/−)</th><th>Actual Charges</th>
+            </tr></thead><tbody>
+            @for (var index = 0; index < VisibleRateRows.Count; index++)
+            {
+                var absoluteIndex = index; var row = VisibleRateRows[index];
+                <tr id="@RowId(absoluteIndex)" class="@(selectedRowIndex == absoluteIndex ? "selected" : null)" @onclick="() => selectedRowIndex = absoluteIndex">
+                    <td><a href="@JwoUrl(row.JwoVoucherId)">@row.JwoNumber</a></td><td>@row.FinishedGood</td><td>@Text(row.Batch)</td><td>@row.JobWorker</td><td>@row.Process</td><td>@row.StageOutput</td><td>@row.AssignmentVersion</td>
+                    <td><a href="@MiUrl(row.MaterialInVoucherId)">@row.MaterialInNumber</a></td><td>@Date(row.ReceiptDate)</td><td>@row.Quantity.ToString("0.####")</td><td>@row.Uqc</td>
+                    <td>@(row.ExpectedRate?.ToString("0.####") ?? "Not recorded")</td><td>@row.ActualRate.ToString("0.####")</td><td>@(row.Difference?.ToString("+0.####;-0.####;0") ?? "—")</td><td>@row.ActualTotal.ToString("0.####")</td>
+                </tr>
+            }
+            </tbody></table>
+            @if (rateRows.Count == 0) { <p class="jwcc-empty">No active Material In receipts as of this date. Rates compare process charges only.</p> }
+        </section>
+    }
+    else
+    {
+        <section class="jwcc-toolbar"><span>Each JWO contributes to every jobber responsible for an assigned production stage.</span></section>
+        <section class="jwcc-grid">
+            <table class="selectable-grid" data-tt-filter-key="job-worker-control-portfolio"><thead><tr>
+                <th>Job Worker</th><th>Active JWO</th><th>Critical</th><th>High</th><th>Attention</th><th>Overdue</th><th>Material Balance</th><th>Old Material</th><th>No Movement</th><th>Oldest Material Age</th><th>FG Pending</th>
+            </tr></thead><tbody>
+            @for (var index = 0; index < VisiblePortfolioRows.Count; index++)
+            {
+                var absoluteIndex = index; var row = VisiblePortfolioRows[index];
+                <tr id="@RowId(absoluteIndex)" class="@(selectedRowIndex == absoluteIndex ? "selected" : null)" @onclick="() => OpenPortfolioExceptions(row)"><td><button type="button">@row.JobWorkerName</button></td><td>@row.ActiveJwoCount</td><td>@row.CriticalCount</td><td>@row.HighCount</td><td>@row.AttentionCount</td><td>@row.OverdueCount</td><td>@row.MaterialBalanceCount</td><td>@row.OldMaterialCount</td><td>@row.NoMovementCount</td><td>@Days(row.OldestMaterialAge)</td><td>@Metric(row.FinishedGoodPending)</td></tr>
+            }
+            </tbody></table>
+            @if (portfolio.Rows.Count == 0) { <p class="jwcc-empty">No active job-worker portfolio records match the selected date.</p> }
+        </section>
+    }
+    @if (!loading && string.IsNullOrWhiteSpace(message) && CurrentRowCount > 0)
+    {
+        <nav class="jwcc-pagination" aria-label="Job Worker Control row count">
+            <span>@CurrentRowCount row@(CurrentRowCount == 1 ? "" : "s") · scroll for more</span>
+        </nav>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "tab")] public string? RequestedTab { get; set; }
+    private string tab = "aging";
+    private DateOnly asOnDate = DateOnly.FromDateTime(DateTime.Today);
+    private int selectedRowIndex;
+    private const int JumpSize = 12;
+    private long? portfolioJobWorkerId;
+    private string? portfolioJobWorkerName;
+    private JobWorkerExceptionQuickFilter exceptionQuick = JobWorkerExceptionQuickFilter.ExceptionsOnly;
+    private AgeBandFilterValue ageBandFilter = AgeBandFilterValue.All();
+    private JobWorkerAgingReport aging = new();
+    private JobWorkerExceptionReport exceptions = new();
+    private JobWorkerPortfolioReport portfolio = new();
+    private List<JobWorkRateVarianceRow> rateRows = new();
+    private bool loading;
+    private string message = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var requested = (RequestedTab ?? "aging").ToLowerInvariant();
+        tab = requested is "aging" or "exceptions" or "portfolio" or "rates" ? requested : "aging";
+        await Load();
+    }
+
+    private async Task Apply()
+    {
+        await Load();
+    }
+
+    private async Task ChangeTab(string value)
+    {
+        if (tab == value) return;
+        tab = value;
+        selectedRowIndex = 0;
+        Navigation.NavigateTo($"/reports/job-worker-control?tab={value}", replace: true);
+        await Load();
+    }
+
+    private async Task SetQuick(JobWorkerExceptionQuickFilter value)
+    {
+        exceptionQuick = value;
+        await LoadExceptions();
+    }
+
+    private Task SetAgeBandFilter(AgeBandFilterValue value)
+    {
+        ageBandFilter = value;
+        selectedRowIndex = 0;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OpenPortfolioExceptions(JobWorkerPortfolioRow row)
+    {
+        portfolioJobWorkerId = row.JobWorkerId;
+        portfolioJobWorkerName = row.JobWorkerName;
+        tab = "exceptions";
+        exceptionQuick = JobWorkerExceptionQuickFilter.ExceptionsOnly;
+        Navigation.NavigateTo("/reports/job-worker-control?tab=exceptions", replace: true);
+        await LoadExceptions();
+    }
+
+    private async Task ClearPortfolioJobWorker()
+    {
+        portfolioJobWorkerId = null;
+        portfolioJobWorkerName = null;
+        await LoadExceptions();
+    }
+
+    private async Task Load()
+    {
+        loading = true; message = string.Empty;
+        try
+        {
+            if (tab == "aging") await LoadAging();
+            else if (tab == "exceptions") await LoadExceptions();
+            else if (tab == "rates") rateRows = await Reporting.GetJobWorkRateVarianceAsync(asOnDate);
+            else await LoadPortfolio();
+        }
+        catch (Exception ex) { message = ex.GetBaseException().Message; }
+        finally { loading = false; }
+        selectedRowIndex = Math.Clamp(selectedRowIndex, 0, Math.Max(0, CurrentRowCount - 1));
+    }
+
+    private async Task LoadAging()
+    {
+        aging = await Reporting.GetJobWorkerAgingAsync(new JobWorkerAgingFilter
+        {
+            AsOnDate = asOnDate,
+            QuickFilter = JobWorkerAgingQuickFilter.All,
+            PageSize = 5000
+        });
+    }
+
+    private async Task LoadExceptions()
+    {
+        exceptions = await Reporting.GetJobWorkerExceptionBoardAsync(new JobWorkerExceptionFilter
+        {
+            AsOnDate = asOnDate, JobWorkerId = portfolioJobWorkerId, QuickFilter = exceptionQuick, PageSize = 5000
+        });
+    }
+
+    private async Task LoadPortfolio()
+    {
+        portfolio = await Reporting.GetJobWorkerPortfolioAsync(new JobWorkerExceptionFilter
+        {
+            AsOnDate = asOnDate, QuickFilter = JobWorkerExceptionQuickFilter.AllOpen, PageSize = 200
+        });
+    }
+
+    private IReadOnlyList<JobWorkerAgingReportRow> FilteredAgingRows => aging.Rows
+        .Where(x => ageBandFilter.Matches(x.OldestOutstandingMaterialAge))
+        .ToList();
+    private int CurrentRowCount => tab == "aging" ? FilteredAgingRows.Count : tab == "exceptions" ? exceptions.Rows.Count : tab == "rates" ? rateRows.Count : portfolio.Rows.Count;
+    private IReadOnlyList<JobWorkRateVarianceRow> VisibleRateRows => rateRows;
+    private IReadOnlyList<JobWorkerAgingReportRow> VisibleAgingRows => FilteredAgingRows;
+    private IReadOnlyList<JobWorkerExceptionRow> VisibleExceptionRows => exceptions.Rows;
+    private IReadOnlyList<JobWorkerPortfolioRow> VisiblePortfolioRows => portfolio.Rows;
+    private string RowId(int index) => $"jwcc-row-{tab}-{index}";
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "ArrowUp" or "ArrowDown")
+        {
+            if (CurrentRowCount == 0) return;
+            selectedRowIndex = Math.Clamp(selectedRowIndex + (e.Key == "ArrowDown" ? 1 : -1), 0, CurrentRowCount - 1);
+            await InvokeAsync(StateHasChanged);
+            await JS.InvokeVoidAsync("texTrackRevealRow", RowId(selectedRowIndex), "job-worker-control-center-root");
+            return;
+        }
+        if (e.Key is "PageUp" or "PageDown")
+        {
+            if (CurrentRowCount == 0) return;
+            selectedRowIndex = Math.Clamp(selectedRowIndex + (e.Key == "PageDown" ? JumpSize : -JumpSize), 0, CurrentRowCount - 1);
+            await InvokeAsync(StateHasChanged);
+            await JS.InvokeVoidAsync("texTrackRevealRow", RowId(selectedRowIndex), "job-worker-control-center-root");
+            return;
+        }
+        if (e.Key == "Enter" && CurrentRowCount > 0)
+        {
+            if (tab == "aging") Navigation.NavigateTo(JwoUrl(FilteredAgingRows[selectedRowIndex].JwoVoucherId));
+            else if (tab == "exceptions") Navigation.NavigateTo(JwoUrl(exceptions.Rows[selectedRowIndex].Aging.JwoVoucherId));
+            else if (tab == "rates") Navigation.NavigateTo(MiUrl(rateRows[selectedRowIndex].MaterialInVoucherId));
+            else await OpenPortfolioExceptions(portfolio.Rows[selectedRowIndex]);
+            return;
+        }
+        if (e.Key == "F4" && tab == "aging") { await JS.InvokeVoidAsync("texTrackFocusById", "jwcc-age-filter"); return; }
+        if (e.Key == "F4") { await JS.InvokeVoidAsync("texTrackFocusById", "jwcc-as-on"); return; }
+        if (e.Key == "Escape") { Navigation.NavigateTo("/?fresh=1"); return; }
+        if (e.Key is "ArrowLeft" or "ArrowRight")
+        {
+            var tabs = new[] { "aging", "exceptions", "portfolio", "rates" };
+            var index = Array.IndexOf(tabs, tab);
+            index = Math.Clamp(index + (e.Key == "ArrowRight" ? 1 : -1), 0, tabs.Length - 1);
+            await ChangeTab(tabs[index]);
+        }
+    }
+
+    private string JwoUrl(long id) => $"/vouchers/job-work-out-order?voucherId={id}&returnUrl={Uri.EscapeDataString("/reports/job-worker-control?tab=" + tab)}";
+    private string MiUrl(long id) => $"/vouchers/material-in?voucherId={id}&returnUrl={Uri.EscapeDataString("/reports/job-worker-control?tab=rates")}";
+    private static string Date(DateOnly? value) => value?.ToString("dd-MM-yyyy") ?? "—";
+    private static string Days(int? value) => value is null ? "—" : $"{value} days";
+    private static string Text(string value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string Metric(IEnumerable<JobWorkerAgingUqcQuantity> rows)
+    {
+        var active = rows.Where(x => x.PendingOrBalance != 0).ToList();
+        return active.Count == 0 ? "—" : string.Join(" · ", active.Select(x => $"{x.PendingOrBalance:0.####} {x.UqcName}"));
+    }
+    private static string QuickLabel(JobWorkerExceptionQuickFilter value) => value switch
+    {
+        JobWorkerExceptionQuickFilter.ExceptionsOnly => "Exceptions Only", JobWorkerExceptionQuickFilter.CriticalOnly => "Critical Only",
+        JobWorkerExceptionQuickFilter.OverdueOnly => "Overdue Only", JobWorkerExceptionQuickFilter.NoMovement => "No Movement",
+        JobWorkerExceptionQuickFilter.OldMaterial => "Old Material", JobWorkerExceptionQuickFilter.MaterialBalance => "Material Balance",
+        JobWorkerExceptionQuickFilter.DueSoon => "Due Soon", JobWorkerExceptionQuickFilter.AllOpen => "All Open", _ => "Completed History"
+    };
+}

@@ -1,0 +1,10 @@
+.data-maintenance { max-width: 960px; margin: 38px auto; padding: 0 20px 24px; }
+.data-maintenance header { background: #07162b; color: #fff; margin: 0 -20px 22px; padding: 18px 22px; }
+.data-maintenance header p { margin: 0; color: #bad0ec; font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+.data-maintenance header h1 { margin: 5px 0 0; }
+.danger-panel { border: 1px solid #b42318; background: #fff7f6; padding: 20px; display: grid; gap: 10px; }
+.danger-panel h2 { color: #9b1c1c; margin: 0; }
+.danger-panel input { max-width: 520px; min-height: 34px; border: 1px solid #7b8798; padding: 5px 8px; }
+.maintenance-button { display: inline-block; width: fit-content; background: #07162b; color: white; padding: 9px 16px; text-decoration: none; border: 1px solid #07162b; font-weight: 700; }
+.maintenance-button.danger { background: #a61b1b; border-color: #7f1111; }
+.maintenance-button:disabled { opacity: .55; }

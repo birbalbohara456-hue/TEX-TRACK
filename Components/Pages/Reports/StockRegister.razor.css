@@ -1,0 +1,59 @@
+.stock-register-page {
+    width: 100%; height: 100%; max-height: 100%; min-height: 0;
+    padding-bottom: 0; display: flex; flex-direction: column; overflow: hidden;
+}
+.stock-register-page .page-header { flex: 0 0 auto; min-height: 52px; padding-top: 9px; padding-bottom: 8px; }
+.stock-register-page .database-ok { flex: 0 0 auto; margin-bottom: 0; padding-block: 4px; }
+.stock-register-filter-panel {
+    flex: 0 0 auto; margin: 10px 0 0; padding: 7px 10px 9px; background: #f8fafc;
+}
+.stock-register-filter-panel .form-heading,
+.stock-register-results .form-heading {
+    min-height: 24px; margin: -7px -10px 7px; padding: 4px 8px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #d8e0e8; background: #f3f6f9;
+    color: #344054; font-size: 11px;
+}
+.stock-register-filter-grid {
+    display: grid; grid-template-columns: repeat(5, minmax(128px, 1fr));
+    gap: 8px 10px; align-items: end;
+}
+.stock-register-filter-grid label { min-width: 0; color: #475467; font-size: 11px; font-weight: 650; }
+.stock-register-filter-grid input,
+.stock-register-filter-grid ::deep input {
+    width: 100%; min-width: 0; min-height: 30px; margin-top: 3px; padding: 4px 8px;
+    border: 1px solid #c7d0da; border-radius: 4px; background: #fff; color: #1d2939;
+}
+.stock-register-filter-grid input:focus,
+.stock-register-filter-grid ::deep input:focus {
+    border-color: #7f9dbd; outline: 2px solid rgba(47, 111, 237, .12); outline-offset: 0;
+}
+.stock-register-results {
+    flex: 1 1 auto; min-height: 0; margin: 10px 0 0; padding: 7px 10px 0;
+    display: flex; flex-direction: column; overflow: hidden;
+}
+.stock-register-grid {
+    flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto;
+    overscroll-behavior: contain; overflow-anchor: none; scroll-behavior: auto;
+    scrollbar-gutter: stable; contain: layout paint; will-change: scroll-position;
+}
+.stock-register-grid .data-grid { margin: 0; }
+.stock-register-grid .data-grid th,
+.stock-register-grid .data-grid td { height: 29px; padding: 4px 8px; }
+.stock-register-page .inventory-pagination { flex: 0 0 36px; min-height: 36px; margin-top: 0; }
+.stock-register-page .master-help {
+    flex: 0 0 27px; min-height: 27px; margin: 0 -16px; padding: 7px 16px 5px;
+    border-top: 1px solid #d8e0e8; background: #f8fafc;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.register-child td { background: #f4f8ff; color: #344563; }
+.register-child td:first-child { padding-left: 2rem; }
+.register-transactions { min-width: 1250px; }
+.inventory-pagination { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 35px; padding: 4px 12px; border-top: 1px solid #b8c5d3; background: #eef3f8; }
+.inventory-pagination button { min-width: 96px; padding: 5px 10px; border: 1px solid #8da0b5; background: #fff; color: #091426; font-weight: 700; }
+.inventory-pagination button:disabled { opacity: .45; }
+.inventory-pagination span { min-width: 110px; text-align: center; font: 11px Consolas, monospace; }
+
+@media (max-width: 1100px) { .stock-register-filter-grid { grid-template-columns: repeat(3, minmax(135px, 1fr)); } }
+@media (max-width: 760px) { .stock-register-filter-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); } }

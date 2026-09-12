@@ -1,0 +1,55 @@
+TexTrack ERP v0.4 Build 2 — Acceptance Checklist
+================================================
+
+A. STARTUP / MIGRATION
+[ ] Existing company opens without rerunning setup.
+[ ] Footer shows: v0.4 Build 2 Tally-Aligned JWO.
+[ ] Existing masters and earlier JWO records remain visible.
+
+B. GROUPED MASTERS
+[ ] Alt+M shows Accounting, Inventory and Production groups.
+[ ] Voucher Types appears under Accounting Masters.
+[ ] Tax Classifications appears under Inventory Masters.
+[ ] Enter/Right expands; Left/Esc collapses; returning restores child focus.
+
+C. CUSTOM VOUCHER TYPE
+[ ] Create a custom type under Job Work Out Order.
+[ ] Inherited Nature/Posting behavior is shown.
+[ ] Duplicate name is blocked.
+[ ] Permanent parent cannot be edited/deleted.
+[ ] Custom JWO type appears in the JWO Voucher Type lookup.
+
+D. LOOKUPS
+[ ] Typing part of a name filters by contains.
+[ ] Browser-saved suggestion behavior is absent.
+[ ] Up/Down changes highlighted result.
+[ ] Enter selects highlighted master and stores the correct item.
+[ ] Esc closes the lookup without leaving the voucher.
+
+E. JWO HEADER
+[ ] New Due Date equals Voucher Date.
+[ ] Changing Voucher Date updates Due Date until Due Date is manually changed.
+[ ] Reference defaults to Voucher Number but can be changed independently.
+[ ] Manual/automatic numbering follows selected Voucher Type.
+
+F. FINISHED GOODS / GODOWNS
+[ ] Multiple Finished Goods can be entered.
+[ ] Each FG requires its own FG Godown.
+[ ] Each FG requires its own Destination Godown.
+[ ] Colour/size quantities and totals remain correct.
+
+G. COMPONENT ALLOCATION
+[ ] Final FG quantity Enter opens Component Allocation.
+[ ] Flow is Component > Component Godown > Quantity.
+[ ] Quantity Enter creates/focuses the next blank line.
+[ ] Blank Enter closes the popup.
+[ ] Each component retains its own Godown and parent FG.
+[ ] Duplicate component under the same FG is blocked.
+
+H. EXIT / PERSISTENCE
+[ ] First Esc removes current field focus.
+[ ] Second Esc asks whether to exit.
+[ ] Dirty voucher warns that unsaved changes will be lost.
+[ ] No keeps the voucher open; Yes exits.
+[ ] Save, restart and reopen preserve Voucher Type, Reference, FG/Destination Godowns,
+    Component Godowns, quantities and components.

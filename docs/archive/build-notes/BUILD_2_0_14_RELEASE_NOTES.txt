@@ -1,0 +1,41 @@
+TexTrack ERP v0.4 Build 2.0.14 — JWO Stabilization
+===================================================
+
+Base
+----
+Built from the uploaded Copilot return-focus project.
+No database schema or business-rule changes were made.
+
+Changes
+-------
+1. Component Allocation Enter flow
+   - Component Name Enter now accepts/resolves the component and moves to Component Godown.
+   - It no longer invokes the full row-completion action.
+   - Component Godown Enter continues to Required Quantity.
+   - Required Quantity Enter validates the row, adds the next blank component row and focuses it.
+   - Enter on a completely blank component-name row still closes Component Allocation.
+
+2. Native JWO delete confirmation
+   - Removed browser JavaScript confirm().
+   - Added TexTrack native confirmation dialog with Left/Right, Tab, Enter and Escape support.
+   - Repository dependency checks remain unchanged and still block deletion of linked/used JWO vouchers.
+
+3. JWO exit behaviour
+   - JWO Exit modal → Yes now leaves the JWO module and navigates directly to Dashboard.
+   - JWO Exit modal → No returns focus to the JWO form.
+
+4. Focus hardening
+   - Added a final focus fallback when requested target restoration repeatedly fails and activeElement is BODY.
+   - Updated CSS cache version to 0.4.2.0.14.
+
+Files changed
+-------------
+- Components/App.razor
+- Components/Pages/Vouchers/JobWorkOutOrder.razor
+- BUILD_2_0_14_RELEASE_NOTES.txt
+- BUILD_2_0_14_TEST_CHECKLIST.txt
+
+Compilation status
+------------------
+NOT COMPILED in the packaging environment because the dotnet executable/.NET SDK was unavailable.
+Run dotnet build TexTrack.sln on the development PC before acceptance.
